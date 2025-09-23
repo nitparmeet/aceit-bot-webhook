@@ -17,6 +17,8 @@ app = FastAPI()
 
 # Build async PTB app
 tg = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
+from bot import register_handlers       # NEW
+register_handlers(tg) 
 
 # --- Minimal handler (we'll plug Aceit logic later) ---
 async def start(update, context: ContextTypes.DEFAULT_TYPE):
