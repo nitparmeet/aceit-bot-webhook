@@ -1,24 +1,25 @@
 import os
 from fastapi import FastAPI, Request, HTTPException, Header
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-
-from bot import register_handlers
-register_handlers(tg)
-
+from telegram.ext import Application, ContextTypes
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 app = FastAPI()
 
-# 1) create tg first
+# 1) Create the Telegram application FIRST
 tg = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
 
 # 2) THEN import and register your handlers
-from bot import register_handlers      # NEW (after tg is defined)
-register_handlers(tg)                  # NEW
+try:
+    from bot import register_handlers   # expects a function register_handlers(app)
+    register_handlers(tg)
+except Exception as e:
+    # If bot.py isn't ready yet, keep the app running
+    print("Handler registration skipped:", repr(e))
 
+# FastAPI lifecycle hooks
 @app.on_event("startup")
 async def on_startup():
     await tg.initialize()
@@ -29,8 +30,12 @@ async def on_shutdown():
     await tg.stop()
     await tg.shutdown()
 
+# Telegram webhook endpoint
 @app.post("/telegram")
-async def telegram_webhook(req: Request, x_telegram_bot_api_secret_token: str | None = Header(default=None)):
+async def telegram_webhook(
+    req: Request,
+    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+):
     if WEBHOOK_SECRET and (x_telegram_bot_api_secret_token != WEBHOOK_SECRET):
         raise HTTPException(status_code=403, detail="Bad secret header")
     data = await req.json()
@@ -41,3 +46,8 @@ async def telegram_webhook(req: Request, x_telegram_bot_api_secret_token: str | 
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+# Optional: avoid 404 at /
+@app.get("/")
+async def home():
+    return {"ok": True, "service": "aceit-bot-webhook", "health": "/healthz"}
