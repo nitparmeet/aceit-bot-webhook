@@ -3,6 +3,9 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+from bot import register_handlers
+register_handlers(tg)
+
 # Required env vars (you'll set these on Render):
 # TELEGRAM_TOKEN  -> from BotFather
 # WEBHOOK_SECRET  -> any long random string; Telegram will echo it as a header
