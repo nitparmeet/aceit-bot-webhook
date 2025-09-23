@@ -3,6 +3,10 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
+from bot import register_handlers
+register_handlers(tg)
+
+
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
