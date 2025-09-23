@@ -3,10 +3,10 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello from Aceit! Bot is alive ✅")
+    await update.message.reply_text("Aceit features wired ✅  Try /help")
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Help: try /menu or send a message.")
+    await update.message.reply_text("Commands: /start, /help\nSend any text to get an echo.")
 
 def _heavy_work(text: str) -> str:
     # put your real logic here (OpenAI, DB, etc.)
@@ -17,7 +17,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = await asyncio.to_thread(_heavy_work, text)  # offload heavy stuff
     await update.message.reply_text(reply)
 
-# IMPORTANT: use the function argument name (e.g., app), not a global 'tg'
 def register_handlers(app: Application):
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
