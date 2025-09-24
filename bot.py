@@ -824,7 +824,7 @@ def _norm_row_for_cache(r: dict) -> dict:
 async def start(update, context):
     await update.message.reply_text("Hello from Aceit!")
 
-app.add_handler(CommandHandler("start", start))
+
 
 @app.post("/telegram")
 async def telegram_webhook(req: Request):
@@ -5913,16 +5913,9 @@ def main():
         g = globals()
         return all((n in g and callable(g[n])) for n in names)
 
-    def _add(handler, group: int = 0):
-        app.add_handler(handler, group=group)
+   
 
-    # Single ask_more handler (keep just one)
-    app.add_handler(
-        CallbackQueryHandler(
-            ask_followup_handler,
-            pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
-        )
-    )
+    
 
     # --- Error handler ---
     if _has("on_error"):
@@ -6069,10 +6062,49 @@ def main():
 if __name__ == "__main__":
     main()
 
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+
+# ---- add these only if not already defined above ----
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Commands: /start, /help, /menu. Type any text and I’ll echo it.")
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (update.message.text or "").strip()
+    await update.message.reply_text(f"You said: {text}")
+
+async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    action = q.data.split(":", 1)[1] if ":" in q.data else "unknown"
+    await q.edit_message_text(f"Got follow-up action: {action}")
+
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kb = [
+        [InlineKeyboardButton("Similar",  callback_data="ask_more:similar"),
+         InlineKeyboardButton("Explain",  callback_data="ask_more:explain")],
+        [InlineKeyboardButton("Flash",    callback_data="ask_more:flash"),
+         InlineKeyboardButton("Quick QA", callback_data="ask_more:quickqa")],
+        [InlineKeyboardButton("QnA x5",   callback_data="ask_more:qna5")],
+    ]
+    await update.message.reply_text("Pick an action:", reply_markup=InlineKeyboardMarkup(kb))
+# ---- end of optional defs ----
 
 def register_handlers(app: Application):
-    # TEMP: keep it minimal to pass deploy
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # helper so you can keep group ordering if you need it
+    def _add(handler, group: int = 0):
+        app.add_handler(handler, group=group)
+
+    # commands (make sure you have an `async def start(...)` defined somewhere above)
+    _add(CommandHandler("start", start))
+    _add(CommandHandler("help", help_cmd))
+    _add(CommandHandler("menu", menu))
+
+    # text messages (non-commands)
+    _add(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # callback buttons: ask_more:*
+    _add(CallbackQueryHandler(
+        ask_followup_handler,
+        pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
+    ))
