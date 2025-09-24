@@ -9,6 +9,8 @@ from fastapi import FastAPI, Request, HTTPException
 from telegram.ext import Application
 
 
+TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+
 import json
 import logging
 import html
