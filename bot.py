@@ -528,6 +528,7 @@ if not TELEGRAM_TOKEN:
 app = FastAPI()
 tg = Application.builder().token(TOKEN).build()
 
+   
 
 DATA_DIR = "data"
 EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx"  # your file
@@ -6097,12 +6098,40 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # fallback for any other menu_* value
         await q.edit_message_text(f"Clicked: {data}")
 
+def predict_college(user_inputs: dict) -> str:
+    """
+    Replace with your real logic.
+    If you read files, use DATA_DIR like:
+        import pandas as pd
+        df = pd.read_excel(DATA_DIR / "cutoffs.xlsx")
+    """
+    # TODO: implement your real prediction and return a message string
+    return "Demo: prediction ran successfully ✅"
+
+# Async wrapper so heavy work runs off the main loop
+async def run_prediction(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    try:
+        # pass what you need (context.user_data, etc.)
+        result = await asyncio.to_thread(predict_college, context.user_data)
+        await context.bot.send_message(chat_id=chat_id, text=result)
+    except Exception as e:
+        logger.exception("predict_college failed")
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ Error: {e}")
 
 
+
+# === 3) Make sure this is registered in register_handlers ===
 def register_handlers(app: Application):
-    # helper to keep group ordering if you need it
-    def _add(h, group: int = 0):
-        app.add_handler(h, group=group)
+    def _add(h, group: int = 0): app.add_handler(h, group=group)
+
+    # keep your existing lines here (start/help/menu/text/etc.)
+
+    # specific patterns FIRST, then catch-all
+    _add(CallbackQueryHandler(
+        menu_callback,
+        pattern=re.compile(r"^menu_")
+    ), group=0)
+
 
     # make sure you already have an async def start(...) defined somewhere above
     _add(CommandHandler("start", start))
