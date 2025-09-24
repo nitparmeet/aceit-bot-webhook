@@ -6064,54 +6064,40 @@ def main():
 if __name__ == "__main__":
     main()
 
-import re, logging
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
-)
+import re, asyncio, logging
+from telegram import Update
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
 logger = logging.getLogger("aceit-bot")
 
-# If you don't already have /help and text echo, add simple ones:
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Commands: /start, /help, /menu. Type anything and I’ll echo it.")
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = (update.message.text or "").strip()
-    await update.message.reply_text(f"You said: {text}")
-
-# A simple /menu to produce buttons
-async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [
-        [InlineKeyboardButton("Similar",  callback_data="ask_more:similar"),
-         InlineKeyboardButton("Explain",  callback_data="ask_more:explain")],
-        [InlineKeyboardButton("Flash",    callback_data="ask_more:flash"),
-         InlineKeyboardButton("Quick QA", callback_data="ask_more:quickqa")],
-        [InlineKeyboardButton("QnA x5",   callback_data="ask_more:qna5")],
-    ]
-    await update.message.reply_text("Pick an action:", reply_markup=InlineKeyboardMarkup(kb))
-
-# Your main follow-up handler (answers and edits the message)
-async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()  # stop Telegram's spinner
-    data = q.data or ""
-    action = data.split(":", 1)[1] if ":" in data else "unknown"
-    logger.info("CALLBACK match: data=%s action=%s", data, action)
-    await q.edit_message_text(f"✅ Got it: {action}")
-
-# Catch-all callback (runs if the pattern above didn't match)
-async def catch_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# 1) One router for all menu_* buttons
+async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    logger.info("CALLBACK catch-all: %s", q.data)
-    # show the payload so you can see what to match
-    await q.edit_message_text(f"Callback received: {q.data}")
+    data = (q.data or "").strip()
+    logger.info("MENU callback: %s", data)
 
-# Optional: log any errors to Render logs
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.exception("Exception in handler", exc_info=context.error)
+    # Route by exact key
+    if data == "menu_predict":
+        await q.edit_message_text("🔮 Running prediction…")
+        # TODO: call your real prediction feature here:
+        # result = await asyncio.to_thread(predict_college, context.user_data)
+        # await context.bot.send_message(chat_id=q.message.chat_id, text=result)
+        await context.bot.send_message(chat_id=q.message.chat_id, text="(demo) prediction done ✅")
+
+    elif data == "menu_explain":
+        await q.edit_message_text("🧠 Explain mode (demo).")
+    elif data == "menu_flash":
+        await q.edit_message_text("⚡ Flashcards mode (demo).")
+    elif data == "menu_quickqa":
+        await q.edit_message_text("❓ Quick Q&A (demo).")
+    elif data == "menu_qna5":
+        await q.edit_message_text("5 related Q&A items (demo).")
+    else:
+        # fallback for any other menu_* value
+        await q.edit_message_text(f"Clicked: {data}")
+
+
 
 def register_handlers(app: Application):
     # helper to keep group ordering if you need it
@@ -6132,6 +6118,16 @@ def register_handlers(app: Application):
         pattern=re.compile(r"^ask_more:(similar|explain|flash|quickqa|qna5)$")
     ), group=0)
 
+
+
+    # NEW: handle all menu_* callbacks
+    _add(CallbackQueryHandler(
+        menu_callback,
+        pattern=re.compile(r"^menu_")
+    ), group=0)
+
+    
+    
     # This will catch any other callback_data so you can see what arrives
     _add(CallbackQueryHandler(catch_all_callback), group=1)
 
