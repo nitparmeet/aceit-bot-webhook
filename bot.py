@@ -6064,23 +6064,24 @@ def main():
 if __name__ == "__main__":
     main()
 
+import re, logging
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
+)
 
-# ---- add these only if not already defined above ----
+logger = logging.getLogger("aceit-bot")
+
+# If you don't already have /help and text echo, add simple ones:
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Commands: /start, /help, /menu. Type any text and I’ll echo it.")
+    await update.message.reply_text("Commands: /start, /help, /menu. Type anything and I’ll echo it.")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     await update.message.reply_text(f"You said: {text}")
 
-async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    action = q.data.split(":", 1)[1] if ":" in q.data else "unknown"
-    await q.edit_message_text(f"Got follow-up action: {action}")
-
+# A simple /menu to produce buttons
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = [
         [InlineKeyboardButton("Similar",  callback_data="ask_more:similar"),
@@ -6090,14 +6091,34 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("QnA x5",   callback_data="ask_more:qna5")],
     ]
     await update.message.reply_text("Pick an action:", reply_markup=InlineKeyboardMarkup(kb))
-# ---- end of optional defs ----
+
+# Your main follow-up handler (answers and edits the message)
+async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()  # stop Telegram's spinner
+    data = q.data or ""
+    action = data.split(":", 1)[1] if ":" in data else "unknown"
+    logger.info("CALLBACK match: data=%s action=%s", data, action)
+    await q.edit_message_text(f"✅ Got it: {action}")
+
+# Catch-all callback (runs if the pattern above didn't match)
+async def catch_all_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    logger.info("CALLBACK catch-all: %s", q.data)
+    # show the payload so you can see what to match
+    await q.edit_message_text(f"Callback received: {q.data}")
+
+# Optional: log any errors to Render logs
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.exception("Exception in handler", exc_info=context.error)
 
 def register_handlers(app: Application):
-    # helper so you can keep group ordering if you need it
-    def _add(handler, group: int = 0):
-        app.add_handler(handler, group=group)
+    # helper to keep group ordering if you need it
+    def _add(h, group: int = 0):
+        app.add_handler(h, group=group)
 
-    # commands (make sure you have an `async def start(...)` defined somewhere above)
+    # make sure you already have an async def start(...) defined somewhere above
     _add(CommandHandler("start", start))
     _add(CommandHandler("help", help_cmd))
     _add(CommandHandler("menu", menu))
@@ -6105,8 +6126,14 @@ def register_handlers(app: Application):
     # text messages (non-commands)
     _add(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # callback buttons: ask_more:*
+    # SPECIFIC callback first (pattern), then catch-all as a fallback
     _add(CallbackQueryHandler(
         ask_followup_handler,
-        pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
-    ))
+        pattern=re.compile(r"^ask_more:(similar|explain|flash|quickqa|qna5)$")
+    ), group=0)
+
+    # This will catch any other callback_data so you can see what arrives
+    _add(CallbackQueryHandler(catch_all_callback), group=1)
+
+    app.add_error_handler(error_handler)
+# === END PATCH ===
