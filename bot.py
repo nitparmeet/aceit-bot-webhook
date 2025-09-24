@@ -6069,12 +6069,10 @@ def main():
 if __name__ == "__main__":
     main()
 
-from telegram.ext import Application
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
 
 def register_handlers(app: Application):
-    # Paste your old "add_handler(...)" lines here.
-    # Change dp / dispatcher / tg / application  --->  app
-    # Example:
-    # dp.add_handler(CommandHandler("start", start))
-    # dp.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
+    # TEMP: keep it minimal to pass deploy
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
