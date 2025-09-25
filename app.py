@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request, HTTPException, Header
 from telegram import Update
 from telegram.ext import Application, ContextTypes
 
+
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
@@ -18,6 +19,10 @@ try:
 except Exception as e:
     # If bot.py isn't ready yet, keep the app running
     print("Handler registration skipped:", repr(e))
+
+import logging
+logger = logging.getLogger("aceit-bot")
+logger.info("✅ Handlers registered")
 
 # FastAPI lifecycle hooks
 @app.on_event("startup")
