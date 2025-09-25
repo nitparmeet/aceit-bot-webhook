@@ -6667,45 +6667,35 @@ async def on_startup(app):
         ACTIVE_CUTOFF_ROUND_DEFAULT,
     )
 # ---------- 2) WIRING: attach handlers to existing Application ----------
+
 def register_handlers(app: Application):
     """
     Attach ALL handlers here. This replaces your old Dispatcher/Updater wiring.
-    Ordering matters:
-      0: Ask follow-ups + menu entry points + basic cmds
-      1: Ask conversation (so it sees text before others)
-      2..4: Other conversations
-      9: Safety net
     """
-    from telegram.ext import (
-        Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
-    )
-
-    # Local helpers (no external dependency)
-    def _add(h, group: int = 0): 
+    def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
 
-    def _has(*names: str) -> bool:
-        g = globals()
-        return all((n in g and callable(g[n])) for n in names)
-
-    def _has_all(*names: str) -> bool:
-        g = globals()
-        return all(n in g for n in names)
-
-    # ── Group 0: specific callbacks & basic commands ───────────────────────────
+    # Single ask_more handler
     if _has("ask_followup_handler"):
         _add(CallbackQueryHandler(
             ask_followup_handler,
             pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
         ), group=0)
 
+    # Error handler
+    if _has("on_error"):
+        app.add_error_handler(on_error)
+
+    # Basic commands
     if _has("start"):
         _add(CommandHandler("start", start), group=0)
         _add(CommandHandler("menu", start), group=0)
     if _has("reset_lock"):
         _add(CommandHandler("reset", reset_lock), group=0)
+    if _has("quizdiag"):  # <- diagnostics for quiz bank
+        _add(CommandHandler("quizdiag", quizdiag), group=0)
 
-    # Admin commands (late group so they don't steal focus)
+    # Admin commands
     if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
     if _has("which_round"):         _add(CommandHandler("which_round", which_round), group=5)
     if _has("list_cutoff_sheets"):  _add(CommandHandler("list_sheets", list_cutoff_sheets), group=5)
@@ -6716,7 +6706,7 @@ def register_handlers(app: Application):
     if _has("cutdiag"):             _add(CommandHandler("cutdiag", cutdiag), group=5)
     if _has("quota_counts"):        _add(CommandHandler("quota_counts", quota_counts), group=5)
 
-    # ── Group 1: ASK conversation (priority over other text handlers) ─────────
+    # Ask (Doubt) conversation
     if _has("ask_start", "ask_subject_select", "ask_receive_photo", "ask_receive_text", "cancel") and \
        _has_all("ASK_SUBJECT", "ASK_WAIT"):
         ask_conv = ConversationHandler(
@@ -6738,7 +6728,7 @@ def register_handlers(app: Application):
         )
         _add(ask_conv, group=1)
 
-    # ── Group 2: QUIZ conversation ────────────────────────────────────────────
+    # Quiz conversation
     if _has("quiz_start", "quiz_subject", "quiz_difficulty", "quiz_size", "cancel") and \
        _has_all("QUIZ_SUBJECT", "QUIZ_DIFFICULTY", "QUIZ_SIZE", "QUIZ_RUNNING"):
         quiz_conv = ConversationHandler(
@@ -6751,7 +6741,7 @@ def register_handlers(app: Application):
                 QUIZ_DIFFICULTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_difficulty)],
                 QUIZ_SIZE:       [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_size)],
                 QUIZ_RUNNING:    [CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:")],
-            },
+            ],
             fallbacks=[CommandHandler("cancel", cancel)],
             name="quiz_conv",
             persistent=False,
@@ -6765,7 +6755,7 @@ def register_handlers(app: Application):
         if _has("quiz_predict_choice_noop"):
             _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
 
-    # ── Group 3: PREDICT conversation ─────────────────────────────────────────
+    # Predictor conversation
     if _has("predict_start", "predict_from_quiz_entry", "on_air", "on_quota", "on_category",
             "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
             "on_pref", "cancel_predict") and \
@@ -6793,7 +6783,7 @@ def register_handlers(app: Application):
         )
         _add(predict_conv, group=3)
 
-    # ── Group 4: PROFILE conversation ─────────────────────────────────────────
+    # Profile conversation
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
             "profile_set_pref", "profile_set_email", "profile_set_mobile", "profile_set_primary", "cancel") and \
        _has_all("PROFILE_MENU", "PROFILE_SET_CATEGORY", "PROFILE_SET_DOMICILE",
@@ -6814,14 +6804,14 @@ def register_handlers(app: Application):
                     MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_mobile),
                 ],
                 PROFILE_SET_PRIMARY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
-            },
+            ],
             fallbacks=[CommandHandler("cancel", cancel)],
             name="profile_conv",
             persistent=False,
         )
         _add(profile_conv, group=4)
 
-    # Coach bits (optional)
+    # AI Coach (Preference-List)
     if _has("coach_start", "coach_adjust_cb", "coach_save_cb"):
         _add(CommandHandler("coach", coach_start), group=0)
         _add(CallbackQueryHandler(coach_start, pattern=r"^menu_coach$"), group=0)
@@ -6833,10 +6823,6 @@ def register_handlers(app: Application):
     # Unknown callbacks last (safety net)
     if _has("_unknown_cb"):
         _add(CallbackQueryHandler(_unknown_cb), group=9)
-
-    # Error handler
-    if _has("on_error"):
-        app.add_error_handler(on_error)
 
     log.info("✅ Handlers registered")
 
