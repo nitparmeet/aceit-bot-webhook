@@ -6065,100 +6065,103 @@ def main():
 if __name__ == "__main__":
     main()
 
-import re, asyncio, logging
+import re, asyncio, inspect, logging
+from typing import Callable, Any
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
 logger = logging.getLogger("aceit-bot")
 
-# 1) One router for all menu_* buttons
+# 1) Map each callback_data to your EXISTING function names.
+#    Replace the right-hand side values with your real function names from your old bot.
+FEATURES_MAP: dict[str, str] = {
+    "menu_predict": "predict_college",        # e.g. your old function that returns a string
+    "menu_explain": "explain_topic",          # ← replace with your function
+    "menu_flash":   "make_flashcards",        # ← replace with your function
+    "menu_quickqa": "quick_qa",               # ← replace with your function
+    "menu_qna5":    "qna_five_related",       # ← replace with your function
+    # add more menu_* -> "function_name" as needed
+}
+
+async def _call_feature(func: Callable[..., Any], *args, **kwargs) -> Any:
+    """Run sync or async function safely. Heavy sync work is offloaded to a thread."""
+    try:
+        if inspect.iscoroutinefunction(func):
+            return await func(*args, **kwargs)
+        # If it's a normal (blocking) def, run it off the main loop
+        return await asyncio.to_thread(func, *args, **kwargs)
+    except Exception as e:
+        logger.exception("Feature handler failed")
+        return f"❌ Error: {e}"
+
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     data = (q.data or "").strip()
     logger.info("MENU callback: %s", data)
 
-    # Route by exact key
-    if data == "menu_predict":
-        await q.edit_message_text("🔮 Running prediction…")
-        # TODO: call your real prediction feature here:
-        # result = await asyncio.to_thread(predict_college, context.user_data)
-        # await context.bot.send_message(chat_id=q.message.chat_id, text=result)
-        await context.bot.send_message(chat_id=q.message.chat_id, text="(demo) prediction done ✅")
+    # find the target function name from the map
+    target_name = FEATURES_MAP.get(data)
+    if not target_name:
+        await q.edit_message_text(f"Clicked: {data} (no feature mapped)")
+        return
 
-    elif data == "menu_explain":
-        await q.edit_message_text("🧠 Explain mode (demo).")
-    elif data == "menu_flash":
-        await q.edit_message_text("⚡ Flashcards mode (demo).")
-    elif data == "menu_quickqa":
-        await q.edit_message_text("❓ Quick Q&A (demo).")
-    elif data == "menu_qna5":
-        await q.edit_message_text("5 related Q&A items (demo).")
+    # look up the function by name in this module's globals
+    target = globals().get(target_name)
+    if not callable(target):
+        await q.edit_message_text(f"⚠️ Feature '{target_name}' not found in code. Please wire it.")
+        logger.warning("Mapped function '%s' not found for %s", target_name, data)
+        return
+
+    # Let the user know we started, then run the feature
+    await q.edit_message_text("⏳ Working…")
+    result = await _call_feature(target, update, context)  # pass update/context (change if your func needs different args)
+
+    # Send result: handle string or richer returns
+    if isinstance(result, str):
+        await context.bot.send_message(chat_id=q.message.chat.id, text=result)
     else:
-        # fallback for any other menu_* value
-        await q.edit_message_text(f"Clicked: {data}")
+        # If your function returns something custom, format here
+        await context.bot.send_message(chat_id=q.message.chat.id, text=str(result))
 
-def predict_college(user_inputs: dict) -> str:
-    """
-    Replace with your real logic.
-    If you read files, use DATA_DIR like:
-        import pandas as pd
-        df = pd.read_excel(DATA_DIR / "cutoffs.xlsx")
-    """
-    # TODO: implement your real prediction and return a message string
-    return "Demo: prediction ran successfully ✅"
-
-# Async wrapper so heavy work runs off the main loop
-async def run_prediction(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
-    try:
-        # pass what you need (context.user_data, etc.)
-        result = await asyncio.to_thread(predict_college, context.user_data)
-        await context.bot.send_message(chat_id=chat_id, text=result)
-    except Exception as e:
-        logger.exception("predict_college failed")
-        await context.bot.send_message(chat_id=chat_id, text=f"❌ Error: {e}")
+# --- Keep your existing ask_more:* router if you use it ---
+async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    data = q.data or ""
+    payload = data.split(":", 1)[1] if ":" in data else "unknown"
+    await q.edit_message_text(f"✅ Got it: {payload}")
 
 
 
 # === 3) Make sure this is registered in register_handlers ===
 def register_handlers(app: Application):
-    def _add(h, group: int = 0): app.add_handler(h, group=group)
+    # small helper to keep groups tidy
+    def _add(h, group: int = 0):
+        app.add_handler(h, group=group)
 
-    # keep your existing lines here (start/help/menu/text/etc.)
-
-    # specific patterns FIRST, then catch-all
-    _add(CallbackQueryHandler(
-        menu_callback,
-        pattern=re.compile(r"^menu_")
-    ), group=0)
-
-
-    # make sure you already have an async def start(...) defined somewhere above
+    # 1) Commands
     _add(CommandHandler("start", start))
     _add(CommandHandler("help", help_cmd))
     _add(CommandHandler("menu", menu))
 
-    # text messages (non-commands)
+    # 2) Text messages (non-commands)
     _add(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # SPECIFIC callback first (pattern), then catch-all as a fallback
+    # 3) Callback queries — specific patterns FIRST
     _add(CallbackQueryHandler(
         ask_followup_handler,
         pattern=re.compile(r"^ask_more:(similar|explain|flash|quickqa|qna5)$")
     ), group=0)
 
-
-
-    # NEW: handle all menu_* callbacks
     _add(CallbackQueryHandler(
         menu_callback,
         pattern=re.compile(r"^menu_")
     ), group=0)
 
-    
-    
-    # This will catch any other callback_data so you can see what arrives
-    _add(CallbackQueryHandler(catch_all_callback), group=1)
+    # 4) Catch-all callback LAST (for anything unmatched)
+    _add(CallbackQueryHandler(catch_all_callback), group=99)
 
+    # 5) Error handler
     app.add_error_handler(error_handler)
 # === END PATCH ===
