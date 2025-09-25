@@ -580,6 +580,8 @@ OPENAI_MODEL = "gpt-4o-mini"
 
 df_candidate = None
 
+quiz_data: dict = {}
+QUIZ_JSON = os.environ.get("QUIZ_JSON", "").strip()
 
 # ---------------------- Canonical helpers (use once, globally) ----------------------
 import re
@@ -1644,78 +1646,91 @@ def _read_array_or_questions_node(data) -> list[dict]:
             out.append(item)
     return out
 
-def load_quiz_data() -> None:
+def load_quiz_data() -> bool:
     """
-    Populate global quiz_data from a JSON file.
-    Looks for (first existing in this order):
-      - $QUIZ_JSON (env var)
-      - ./quiz.json
-      - ./quiz_data.json
-      - ./quiz_data/quiz.json
-    Accepts either a subject map { "Physics":[...], ... } OR a plain list of questions.
+    Populate global `quiz_data` from quiz.json.
+    Looks in: env → same dir as bot.py → src/data → parent of src → CWD.
     """
-    global quiz_data, QUIZ_JSON_PATH
+    global quiz_data, QUIZ_JSON
 
-    here = os.path.dirname(os.path.abspath(__file__))
+    here = Path(__file__).parent              # /opt/render/project/src
+    parent = here.parent                      # /opt/render/project
+    cwd = Path.cwd()                          # usually /opt/render/project/src
+
     candidates = []
-    env_path = os.environ.get("QUIZ_JSON", "").strip()
-    if env_path:
-        candidates.append(env_path)
+    if QUIZ_JSON:
+        candidates.append(QUIZ_JSON)
     candidates += [
-        os.path.join(here, "quiz.json"),
-        os.path.join(here, "quiz_data.json"),
-        os.path.join(here, "quiz_data", "quiz.json"),
+        str(here / "quiz.json"),
+        str(here / "data" / "quiz.json"),
+        str(parent / "quiz.json"),
+        str(cwd / "quiz.json"),
     ]
 
-    # Choose first existing; if none exist, still try the first (so we can log nicely)
-    chosen = next((p for p in candidates if os.path.exists(p)), candidates[0])
-    QUIZ_JSON_PATH = chosen
-
-    raw = _load_json(chosen, fallback={})
-    bank: dict[str, list[dict]] = {}
-
-    if isinstance(raw, dict) and any(isinstance(v, list) for v in raw.values()):
-        # Subject map in a single file
-        for subj, arr in raw.items():
-            if not isinstance(arr, list):
+    for path in candidates:
+        try:
+            if not os.path.exists(path):
                 continue
-            coerced = [_quiz_coerce_item(x) for x in arr]
-            coerced = [x for x in coerced if x]
-            if coerced:
-                bank.setdefault(_quiz_norm_subject(subj), []).extend(coerced)
-    elif isinstance(raw, list):
-        # Single list → default subject bucket
-        items = [_quiz_coerce_item(x) for x in raw]
-        items = [x for x in items if x]
-        if items:
-            bank.setdefault("Neet", []).extend(items)
-    else:
-        # Not a known shape; leave bank empty
-        pass
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or not data:
+                log.warning("quiz: file found but empty/invalid dict: %s", path)
+                continue
 
-    quiz_data = bank
+            # Keep only list-valued subjects
+            cleaned = {str(k).strip(): v for k, v in data.items() if isinstance(v, list)}
 
-    # Light logging without depending on logger presence order
+            def _ok_item(it):
+                return isinstance(it, dict) and "question" in it and "options" in it and "answer" in it
+
+            valid_subjects = [s for s, arr in cleaned.items() if any(_ok_item(x) for x in arr)]
+            if not valid_subjects:
+                log.warning("quiz: no valid subjects with Qs: %s", path)
+                continue
+
+            quiz_data = cleaned
+            QUIZ_JSON = path
+            log.info("Loaded quiz subjects: %s (from %s)", valid_subjects, path)
+            return True
+        except Exception:
+            log.exception("quiz: error while reading %s", path)
+
+    quiz_data = {}
     try:
-        subjects = sorted(quiz_data.keys())
-        total = sum(len(v) for v in quiz_data.values())
-        if subjects:
-            per = ", ".join(f"{s}={len(quiz_data[s])}" for s in subjects)
-            try:
-                log.info("Loaded quiz subjects: %s", subjects)
-                log.info("Loaded %d quiz questions across %d subject(s): %s", total, len(subjects), per)
-            except Exception:
-                print(f"[quiz] Loaded subjects: {subjects}")
-                print(f"[quiz] Loaded {total} questions across {len(subjects)} subject(s): {per}")
-        else:
-            try:
-                log.info("Loaded quiz subjects: []")
-            except Exception:
-                print("[quiz] Loaded quiz subjects: []")
+        src_list = ", ".join(sorted(os.listdir(here))) if here.exists() else "?"
     except Exception:
-        pass
+        src_list = "?"
+    log.warning(
+        "quiz: quiz.json not found/usable. Checked=%s | cwd=%s | src contents=[%s]",
+        candidates, str(cwd), src_list
+    )
+    return False
 
+# Call at import
+try:
+    load_quiz_data()
+except Exception:
+    log.exception("quiz: failed to load question bank")
 
+async def quizdiag(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        subs = list(quiz_data.keys())
+        counts = {s: len(quiz_data.get(s, [])) for s in subs}
+        path = QUIZ_JSON or "(auto-located)"
+        lines = [
+            "🧪 Quiz diagnostics",
+            f"Path: {path}",
+            f"Subjects: {', '.join(subs) if subs else '(none)'}",
+            "Counts per subject:",
+        ]
+        if counts:
+            for s in sorted(counts):
+                lines.append(f"  • {s}: {counts[s]}")
+        else:
+            lines.append("  • (no data loaded)")
+        await update.effective_chat.send_message("\n".join(lines))
+    except Exception as e:
+        await update.effective_chat.send_message(f"Diag error: {e}")
         
 _CODE_COL_CANDIDATES = ["college_code", "College Code", "code", "COLLEGE_CODE"]
 
@@ -6371,7 +6386,9 @@ def main():
         _add(CommandHandler("menu", start), group=0)
     if _has("reset_lock"):
         _add(CommandHandler("reset", reset_lock), group=0)
-
+    if _has("quizdiag"):
+    _add(CommandHandler("quizdiag", quizdiag), group=0)
+    
     # --- Admin commands ---
     if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
     if _has("which_round"):         _add(CommandHandler("which_round", which_round), group=5)
