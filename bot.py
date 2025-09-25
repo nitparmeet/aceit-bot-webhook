@@ -6525,7 +6525,11 @@ def _resolve_excel_path() -> str:
 if __name__ == "__main__":
     main()
 
-import os, logging, pandas as pd, re
+# === BEGIN PATCH ===
+import os, json, time, logging, pandas as pd, re
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ConversationHandler, filters
@@ -6534,14 +6538,14 @@ from telegram.ext import (
 log = logging.getLogger("aceit-bot")
 
 # Globals your old code used
-CUTOFF_LOOKUP = {}
-COLLEGES = pd.DataFrame()
-COLLEGE_META_INDEX = {}
-CUTOFFS_DF = pd.DataFrame()
+CUTOFF_LOOKUP: Dict[str, Any] = {}
+COLLEGES: pd.DataFrame = pd.DataFrame()
+COLLEGE_META_INDEX: Dict[str, Any] = {}
+CUTOFFS_DF: pd.DataFrame = pd.DataFrame()
 
-
+# --- Paths & config ---
 REPO_DIR = Path(__file__).parent
-DEFAULT_FILENAME = "MCC_Final_with_Cutoffs_2024_2025.xlsx"   # <- your old file
+DEFAULT_FILENAME = "MCC_Final_with_Cutoffs_2024_2025.xlsx"
 DATA_DIR = REPO_DIR / "data"
 
 # Prefer EXCEL_PATH env; else default to the repo-root filename above
@@ -6549,7 +6553,12 @@ EXCEL_PATH = os.getenv("EXCEL_PATH", str(REPO_DIR / DEFAULT_FILENAME))
 # Optional: direct download URL if the file isn't in the repo
 EXCEL_URL  = os.getenv("EXCEL_URL", "")
 
-def _safe_df(v):
+# Quiz JSON
+QUIZ_JSON_PATH = os.environ.get("QUIZ_JSON_PATH", str(REPO_DIR / "quiz.json"))
+quiz_data: Dict[str, List[Dict[str, Any]]] = {}
+
+
+def _safe_df(v) -> pd.DataFrame:
     """Return a DataFrame for any input without triggering pandas truthiness errors."""
     if isinstance(v, pd.DataFrame):
         return v
@@ -6559,7 +6568,13 @@ def _safe_df(v):
         return pd.DataFrame(v)
     except Exception:
         return pd.DataFrame()
-    """Find (or download) the Excel file in common locations."""
+
+
+def _resolve_excel_path() -> str:
+    """
+    Find (or download) the Excel file in common locations.
+    Never registers handlers here. Only resolves and logs.
+    """
     candidates = [
         Path(EXCEL_PATH),
         REPO_DIR / DEFAULT_FILENAME,
@@ -6590,18 +6605,32 @@ def _safe_df(v):
     return str(candidates[0])
 
 
-def _has(*names: str) -> bool:
-    """Return True only if all given names exist and are callable."""
-    g = globals()
-    return all((n in g and callable(g[n])) for n in names)
+def load_quiz_data(path: Optional[str] = None) -> None:
+    """
+    Load quiz bank into the global `quiz_data` dict. Logs subjects.
+    Safe: never raises.
+    """
+    global quiz_data
+    p = path or QUIZ_JSON_PATH
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            quiz_data = data
+        else:
+            quiz_data = {}
+    except FileNotFoundError:
+        log.warning("quiz.json not found at %s; quiz feature will show 'No quiz data available.'", p)
+        quiz_data = {}
+    except Exception:
+        log.exception("Could not parse quiz JSON at %s", p)
+        quiz_data = {}
 
-def _has_all(*names: str) -> bool:
-    """Return True only if all given names exist (useful for state constants)."""
-    g = globals()
-    return all(n in g for n in names)
+    log.info("Loaded quiz subjects: %s (from %s)", list(quiz_data.keys()), p)
+
 
 # ---------- 1) STARTUP: load datasets once ----------
-async def on_startup(app):
+async def on_startup(app: Application):
     """
     Runs once when the FastAPI app starts.
     Loads your Excel, builds lookups/DFs, and stores CUTOFFS_DF in app.bot_data.
@@ -6609,11 +6638,12 @@ async def on_startup(app):
     """
     global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX, CUTOFFS_DF
 
+    # Resolve Excel
     excel_file = _resolve_excel_path()
 
     # 1) Load colleges
     try:
-        df = load_colleges_dataset(excel_file)
+        df = load_colleges_dataset(excel_file)  # provided elsewhere in your code
     except Exception:
         log.exception("load_colleges_dataset failed")
         df = None
@@ -6623,9 +6653,9 @@ async def on_startup(app):
     else:
         log.info("Loaded colleges: %d rows, columns=%s", len(COLLEGES), list(COLLEGES.columns))
 
-    # 2) Build name maps (don’t crash the service if it fails)
+    # 2) Build name maps
     try:
-        build_name_maps_from_colleges_df(COLLEGES)
+        build_name_maps_from_colleges_df(COLLEGES)  # provided elsewhere
     except Exception:
         log.exception("Failed building name maps from Colleges DF")
 
@@ -6634,7 +6664,7 @@ async def on_startup(app):
         CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
             path=excel_file,
             sheet="Cutoffs",
-            round_tag=ACTIVE_CUTOFF_ROUND_DEFAULT,
+            round_tag=ACTIVE_CUTOFF_ROUND_DEFAULT,   # provided elsewhere
             require_quota=None,
             require_course_contains="MBBS",
             require_category_set=("General", "EWS", "OBC", "SC", "ST"),
@@ -6647,7 +6677,7 @@ async def on_startup(app):
 
     # 3b) Normalize into CUTOFFS_DF once
     try:
-        cuts_df = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES)
+        cuts_df = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES)  # provided elsewhere
     except Exception:
         log.exception("[startup] Failed to prepare CUTOFFS_DF")
         cuts_df = None
@@ -6655,11 +6685,11 @@ async def on_startup(app):
     app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
     log.info("[startup] CUTOFFS_DF ready: %d rows", len(CUTOFFS_DF))
 
-    # Optional banner
-    try:
-        qsubs = list(quiz_data.keys())
-    except Exception:
-        qsubs = []
+    # 4) Load quiz bank exactly once
+    load_quiz_data()
+
+    # One consolidated banner
+    qsubs = list(quiz_data.keys())
     log.info(
         "Starting bot… quiz subjects: %s | colleges: %d | cutoff entries: %d (round=%s)",
         qsubs,
@@ -6667,9 +6697,20 @@ async def on_startup(app):
         len(CUTOFF_LOOKUP),
         ACTIVE_CUTOFF_ROUND_DEFAULT,
     )
-# ---------- 2) WIRING: attach handlers to existing Application ----------
 
-    if _has("cutoff_probe"):        _add(CommandHandler("cutoff_probe", cutoff_probe), group=5)
+
+def _has(*names: str) -> bool:
+    """Return True only if all given names exist and are callable."""
+    g = globals()
+    return all((n in g and callable(g[n])) for n in names)
+
+def _has_all(*names: str) -> bool:
+    """Return True only if all given names exist (useful for state constants)."""
+    g = globals()
+    return all(n in g for n in names)
+
+
+# ---------- 2) WIRING: attach handlers to existing Application ----------
 def register_handlers(app: Application):
     """
     Attach ALL handlers here. This replaces your old Dispatcher/Updater wiring.
@@ -6694,7 +6735,7 @@ def register_handlers(app: Application):
         _add(CommandHandler("menu", start), group=0)
     if _has("reset_lock"):
         _add(CommandHandler("reset", reset_lock), group=0)
-    if _has("quizdiag"):  # <- diagnostics for quiz bank
+    if _has("quizdiag"):  # diagnostics for quiz bank
         _add(CommandHandler("quizdiag", quizdiag), group=0)
 
     # Admin commands
@@ -6706,6 +6747,7 @@ def register_handlers(app: Application):
     if _has("set_cutsheet"):        _add(CommandHandler("set_cutsheet", set_cutsheet), group=5)
     if _has("cutdiag"):             _add(CommandHandler("cutdiag", cutdiag), group=5)
     if _has("quota_counts"):        _add(CommandHandler("quota_counts", quota_counts), group=5)
+    if _has("cutoff_probe"):        _add(CommandHandler("cutoff_probe", cutoff_probe), group=5)
 
     # Ask (Doubt) conversation
     if _has("ask_start", "ask_subject_select", "ask_receive_photo", "ask_receive_text", "cancel") and \
@@ -6742,7 +6784,7 @@ def register_handlers(app: Application):
                 QUIZ_DIFFICULTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_difficulty)],
                 QUIZ_SIZE:       [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_size)],
                 QUIZ_RUNNING:    [CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:")],
-            },
+            ],
             fallbacks=[CommandHandler("cancel", cancel)],
             name="quiz_conv",
             persistent=False,
@@ -6826,5 +6868,13 @@ def register_handlers(app: Application):
         _add(CallbackQueryHandler(_unknown_cb), group=9)
 
     log.info("✅ Handlers registered")
-
 # === END PATCH ===
+
+
+
+
+
+
+
+Sources
+
