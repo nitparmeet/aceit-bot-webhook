@@ -14,6 +14,7 @@ from pathlib import Path   # <-- add this line
 
 
 
+
 import contextlib
 
 
@@ -1618,7 +1619,104 @@ def _save_json(path: str, payload) -> bool:
     except Exception:
         log.exception("Could not save JSON to %s", path)
         return False
+def _merge_subject_map(dst: dict[str, list[dict]], data: dict):
+    for subj, arr in (data or {}).items():
+        if not isinstance(arr, list):
+            continue
+        subj_t = _norm_subject(str(subj))
+        items = []
+        for raw in arr:
+            item = _coerce_item(raw)
+            if item:
+                items.append(item)
+        if items:
+            dst.setdefault(subj_t, []).extend(items)
 
+def _read_array_or_questions_node(data) -> list[dict]:
+    """Accept list[...] or {'questions': [...]}."""
+    arr = data.get("questions") if isinstance(data, dict) else data
+    if not isinstance(arr, list):
+        return []
+    out = []
+    for raw in arr:
+        item = _coerce_item(raw)
+        if item:
+            out.append(item)
+    return out
+
+def load_quiz_data() -> None:
+    """
+    Populate global quiz_data from a JSON file.
+    Looks for (first existing in this order):
+      - $QUIZ_JSON (env var)
+      - ./quiz.json
+      - ./quiz_data.json
+      - ./quiz_data/quiz.json
+    Accepts either a subject map { "Physics":[...], ... } OR a plain list of questions.
+    """
+    global quiz_data, QUIZ_JSON_PATH
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = []
+    env_path = os.environ.get("QUIZ_JSON", "").strip()
+    if env_path:
+        candidates.append(env_path)
+    candidates += [
+        os.path.join(here, "quiz.json"),
+        os.path.join(here, "quiz_data.json"),
+        os.path.join(here, "quiz_data", "quiz.json"),
+    ]
+
+    # Choose first existing; if none exist, still try the first (so we can log nicely)
+    chosen = next((p for p in candidates if os.path.exists(p)), candidates[0])
+    QUIZ_JSON_PATH = chosen
+
+    raw = _load_json(chosen, fallback={})
+    bank: dict[str, list[dict]] = {}
+
+    if isinstance(raw, dict) and any(isinstance(v, list) for v in raw.values()):
+        # Subject map in a single file
+        for subj, arr in raw.items():
+            if not isinstance(arr, list):
+                continue
+            coerced = [_quiz_coerce_item(x) for x in arr]
+            coerced = [x for x in coerced if x]
+            if coerced:
+                bank.setdefault(_quiz_norm_subject(subj), []).extend(coerced)
+    elif isinstance(raw, list):
+        # Single list → default subject bucket
+        items = [_quiz_coerce_item(x) for x in raw]
+        items = [x for x in items if x]
+        if items:
+            bank.setdefault("Neet", []).extend(items)
+    else:
+        # Not a known shape; leave bank empty
+        pass
+
+    quiz_data = bank
+
+    # Light logging without depending on logger presence order
+    try:
+        subjects = sorted(quiz_data.keys())
+        total = sum(len(v) for v in quiz_data.values())
+        if subjects:
+            per = ", ".join(f"{s}={len(quiz_data[s])}" for s in subjects)
+            try:
+                log.info("Loaded quiz subjects: %s", subjects)
+                log.info("Loaded %d quiz questions across %d subject(s): %s", total, len(subjects), per)
+            except Exception:
+                print(f"[quiz] Loaded subjects: {subjects}")
+                print(f"[quiz] Loaded {total} questions across {len(subjects)} subject(s): {per}")
+        else:
+            try:
+                log.info("Loaded quiz subjects: []")
+            except Exception:
+                print("[quiz] Loaded quiz subjects: []")
+    except Exception:
+        pass
+
+
+        
 _CODE_COL_CANDIDATES = ["college_code", "College Code", "code", "COLLEGE_CODE"]
 
 
@@ -2433,7 +2531,104 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 # ========================= Quiz & Rank curve =========================
 # ========================= Quiz & Rank curve =========================
-quiz_data: Dict[str, List[Dict[str, Any]]] = _load_json("quiz.json", {})
+quiz_data: dict[str, list[dict]] = {}
+_QDIR = Path(__file__).parent / "quiz_data"
+_SINGLE_FILE_CANDIDATES = [
+    Path(__file__).parent / "quiz.json",
+    Path(__file__).parent / "quiz_data.json",
+    _QDIR / "quiz.json",
+]
+def _norm_subject(s: str) -> str:
+    return (s or "").strip().title()
+
+
+def _answer_to_1_based_str(ans, options: list[str]) -> str | None:
+    """
+    Convert various encodings to a 1-based string index ("1".."4").
+    Accepts: 0/1/2/3 or 1..4, 'A'..'D', numeric strings, or exact option text.
+    """
+    if ans is None:
+        return None
+
+    # ints first
+    if isinstance(ans, int):
+        if 0 <= ans < len(options):
+            return str(ans + 1)       # 0-based -> 1-based
+        if 1 <= ans <= len(options):
+            return str(ans)           # already 1-based
+        return None
+
+    # strings
+    s = str(ans).strip()
+    if not s:
+        return None
+    u = s.upper()
+
+    # A..D
+    if u in ("A", "B", "C", "D"):
+        return str("ABCD".index(u) + 1)
+
+    # numeric string
+    if u.isdigit():
+        n = int(u)
+        if 1 <= n <= len(options):
+            return str(n)
+        if 0 <= n < len(options):
+            return str(n + 1)
+        return None
+
+    # exact text match (case-insensitive)
+    for i, opt in enumerate(options):
+        if s.lower() == str(opt).strip().lower():
+            return str(i + 1)
+
+    return None
+
+def _coerce_item(raw: dict) -> dict | None:
+    """
+    Coerce a raw dict into your existing shape:
+      {
+        "question": str, "options": [str,str,str,str],
+        "answer": "1".."4", "difficulty": str, "tags": [..], "explanation": str
+      }
+    Return None if invalid.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    q = (raw.get("question") or raw.get("q") or "").strip()
+    if not q:
+        return None
+
+    opts = raw.get("options") or raw.get("choices") or raw.get("opts") or []
+    if not isinstance(opts, list) or len(opts) < 2:
+        return None
+    opts = [str(x).strip() for x in opts][:4]
+    while len(opts) < 4:
+        opts.append("—")
+
+    ans_raw = (
+        raw.get("answer", raw.get("ans", raw.get("correct", raw.get("correct_index", raw.get("correct_option")))))
+    )
+    ans_1b = _answer_to_1_based_str(ans_raw, opts)
+    if ans_1b is None:
+        return None
+
+    diff = (raw.get("difficulty") or raw.get("level") or "any").strip().lower()
+    tags = raw.get("tags") if isinstance(raw.get("tags"), list) else []
+    exp  = (raw.get("explanation") or raw.get("exp") or raw.get("why") or "").strip()
+
+    return {
+        "question": q,
+        "options": opts,
+        "answer": ans_1b,         # 1-based string for your existing checker
+        "difficulty": diff,
+        "tags": tags,
+        "explanation": exp,
+    }
+
+    
+
 MARK2RANK = _load_json("neet_mark_to_rank.json", None)
 log.info("Loaded quiz subjects: %s", list(quiz_data.keys()))
 
@@ -4289,6 +4484,114 @@ async def _quiz_show_question(msg_target, context: ContextTypes.DEFAULT_TYPE):
         f"Q{idx+1}/{len(qs)}: {q.get('question')}",
         reply_markup=_quiz_keyboard(opts, last=last) if opts else None
     )
+
+# ===================== QUIZ DATA (loader using your _load_json/_save_json) =====================
+import os, json, random
+
+# Global used by your quiz_* functions
+quiz_data = {}
+QUIZ_JSON_PATH = None  # resolved at load time
+
+def _quiz_norm_subject(s: str) -> str:
+    return (s or "").strip().title()
+
+def _quiz_answer_to_1_based_str(ans, options) -> str | None:
+    """
+    Convert various encodings to '1'..'4'.
+    Accepts 0/1/2/3 or 1..4, 'A'..'D', numeric strings, or exact option text.
+    """
+    if ans is None:
+        return None
+
+    # ints
+    if isinstance(ans, int):
+        if 0 <= ans < len(options):
+            return str(ans + 1)         # 0-based -> 1-based
+        if 1 <= ans <= len(options):
+            return str(ans)             # already 1-based
+        return None
+
+    s = str(ans).strip()
+    if not s:
+        return None
+    u = s.upper()
+
+    # A..D
+    if u in ("A", "B", "C", "D"):
+        return str("ABCD".index(u) + 1)
+
+    # numeric string
+    if u.isdigit():
+        n = int(u)
+        if 1 <= n <= len(options):
+            return str(n)
+        if 0 <= n < len(options):
+            return str(n + 1)
+        return None
+
+    # exact option text (case-insensitive)
+    for i, opt in enumerate(options):
+        if s.lower() == str(opt).strip().lower():
+            return str(i + 1)
+
+    return None
+
+
+
+def _quiz_coerce_item(raw: dict) -> dict | None:
+    """
+    Coerce a raw dict into your shape:
+      {
+        "question": str, "options": [str,str,str,str],
+        "answer": "1".."4", "difficulty": str, "tags": [..], "explanation": str
+      }
+    Return None if invalid.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    q = (raw.get("question") or raw.get("q") or "").strip()
+    if not q:
+        return None
+
+    opts = raw.get("options") or raw.get("choices") or raw.get("opts") or []
+    if not isinstance(opts, list) or len(opts) < 2:
+        return None
+    opts = [str(x).strip() for x in opts][:4]
+    while len(opts) < 4:
+        opts.append("—")
+
+    ans_1b = _quiz_answer_to_1_based_str(
+        raw.get("answer", raw.get("ans", raw.get("correct", raw.get("correct_index", raw.get("correct_option"))))),
+        opts
+    )
+    if ans_1b is None:
+        return None
+
+    diff = (raw.get("difficulty") or raw.get("level") or "any").strip().lower()
+    tags = raw.get("tags") if isinstance(raw.get("tags"), list) else []
+    exp  = (raw.get("explanation") or raw.get("exp") or raw.get("why") or "").strip()
+
+    return {
+        "question": q,
+        "options": opts,
+        "answer": ans_1b,         # 1-based string for your existing checker
+        "difficulty": diff,
+        "tags": tags,
+        "explanation": exp,
+    }
+
+def _quiz_read_array_or_questions_node(data) -> list[dict]:
+    """Accept list[...] or {'questions': [...]}."""
+    arr = data.get("questions") if isinstance(data, dict) else data
+    if not isinstance(arr, list):
+        return []
+    out = []
+    for raw in arr:
+        item = _quiz_coerce_item(raw)
+        if item:
+            out.append(item)
+    return out
 
 
 
