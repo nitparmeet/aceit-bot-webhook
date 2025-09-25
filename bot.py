@@ -10,8 +10,7 @@ from telegram.ext import Application
 
 
 
-log = logging.getLogger("aceit-bot")
-TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+
 
 import json
 import logging
@@ -33,6 +32,9 @@ from unidecode import unidecode
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 
+
+log = logging.getLogger("aceit-bot")
+TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 
 from dataclasses import dataclass
 
