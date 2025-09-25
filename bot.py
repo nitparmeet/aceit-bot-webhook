@@ -6386,8 +6386,9 @@ def main():
         _add(CommandHandler("menu", start), group=0)
     if _has("reset_lock"):
         _add(CommandHandler("reset", reset_lock), group=0)
-    if _has("quizdiag"):
-    _add(CommandHandler("quizdiag", quizdiag), group=0)
+
+def _resolve_excel_path() -> str:   
+    if _has("quizdiag"):    _add(CommandHandler("quizdiag", quizdiag), group=0)
     
     # --- Admin commands ---
     if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
@@ -6557,7 +6558,6 @@ def _safe_df(v):
         return pd.DataFrame(v)
     except Exception:
         return pd.DataFrame()
-def _resolve_excel_path() -> str:
     """Find (or download) the Excel file in common locations."""
     candidates = [
         Path(EXCEL_PATH),
@@ -6668,6 +6668,7 @@ async def on_startup(app):
     )
 # ---------- 2) WIRING: attach handlers to existing Application ----------
 
+    if _has("cutoff_probe"):        _add(CommandHandler("cutoff_probe", cutoff_probe), group=5)
 def register_handlers(app: Application):
     """
     Attach ALL handlers here. This replaces your old Dispatcher/Updater wiring.
@@ -6702,7 +6703,6 @@ def register_handlers(app: Application):
     if _has("use_cutoff_sheet"):    _add(CommandHandler("use_cutoff_sheet", use_cutoff_sheet), group=5)
     if _has("cutoff_headers"):      _add(CommandHandler("cutoff_headers", cutoff_headers), group=5)
     if _has("set_cutsheet"):        _add(CommandHandler("set_cutsheet", set_cutsheet), group=5)
-    if _has("cutoff_probe"):        _add(CommandHandler("cutoff_probe", cutoff_probe), group=5)
     if _has("cutdiag"):             _add(CommandHandler("cutdiag", cutdiag), group=5)
     if _has("quota_counts"):        _add(CommandHandler("quota_counts", quota_counts), group=5)
 
