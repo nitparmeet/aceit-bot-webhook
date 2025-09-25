@@ -4142,60 +4142,105 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+    """
+    Single router for:
+      ask_more:similar | ask_more:explain | ask_more:flash | ask_more:quickqa | ask_more:qna5
+
+    Uses:
+      context.user_data['ask_subject']
+      context.user_data['ask_last_question']
+      context.user_data['ask_last_answer']  (optional; set by your receive handlers)
+    """
+    from telegram.constants import ChatAction
+    import html as _html
+
     q = update.callback_query
     data = (q.data or "").strip()
     await q.answer()
-    chat = update.effective_chat
 
-    # best-effort remove inline keyboard (avoids 400 on double taps)
+    # Best-effort: remove inline keyboard (avoid 400 on double-edit)
     with contextlib.suppress(BadRequest, Exception):
-        await q.message.edit_reply_markup(reply_markup=None)
+        await q.edit_message_reply_markup(reply_markup=None)
 
+    # Pull context
     subject = context.user_data.get("ask_subject")
-    last_q  = (context.user_data.get("ask_last_question") or "").strip()
-    last_a  = (context.user_data.get("ask_last_answer") or "").strip()
+    last_q = (context.user_data.get("ask_last_question") or "").strip()
+    last_a = (context.user_data.get("ask_last_answer") or "").strip()
+
     if not last_q:
-        await chat.send_message("I lost the last question’s context. Please use /ask again.")
+        await context.bot.send_message(
+            chat_id=q.message.chat_id,
+            text="I lost the last question’s context. Please use /ask again.",
+            reply_to_message_id=q.message.message_id,
+        )
         return
 
-    # Quick Q&A
-    if data in ("ask_more:quickqa", "ask_more:qna5"):
-        from telegram.constants import ChatAction
-        with contextlib.suppress(Exception):
-            await chat.send_action(action=ChatAction.TYPING)
-        ok, html_text = await _gen_quick_qna(subject=subject, concept=last_q, n=5)
-        out = html_text if ok else "Couldn’t generate practice questions this time."
-        for part in _tg_chunks(out, 3800):
-            await chat.send_message(part, parse_mode="HTML", disable_web_page_preview=True)
-        return
+    # Helper: safe chunking for Telegram
+    def _tg_chunks(s: str, n: int = 3800):
+        s = s or ""
+        for i in range(0, len(s), n):
+            yield s[i:i+n]
 
-    # Other modes → plain text via call_openai
     mode = data.split(":", 1)[1] if ":" in data else "explain"
-    if     mode == "similar":
-        prompt = ("Create ONE NEET-style practice problem similar to the user's last problem. "
-                  "Provide a worked solution and final answer.\n\n"
-                  f"Subject: {subject or 'NEET'}\nOriginal problem:\n{last_q}\n"
-                  + (f"\nReference solution (optional):\n{last_a}\n" if last_a else ""))
-    elif   mode == "explain":
-        prompt = ("Explain the underlying concepts needed to solve this NEET problem. "
-                  "Give a brief step-by-step approach, 2 tips, and one common trap.\n\n"
-                  f"Subject: {subject or 'NEET'}\nProblem:\n{last_q}\n"
-                  + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else ""))
-    elif   mode == "flash":
-        prompt = ("Create 5 concise flashcards (Q → A) from the core ideas of this problem. "
-                  "Use numbered lines 1..5.\n\n"
-                  f"Subject: {subject or 'NEET'}\nProblem:\n{last_q}")
+
+    # --- Quick Q&A path (5 items) ---
+    if mode in ("quickqa", "qna5"):
+        with contextlib.suppress(Exception):
+            await q.message.chat.send_action(action=ChatAction.TYPING)
+        ok, text = await _gen_quick_qna(subject=subject, concept=last_q, n=5)
+        out = text if ok else "Couldn’t generate practice questions this time."
+        for part in _tg_chunks(out, 3800):
+            await context.bot.send_message(
+                chat_id=q.message.chat_id,
+                text=part,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        return
+
+    # --- Build prompts for the other follow-ups ---
+    if mode == "similar":
+        prompt = (
+            "Create ONE NEET-style practice problem similar to the user's last problem. "
+            "Keep difficulty comparable. Provide a worked solution and final answer.\n\n"
+            f"Subject: {subject or 'NEET'}\n"
+            f"Original problem:\n{last_q}\n"
+            + (f"\nReference solution (may be brief):\n{last_a}\n" if last_a else "")
+        )
+    elif mode == "explain":
+        prompt = (
+            "Explain the underlying concepts needed to solve this NEET problem. "
+            "Give a brief step-by-step approach, 2 tips, and one common trap.\n\n"
+            f"Subject: {subject or 'NEET'}\n"
+            f"Problem:\n{last_q}\n"
+            + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else "")
+        )
+    elif mode == "flash":
+        prompt = (
+            "Create 5 concise NEET flashcards from the core ideas of this problem. "
+            "Use numbered lines 1..5 in the format: Q: <prompt> | A: <short answer>.\n\n"
+            f"Subject: {subject or 'NEET'}\n"
+            f"Problem:\n{last_q}"
+        )
     else:
         prompt = f"Explain briefly:\n{last_q}"
 
-    from telegram.constants import ChatAction
     with contextlib.suppress(Exception):
-        await chat.send_action(action=ChatAction.TYPING)
+        await q.message.chat.send_action(action=ChatAction.TYPING)
 
-    out = await call_openai(prompt)
-    safe_html = html.escape(out or "Sorry—couldn’t generate that.")
+    # Call your plain-text OpenAI helper
+    out_text = await call_openai(prompt)
+    # Escape to safe HTML (we allow no rich tags here)
+    safe_html = _html.escape(out_text or "I couldn’t generate a response.")
+
     for part in _tg_chunks(safe_html, 3800):
-        await chat.send_message(part, parse_mode="HTML", disable_web_page_preview=True)
+        await context.bot.send_message(
+            chat_id=q.message.chat_id,
+            text=part,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_to_message_id=q.message.message_id,
+        )
 
 # ========================= Quiz (with review/predict prompts) =========================
 QUIZ_DIFFICULTY_KB = [["Low", "Medium", "High"], ["Any"], ["Cancel"]]
@@ -6309,28 +6354,42 @@ async def on_startup(app):
 def register_handlers(app: Application):
     """
     Attach ALL handlers here. This replaces your old Dispatcher/Updater wiring.
+    Ordering matters:
+      0: Ask follow-ups + menu entry points + basic cmds
+      1: Ask conversation (so it sees text before others)
+      2..4: Other conversations
+      9: Safety net
     """
-    def _add(h, group: int = 0): app.add_handler(h, group=group)
+    from telegram.ext import (
+        Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
+    )
 
-    # Single ask_more handler
+    # Local helpers (no external dependency)
+    def _add(h, group: int = 0): 
+        app.add_handler(h, group=group)
+
+    def _has(*names: str) -> bool:
+        g = globals()
+        return all((n in g and callable(g[n])) for n in names)
+
+    def _has_all(*names: str) -> bool:
+        g = globals()
+        return all(n in g for n in names)
+
+    # ── Group 0: specific callbacks & basic commands ───────────────────────────
     if _has("ask_followup_handler"):
         _add(CallbackQueryHandler(
             ask_followup_handler,
             pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
         ), group=0)
 
-    # Error handler
-    if _has("on_error"):
-        app.add_error_handler(on_error)
-
-    # Basic commands
     if _has("start"):
         _add(CommandHandler("start", start), group=0)
         _add(CommandHandler("menu", start), group=0)
     if _has("reset_lock"):
         _add(CommandHandler("reset", reset_lock), group=0)
 
-    # Admin commands
+    # Admin commands (late group so they don't steal focus)
     if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
     if _has("which_round"):         _add(CommandHandler("which_round", which_round), group=5)
     if _has("list_cutoff_sheets"):  _add(CommandHandler("list_sheets", list_cutoff_sheets), group=5)
@@ -6341,7 +6400,7 @@ def register_handlers(app: Application):
     if _has("cutdiag"):             _add(CommandHandler("cutdiag", cutdiag), group=5)
     if _has("quota_counts"):        _add(CommandHandler("quota_counts", quota_counts), group=5)
 
-    # Ask (Doubt) conversation
+    # ── Group 1: ASK conversation (priority over other text handlers) ─────────
     if _has("ask_start", "ask_subject_select", "ask_receive_photo", "ask_receive_text", "cancel") and \
        _has_all("ASK_SUBJECT", "ASK_WAIT"):
         ask_conv = ConversationHandler(
@@ -6363,7 +6422,7 @@ def register_handlers(app: Application):
         )
         _add(ask_conv, group=1)
 
-    # Quiz conversation
+    # ── Group 2: QUIZ conversation ────────────────────────────────────────────
     if _has("quiz_start", "quiz_subject", "quiz_difficulty", "quiz_size", "cancel") and \
        _has_all("QUIZ_SUBJECT", "QUIZ_DIFFICULTY", "QUIZ_SIZE", "QUIZ_RUNNING"):
         quiz_conv = ConversationHandler(
@@ -6390,7 +6449,7 @@ def register_handlers(app: Application):
         if _has("quiz_predict_choice_noop"):
             _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
 
-    # Predictor conversation
+    # ── Group 3: PREDICT conversation ─────────────────────────────────────────
     if _has("predict_start", "predict_from_quiz_entry", "on_air", "on_quota", "on_category",
             "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
             "on_pref", "cancel_predict") and \
@@ -6418,7 +6477,7 @@ def register_handlers(app: Application):
         )
         _add(predict_conv, group=3)
 
-    # Profile conversation
+    # ── Group 4: PROFILE conversation ─────────────────────────────────────────
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
             "profile_set_pref", "profile_set_email", "profile_set_mobile", "profile_set_primary", "cancel") and \
        _has_all("PROFILE_MENU", "PROFILE_SET_CATEGORY", "PROFILE_SET_DOMICILE",
@@ -6446,7 +6505,7 @@ def register_handlers(app: Application):
         )
         _add(profile_conv, group=4)
 
-    # AI Coach (Preference-List)
+    # Coach bits (optional)
     if _has("coach_start", "coach_adjust_cb", "coach_save_cb"):
         _add(CommandHandler("coach", coach_start), group=0)
         _add(CallbackQueryHandler(coach_start, pattern=r"^menu_coach$"), group=0)
@@ -6458,6 +6517,10 @@ def register_handlers(app: Application):
     # Unknown callbacks last (safety net)
     if _has("_unknown_cb"):
         _add(CallbackQueryHandler(_unknown_cb), group=9)
+
+    # Error handler
+    if _has("on_error"):
+        app.add_error_handler(on_error)
 
     log.info("✅ Handlers registered")
 
