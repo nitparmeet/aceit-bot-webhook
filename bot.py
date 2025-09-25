@@ -14,6 +14,9 @@ from pathlib import Path   # <-- add this line
 
 
 
+import httpx
+from telegram.error import BadRequest
+
 
 import json
 import logging
@@ -301,12 +304,12 @@ def _city_vibe_from_row(r: dict) -> str:
 def get_openai_client():
     return _get_openai_client()
 
-def _ensure_openai_client() -> OpenAI:
-    """Return a singleton OpenAI client (reused across calls)."""
-    global _client_singleton
-    if _client_singleton is None:
-        _client_singleton = OpenAI()  # picks up OPENAI_API_KEY from env
-    return _client_singleton
+def _ensure_openai_client():
+    # Only needed by ask_openai_vision/_gen_quick_qna if you use OpenAI SDK
+    from openai import OpenAI
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY not set")
+    return OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
 
 def _get_openai_client():
@@ -535,7 +538,9 @@ if not TELEGRAM_TOKEN:
 app = FastAPI()
 tg = Application.builder().token(TOKEN).build()
 
-   
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
 DATA_DIR = "data"
 EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx"  # your file
@@ -1482,6 +1487,19 @@ def _tg_html(s: str) -> str:
     s = re.sub(r"(?<=</b>)\s*b(\s|$)", r"\1", s)
 
     return s.strip()
+
+def _tg_chunks(s: str, n: int = 3800):
+    s = s or ""
+    for i in range(0, len(s), n):
+        yield s[i:i+n]
+
+def _strip_html(s: str) -> str:
+    """Turn simple HTML back into plain text for prompting."""
+    s = s or ""
+    s = re.sub(r"<\s*br\s*/?>", "\n", s, flags=re.I)
+    s = re.sub(r"<[^>]+>", "", s)
+    return html.unescape(s).strip()
+
 
 
 def _get_close_rank_from_rec(rec: dict, category: str):
@@ -3320,6 +3338,29 @@ def _subject_hint_text(subj: Optional[str]) -> str:
         return "Subject = Botany. Use NCERT terms and concise definitions."
     return ""
 
+async def call_openai(prompt: str) -> str:
+    if not OPENAI_API_KEY.startswith("sk-"):
+        log.error("ask_followup: OPENAI_API_KEY missing/invalid")
+        return "Sorry—AI isn’t configured yet."
+    try:
+        payload = {
+            "model": OPENAI_MODEL,
+            "input": prompt,           # /v1/responses accepts `input`
+            "max_output_tokens": 600,  # keep it compact for Telegram
+        }
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+        async with httpx.AsyncClient(timeout=60) as cli:
+            r = await cli.post(f"{OPENAI_BASE_URL.rstrip('/')}/responses",
+                               headers=headers, json=payload)
+            r.raise_for_status()
+            data = r.json()
+            # plain text extraction (Responses API)
+            txt = (data.get("output_text") or "").strip()
+            return txt or "I couldn’t generate a response."
+    except Exception as e:
+        log.exception("ask_followup: OpenAI error")
+        return f"Sorry—couldn’t generate that. ({type(e).__name__})"
+        
 async def quota_counts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rk = context.user_data.get("cutoff_round", ACTIVE_CUTOFF_ROUND_DEFAULT)
     per = CUTOFFS_Q.get(rk, {})
@@ -4017,94 +4058,90 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             unlock_flow(context)
 
 
-async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from telegram.constants import ChatAction
-    import contextlib
-
+async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+    """
+    Single router for:
+      ask_more:similar | ask_more:explain | ask_more:flash | ask_more:quickqa | ask_more:qna5
+    Uses:
+      context.user_data['ask_subject']
+      context.user_data['ask_last_question']
+      context.user_data['ask_last_answer']  (we set this below in receive handlers)
+    """
     q = update.callback_query
-    data = (q.data or "").strip()
+    data = (q.data or "")
     await q.answer()
 
+    # Remove buttons if still present (avoid 400 on double edit)
+    with contextlib.suppress(BadRequest, Exception):
+        await q.edit_message_reply_markup(reply_markup=None)
+
     subject = context.user_data.get("ask_subject")
-    concept = context.user_data.get("ask_last_question")
+    last_q = (context.user_data.get("ask_last_question") or "").strip()
+    last_a = (context.user_data.get("ask_last_answer") or "").strip()
 
-    if data == "ask_more:similar":
-        # ... your similar logic
+    if not last_q:
+        await context.bot.send_message(
+            q.message.chat_id,
+            "I lost the last question’s context. Please use /ask again.",
+            reply_to_message_id=q.message.message_id,
+        )
         return
 
-    if data == "ask_more:explain":
-        # ... your explain logic
-        return
+    mode = data.split(":", 1)[1] if ":" in data else "explain"
 
-    if data == "ask_more:flash":
-        # ... your flashcard logic
-        return
-
-    if data in ("ask_more:quickqa", "ask_more:qna5"):   # <-- THIS is missing
-        with contextlib.suppress(Exception):
-            await q.message.edit_reply_markup(reply_markup=None)
+    # Quick Q&A path (already implemented in your code)
+    if mode in ("quickqa", "qna5"):
+        from telegram.constants import ChatAction
         with contextlib.suppress(Exception):
             await q.message.chat.send_action(action=ChatAction.TYPING)
-
-        ok, text = await _gen_quick_qna(subject=subject, concept=concept, n=5)
-
-        txt = text if ok else "Couldn’t generate practice questions this time. Try again."
-        for i in range(0, len(txt), 3800):
-            await update.effective_chat.send_message(
-                txt[i:i+3800],
-                parse_mode="HTML",
-                disable_web_page_preview=True,
+        ok, text = await _gen_quick_qna(subject=subject, concept=last_q, n=5)
+        out = text if ok else "Couldn’t generate practice questions this time."
+        for part in _tg_chunks(out, 3800):
+            await context.bot.send_message(
+                q.message.chat_id, part, parse_mode="HTML", disable_web_page_preview=True
             )
         return
 
-    # fallback if no branch matched
-    await update.effective_chat.send_message("⚠️ Option not recognized.")
-
-
-async def ask_more_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.callback_query:
-        return
-
-    # Enforce Ask flow; bounce politely if user is in another flow
-    if not _ensure_flow_or_bounce(update, context, "ask"):
-        return
-
-    await update.callback_query.answer()
-    qdata = (update.callback_query.data or "").strip()
-
-    # Only accept our exact Ask follow-ups
-    if not re.match(r"^ask_more_(similar|explain|flashcards)$", qdata):
-        await update.callback_query.message.reply_text("That button is no longer active. Use /ask to continue.")
-        return
-
-    last_q = context.user_data.get("ask_last_question")
-    if not last_q:
-        await update.callback_query.message.reply_text("No prior question found for context. Use /ask to start.")
-        return
-
-    subject = context.user_data.get("ask_subject")
-
-    if qdata == "ask_more_similar":
+    # Build prompts for the other follow-ups
+    if mode == "similar":
         prompt = (
-            f"Create 1 NEET-style question similar to: {last_q}\n"
-            "Provide: (1) The new question (MCQ with 4 options if possible), "
-            "(2) A structured solution (Given, Approach, Steps, Final answer), "
-            "(3) 1-line why other options are wrong."
+            "Create ONE NEET-style practice problem similar to the user's last problem. "
+            "Keep difficulty comparable. Provide a worked solution and final answer.\n\n"
+            f"Subject: {subject or 'NEET'}\n"
+            f"Original problem:\n{last_q}\n"
+            + (f"\nReference solution (may be brief):\n{last_a}\n" if last_a else "")
         )
-    elif qdata == "ask_more_explain":
+    elif mode == "explain":
         prompt = (
-            f"Explain key underlying concept(s) behind: {last_q}\n"
-            "Give a crisp explanation with 2–3 memory hooks and a common trap."
+            "Explain the underlying concepts needed to solve this NEET problem. "
+            "Give a brief step-by-step approach, 2 tips, and one common trap.\n\n"
+            f"Subject: {subject or 'NEET'}\n"
+            f"Problem:\n{last_q}\n"
+            + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else "")
         )
-    else:  # ask_more_flashcards
+    elif mode == "flash":
         prompt = (
-            f"Make 5 concise NEET flashcards from the concepts involved in: {last_q}\n"
-            "Format each as: Q: <prompt> | A: <short answer>."
+            "Create 5 concise flashcards (Q → A) from the core ideas of this problem.\n"
+            "Use numbered lines 1..5.\n\n"
+            f"Subject: {subject or 'NEET'}\n"
+            f"Problem:\n{last_q}"
         )
+    else:
+        prompt = f"Explain briefly:\n{last_q}"
 
-    await update.callback_query.message.reply_text("On it… 📘")
-    ok, res = await ask_openai_vision(prompt, image_path=None, subject_hint=subject, max_tokens=700)
-    await update.callback_query.message.reply_text(res if ok else f"Error: {res}")
+    # Call OpenAI (plain text) then escape to safe HTML
+    from telegram.constants import ChatAction
+    with contextlib.suppress(Exception):
+        await q.message.chat.send_action(action=ChatAction.TYPING)
+
+    out = await call_openai(prompt)
+    safe_html = html.escape(out)
+
+    for part in _tg_chunks(safe_html, 3800):
+        await context.bot.send_message(
+            q.message.chat_id, part, parse_mode="HTML", disable_web_page_preview=True,
+            reply_to_message_id=q.message.message_id
+        )
 
 
 # ========================= Quiz (with review/predict prompts) =========================
