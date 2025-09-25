@@ -13,6 +13,8 @@ from pathlib import Path   # <-- add this line
 
 
 
+import contextlib
+
 
 import httpx
 from telegram.error import BadRequest
@@ -533,7 +535,7 @@ if not TELEGRAM_TOKEN:
 # ---------- Constants/paths ----------
 
 
-
+QUIZ_DIR = os.getenv("QUIZ_DIR", "data/quiz")  # override in Render if you like
 
 app = FastAPI()
 tg = Application.builder().token(TOKEN).build()
@@ -3338,6 +3340,43 @@ def _subject_hint_text(subj: Optional[str]) -> str:
         return "Subject = Botany. Use NCERT terms and concise definitions."
     return ""
 
+async def _ai_followup(mode: str, *, subject: str | None, concept: str) -> str:
+    """
+    mode: 'similar' | 'explain' | 'flash'
+    Returns plain text (no Markdown/LaTeX).
+    """
+    subj = (subject or "NEET").strip()
+    base_rules = (
+        "Answer in concise plain text (no Markdown/LaTeX/code fences). "
+        "Use short lines and simple bullets like '•' if needed."
+    )
+
+    if mode == "similar":
+        prompt = (
+            f"{base_rules}\n"
+            f"Create ONE {subj} question similar to: \"{concept}\".\n"
+            "If possible make it an MCQ with four options A–D.\n"
+            "Return:\n"
+            "Q: <question>\n"
+            "Options: A) ..  B) ..  C) ..  D) ..\n"
+            "Answer: <option letter>\n"
+            "Solution: 4–6 lines covering approach + a common trap."
+        )
+    elif mode == "explain":
+        prompt = (
+            f"{base_rules}\n"
+            f"Explain the core concept(s) behind: \"{concept}\" for {subj}.\n"
+            "Keep it crisp: 5–8 lines, include 2–3 memory hooks and 1 common mistake."
+        )
+    else:  # flash
+        prompt = (
+            f"{base_rules}\n"
+            f"Make 5 very concise {subj} flashcards based on: \"{concept}\".\n"
+            "Format each as: Q: <prompt> | A: <short answer>"
+        )
+
+    return await call_openai(prompt)
+
 async def call_openai(prompt: str) -> str:
     if not OPENAI_API_KEY.startswith("sk-"):
         log.error("ask_followup: OPENAI_API_KEY missing/invalid")
@@ -3936,6 +3975,9 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             ok, res = False, f"Error contacting solver: {e}"
 
+        context.user_data["ask_last_question"] = q
+        context.user_data["ask_last_answer"]  = res if ok else ""
+        
         text = _clean_to_html(res if ok else f"Error: {res}")
 
         # Try editing the “working…” message first; if that fails, fall back to sends
@@ -4023,7 +4065,10 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ok, res = False, "The solver timed out while processing the image. Please try again."
         except Exception as e:
             ok, res = False, f"Error contacting solver: {e}"
-
+        
+        context.user_data["ask_last_question"] = caption or "[image question]"
+        context.user_data["ask_last_answer"]  = res if ok else ""
+        
         text = _clean_to_html(res if ok else f"Error: {res}")
 
         try:
@@ -4059,90 +4104,60 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-    """
-    Single router for:
-      ask_more:similar | ask_more:explain | ask_more:flash | ask_more:quickqa | ask_more:qna5
-    Uses:
-      context.user_data['ask_subject']
-      context.user_data['ask_last_question']
-      context.user_data['ask_last_answer']  (we set this below in receive handlers)
-    """
     q = update.callback_query
-    data = (q.data or "")
+    data = (q.data or "").strip()
     await q.answer()
+    chat = update.effective_chat
 
-    # Remove buttons if still present (avoid 400 on double edit)
+    # best-effort remove inline keyboard (avoids 400 on double taps)
     with contextlib.suppress(BadRequest, Exception):
-        await q.edit_message_reply_markup(reply_markup=None)
+        await q.message.edit_reply_markup(reply_markup=None)
 
     subject = context.user_data.get("ask_subject")
-    last_q = (context.user_data.get("ask_last_question") or "").strip()
-    last_a = (context.user_data.get("ask_last_answer") or "").strip()
-
+    last_q  = (context.user_data.get("ask_last_question") or "").strip()
+    last_a  = (context.user_data.get("ask_last_answer") or "").strip()
     if not last_q:
-        await context.bot.send_message(
-            q.message.chat_id,
-            "I lost the last question’s context. Please use /ask again.",
-            reply_to_message_id=q.message.message_id,
-        )
+        await chat.send_message("I lost the last question’s context. Please use /ask again.")
         return
 
-    mode = data.split(":", 1)[1] if ":" in data else "explain"
-
-    # Quick Q&A path (already implemented in your code)
-    if mode in ("quickqa", "qna5"):
+    # Quick Q&A
+    if data in ("ask_more:quickqa", "ask_more:qna5"):
         from telegram.constants import ChatAction
         with contextlib.suppress(Exception):
-            await q.message.chat.send_action(action=ChatAction.TYPING)
-        ok, text = await _gen_quick_qna(subject=subject, concept=last_q, n=5)
-        out = text if ok else "Couldn’t generate practice questions this time."
+            await chat.send_action(action=ChatAction.TYPING)
+        ok, html_text = await _gen_quick_qna(subject=subject, concept=last_q, n=5)
+        out = html_text if ok else "Couldn’t generate practice questions this time."
         for part in _tg_chunks(out, 3800):
-            await context.bot.send_message(
-                q.message.chat_id, part, parse_mode="HTML", disable_web_page_preview=True
-            )
+            await chat.send_message(part, parse_mode="HTML", disable_web_page_preview=True)
         return
 
-    # Build prompts for the other follow-ups
-    if mode == "similar":
-        prompt = (
-            "Create ONE NEET-style practice problem similar to the user's last problem. "
-            "Keep difficulty comparable. Provide a worked solution and final answer.\n\n"
-            f"Subject: {subject or 'NEET'}\n"
-            f"Original problem:\n{last_q}\n"
-            + (f"\nReference solution (may be brief):\n{last_a}\n" if last_a else "")
-        )
-    elif mode == "explain":
-        prompt = (
-            "Explain the underlying concepts needed to solve this NEET problem. "
-            "Give a brief step-by-step approach, 2 tips, and one common trap.\n\n"
-            f"Subject: {subject or 'NEET'}\n"
-            f"Problem:\n{last_q}\n"
-            + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else "")
-        )
-    elif mode == "flash":
-        prompt = (
-            "Create 5 concise flashcards (Q → A) from the core ideas of this problem.\n"
-            "Use numbered lines 1..5.\n\n"
-            f"Subject: {subject or 'NEET'}\n"
-            f"Problem:\n{last_q}"
-        )
+    # Other modes → plain text via call_openai
+    mode = data.split(":", 1)[1] if ":" in data else "explain"
+    if     mode == "similar":
+        prompt = ("Create ONE NEET-style practice problem similar to the user's last problem. "
+                  "Provide a worked solution and final answer.\n\n"
+                  f"Subject: {subject or 'NEET'}\nOriginal problem:\n{last_q}\n"
+                  + (f"\nReference solution (optional):\n{last_a}\n" if last_a else ""))
+    elif   mode == "explain":
+        prompt = ("Explain the underlying concepts needed to solve this NEET problem. "
+                  "Give a brief step-by-step approach, 2 tips, and one common trap.\n\n"
+                  f"Subject: {subject or 'NEET'}\nProblem:\n{last_q}\n"
+                  + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else ""))
+    elif   mode == "flash":
+        prompt = ("Create 5 concise flashcards (Q → A) from the core ideas of this problem. "
+                  "Use numbered lines 1..5.\n\n"
+                  f"Subject: {subject or 'NEET'}\nProblem:\n{last_q}")
     else:
         prompt = f"Explain briefly:\n{last_q}"
 
-    # Call OpenAI (plain text) then escape to safe HTML
     from telegram.constants import ChatAction
     with contextlib.suppress(Exception):
-        await q.message.chat.send_action(action=ChatAction.TYPING)
+        await chat.send_action(action=ChatAction.TYPING)
 
     out = await call_openai(prompt)
-    safe_html = html.escape(out)
-
+    safe_html = html.escape(out or "Sorry—couldn’t generate that.")
     for part in _tg_chunks(safe_html, 3800):
-        await context.bot.send_message(
-            q.message.chat_id, part, parse_mode="HTML", disable_web_page_preview=True,
-            reply_to_message_id=q.message.message_id
-        )
-
+        await chat.send_message(part, parse_mode="HTML", disable_web_page_preview=True)
 
 # ========================= Quiz (with review/predict prompts) =========================
 QUIZ_DIFFICULTY_KB = [["Low", "Medium", "High"], ["Any"], ["Cancel"]]
@@ -5961,7 +5976,7 @@ def main():
         return all((n in g and callable(g[n])) for n in names)
 
    
-
+    
     
 
     # --- Error handler ---
@@ -6059,7 +6074,7 @@ def main():
             per_message=False,
         )
         _add(predict_conv, group=3)
-
+    
     # --- Profile conversation ---
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
             "profile_set_pref", "profile_set_email", "profile_set_mobile", "profile_set_primary", "cancel"):
