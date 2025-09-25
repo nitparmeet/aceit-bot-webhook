@@ -9,6 +9,8 @@ from fastapi import FastAPI, Request, HTTPException
 from telegram.ext import Application
 
 
+
+log = logging.getLogger("aceit-bot")
 TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 
 import json
@@ -6079,8 +6081,57 @@ COLLEGES = pd.DataFrame()
 COLLEGE_META_INDEX = {}
 CUTOFFS_DF = pd.DataFrame()
 
-# Use your existing path or keep a safe default
-EXCEL_PATH = os.getenv("EXCEL_PATH", "data/aceit.xlsx")
+
+REPO_DIR = Path(__file__).parent
+DEFAULT_FILENAME = "MCC_Final_with_Cutoffs_2024_2025.xlsx"   # <- your old file
+DATA_DIR = REPO_DIR / "data"
+
+# Prefer EXCEL_PATH env; else default to the repo-root filename above
+EXCEL_PATH = os.getenv("EXCEL_PATH", str(REPO_DIR / DEFAULT_FILENAME))
+# Optional: direct download URL if the file isn't in the repo
+EXCEL_URL  = os.getenv("EXCEL_URL", "")
+
+def _safe_df(v):
+    """Return a DataFrame for any input without triggering pandas truthiness errors."""
+    if isinstance(v, pd.DataFrame):
+        return v
+    if v is None:
+        return pd.DataFrame()
+    try:
+        return pd.DataFrame(v)
+    except Exception:
+        return pd.DataFrame()
+def _resolve_excel_path() -> str:
+    """Find (or download) the Excel file in common locations."""
+    candidates = [
+        Path(EXCEL_PATH),
+        REPO_DIR / DEFAULT_FILENAME,
+        DATA_DIR / DEFAULT_FILENAME,
+        DATA_DIR / "aceit.xlsx",  # legacy fallback
+    ]
+    for p in candidates:
+        if p.exists():
+            log.info("Excel found at %s", p)
+            return str(p)
+
+    if EXCEL_URL:
+        try:
+            import requests
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            dest = DATA_DIR / DEFAULT_FILENAME
+            log.info("Downloading Excel from EXCEL_URL …")
+            r = requests.get(EXCEL_URL, timeout=60)
+            r.raise_for_status()
+            dest.write_bytes(r.content)
+            log.info("Downloaded Excel to %s (%d bytes)", dest, dest.stat().st_size)
+            return str(dest)
+        except Exception:
+            log.exception("Failed to download Excel from EXCEL_URL")
+
+    log.error("Excel not found. Looked in: %s", [str(x) for x in candidates])
+    # Return the first candidate path so downstream errors mention a concrete path
+    return str(candidates[0])
+
 
 def _has(*names: str) -> bool:
     """Return True only if all given names exist and are callable."""
@@ -6093,83 +6144,72 @@ def _has_all(*names: str) -> bool:
     return all(n in g for n in names)
 
 # ---------- 1) STARTUP: load datasets once ----------
-async def on_startup(app: Application):
+async def on_startup(app):
     """
-    Runs once at service start (webhook mode). Loads your Excel,
-    builds lookups, and stores CUTOFFS_DF into app.bot_data.
+    Runs once when the FastAPI app starts.
+    Loads your Excel, builds lookups/DFs, and stores CUTOFFS_DF in app.bot_data.
+    Uses ACTIVE_CUTOFF_ROUND_DEFAULT.
     """
     global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX, CUTOFFS_DF
 
-    if not os.path.exists(EXCEL_PATH):
-        log.error("Excel not found at %s", EXCEL_PATH)
-        # keep service alive; you can raise if you prefer:
-        # raise FileNotFoundError(EXCEL_PATH)
+    excel_file = _resolve_excel_path()
 
     # 1) Load colleges
     try:
-        COLLEGES = load_colleges_dataset(EXCEL_PATH) or pd.DataFrame()
+        df = load_colleges_dataset(excel_file)
     except Exception:
         log.exception("load_colleges_dataset failed")
-        COLLEGES = pd.DataFrame()
-
+        df = None
+    COLLEGES = _safe_df(df)
     if COLLEGES.empty:
         log.warning("Loaded colleges is empty")
     else:
         log.info("Loaded colleges: %d rows, columns=%s", len(COLLEGES), list(COLLEGES.columns))
 
-    # 2) Build name maps
+    # 2) Build name maps (don’t crash the service if it fails)
     try:
         build_name_maps_from_colleges_df(COLLEGES)
     except Exception:
         log.exception("Failed building name maps from Colleges DF")
 
-    # 3) Build/Load cutoffs lookup
+    # 3) Build/Load cutoffs lookup (use your DEFAULT round)
     try:
         CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
-            path=EXCEL_PATH,
+            path=excel_file,
             sheet="Cutoffs",
-            round_tag="2025_R1",
+            round_tag=ACTIVE_CUTOFF_ROUND_DEFAULT,
             require_quota=None,
             require_course_contains="MBBS",
             require_category_set=("General", "EWS", "OBC", "SC", "ST"),
-        ) or {}
+        )
+        if not isinstance(CUTOFF_LOOKUP, dict):
+            CUTOFF_LOOKUP = dict(CUTOFF_LOOKUP or {})
     except Exception:
         log.exception("Failed to load cutoff lookup; continuing with empty")
         CUTOFF_LOOKUP = {}
 
-    # 3b) Normalize into CUTOFFS_DF
+    # 3b) Normalize into CUTOFFS_DF once
     try:
-        CUTOFFS_DF = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES) or pd.DataFrame()
-        app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
-        log.info("[startup] CUTOFFS_DF ready: %s rows", len(CUTOFFS_DF))
-        # Optional smoke test if you keep _filter_predict
-        if _has("_filter_predict") and not CUTOFFS_DF.empty:
-            try:
-                _smoke = _filter_predict(
-                    CUTOFFS_DF,
-                    rank_air=1, quota="AIQ", domicile_state=None, category="OP",
-                    course="MBBS", year=2025, round_code="2025_R1", limit=3, pwd_filter="N",
-                )
-                if _smoke is not None:
-                    log.info("[startup] AIQ smoke rows=%d", len(_smoke))
-            except Exception:
-                log.exception("[startup] AIQ smoke failed")
+        cuts_df = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES)
     except Exception:
         log.exception("[startup] Failed to prepare CUTOFFS_DF")
-        CUTOFFS_DF = pd.DataFrame()
-        app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
+        cuts_df = None
+    CUTOFFS_DF = _safe_df(cuts_df)
+    app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
+    log.info("[startup] CUTOFFS_DF ready: %d rows", len(CUTOFFS_DF))
 
+    # Optional banner
     try:
-        qsubs = list(quiz_data.keys())  # if you have quiz_data somewhere above
+        qsubs = list(quiz_data.keys())
     except Exception:
         qsubs = []
     log.info(
-        "Starting bot… quiz subjects: %s | colleges: %d | cutoff entries: %d",
+        "Starting bot… quiz subjects: %s | colleges: %d | cutoff entries: %d (round=%s)",
         qsubs,
-        (len(COLLEGES) if isinstance(COLLEGES, pd.DataFrame) else 0),
+        (0 if COLLEGES.empty else len(COLLEGES)),
         len(CUTOFF_LOOKUP),
+        ACTIVE_CUTOFF_ROUND_DEFAULT,
     )
-
 # ---------- 2) WIRING: attach handlers to existing Application ----------
 def register_handlers(app: Application):
     """
