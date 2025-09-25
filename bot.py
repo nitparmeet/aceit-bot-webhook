@@ -6065,103 +6065,265 @@ def main():
 if __name__ == "__main__":
     main()
 
-import re, asyncio, inspect, logging
-from typing import Callable, Any
-from telegram import Update
-from telegram.ext import Application, CallbackQueryHandler, ContextTypes
+import os, logging, pandas as pd, re
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ConversationHandler, filters
+)
 
-logger = logging.getLogger("aceit-bot")
+log = logging.getLogger("aceit-bot")
 
-# 1) Map each callback_data to your EXISTING function names.
-#    Replace the right-hand side values with your real function names from your old bot.
-FEATURES_MAP: dict[str, str] = {
-    "menu_predict": "predict_college",        # e.g. your old function that returns a string
-    "menu_explain": "explain_topic",          # ← replace with your function
-    "menu_flash":   "make_flashcards",        # ← replace with your function
-    "menu_quickqa": "quick_qa",               # ← replace with your function
-    "menu_qna5":    "qna_five_related",       # ← replace with your function
-    # add more menu_* -> "function_name" as needed
-}
+# Globals your old code used
+CUTOFF_LOOKUP = {}
+COLLEGES = pd.DataFrame()
+COLLEGE_META_INDEX = {}
+CUTOFFS_DF = pd.DataFrame()
 
-async def _call_feature(func: Callable[..., Any], *args, **kwargs) -> Any:
-    """Run sync or async function safely. Heavy sync work is offloaded to a thread."""
+# Use your existing path or keep a safe default
+EXCEL_PATH = os.getenv("EXCEL_PATH", "data/aceit.xlsx")
+
+def _has(*names: str) -> bool:
+    """Return True only if all given names exist and are callable."""
+    g = globals()
+    return all((n in g and callable(g[n])) for n in names)
+
+def _has_all(*names: str) -> bool:
+    """Return True only if all given names exist (useful for state constants)."""
+    g = globals()
+    return all(n in g for n in names)
+
+# ---------- 1) STARTUP: load datasets once ----------
+async def on_startup(app: Application):
+    """
+    Runs once at service start (webhook mode). Loads your Excel,
+    builds lookups, and stores CUTOFFS_DF into app.bot_data.
+    """
+    global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX, CUTOFFS_DF
+
+    if not os.path.exists(EXCEL_PATH):
+        log.error("Excel not found at %s", EXCEL_PATH)
+        # keep service alive; you can raise if you prefer:
+        # raise FileNotFoundError(EXCEL_PATH)
+
+    # 1) Load colleges
     try:
-        if inspect.iscoroutinefunction(func):
-            return await func(*args, **kwargs)
-        # If it's a normal (blocking) def, run it off the main loop
-        return await asyncio.to_thread(func, *args, **kwargs)
-    except Exception as e:
-        logger.exception("Feature handler failed")
-        return f"❌ Error: {e}"
+        COLLEGES = load_colleges_dataset(EXCEL_PATH) or pd.DataFrame()
+    except Exception:
+        log.exception("load_colleges_dataset failed")
+        COLLEGES = pd.DataFrame()
 
-async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    data = (q.data or "").strip()
-    logger.info("MENU callback: %s", data)
-
-    # find the target function name from the map
-    target_name = FEATURES_MAP.get(data)
-    if not target_name:
-        await q.edit_message_text(f"Clicked: {data} (no feature mapped)")
-        return
-
-    # look up the function by name in this module's globals
-    target = globals().get(target_name)
-    if not callable(target):
-        await q.edit_message_text(f"⚠️ Feature '{target_name}' not found in code. Please wire it.")
-        logger.warning("Mapped function '%s' not found for %s", target_name, data)
-        return
-
-    # Let the user know we started, then run the feature
-    await q.edit_message_text("⏳ Working…")
-    result = await _call_feature(target, update, context)  # pass update/context (change if your func needs different args)
-
-    # Send result: handle string or richer returns
-    if isinstance(result, str):
-        await context.bot.send_message(chat_id=q.message.chat.id, text=result)
+    if COLLEGES.empty:
+        log.warning("Loaded colleges is empty")
     else:
-        # If your function returns something custom, format here
-        await context.bot.send_message(chat_id=q.message.chat.id, text=str(result))
+        log.info("Loaded colleges: %d rows, columns=%s", len(COLLEGES), list(COLLEGES.columns))
 
-# --- Keep your existing ask_more:* router if you use it ---
-async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    data = q.data or ""
-    payload = data.split(":", 1)[1] if ":" in data else "unknown"
-    await q.edit_message_text(f"✅ Got it: {payload}")
+    # 2) Build name maps
+    try:
+        build_name_maps_from_colleges_df(COLLEGES)
+    except Exception:
+        log.exception("Failed building name maps from Colleges DF")
 
+    # 3) Build/Load cutoffs lookup
+    try:
+        CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
+            path=EXCEL_PATH,
+            sheet="Cutoffs",
+            round_tag="2025_R1",
+            require_quota=None,
+            require_course_contains="MBBS",
+            require_category_set=("General", "EWS", "OBC", "SC", "ST"),
+        ) or {}
+    except Exception:
+        log.exception("Failed to load cutoff lookup; continuing with empty")
+        CUTOFF_LOOKUP = {}
 
+    # 3b) Normalize into CUTOFFS_DF
+    try:
+        CUTOFFS_DF = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES) or pd.DataFrame()
+        app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
+        log.info("[startup] CUTOFFS_DF ready: %s rows", len(CUTOFFS_DF))
+        # Optional smoke test if you keep _filter_predict
+        if _has("_filter_predict") and not CUTOFFS_DF.empty:
+            try:
+                _smoke = _filter_predict(
+                    CUTOFFS_DF,
+                    rank_air=1, quota="AIQ", domicile_state=None, category="OP",
+                    course="MBBS", year=2025, round_code="2025_R1", limit=3, pwd_filter="N",
+                )
+                if _smoke is not None:
+                    log.info("[startup] AIQ smoke rows=%d", len(_smoke))
+            except Exception:
+                log.exception("[startup] AIQ smoke failed")
+    except Exception:
+        log.exception("[startup] Failed to prepare CUTOFFS_DF")
+        CUTOFFS_DF = pd.DataFrame()
+        app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
 
-# === 3) Make sure this is registered in register_handlers ===
+    try:
+        qsubs = list(quiz_data.keys())  # if you have quiz_data somewhere above
+    except Exception:
+        qsubs = []
+    log.info(
+        "Starting bot… quiz subjects: %s | colleges: %d | cutoff entries: %d",
+        qsubs,
+        (len(COLLEGES) if isinstance(COLLEGES, pd.DataFrame) else 0),
+        len(CUTOFF_LOOKUP),
+    )
+
+# ---------- 2) WIRING: attach handlers to existing Application ----------
 def register_handlers(app: Application):
-    # small helper to keep groups tidy
-    def _add(h, group: int = 0):
-        app.add_handler(h, group=group)
+    """
+    Attach ALL handlers here. This replaces your old Dispatcher/Updater wiring.
+    """
+    def _add(h, group: int = 0): app.add_handler(h, group=group)
 
-    # 1) Commands
-    _add(CommandHandler("start", start))
-    _add(CommandHandler("help", help_cmd))
-    _add(CommandHandler("menu", menu))
+    # Single ask_more handler
+    if _has("ask_followup_handler"):
+        _add(CallbackQueryHandler(
+            ask_followup_handler,
+            pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
+        ), group=0)
 
-    # 2) Text messages (non-commands)
-    _add(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # Error handler
+    if _has("on_error"):
+        app.add_error_handler(on_error)
 
-    # 3) Callback queries — specific patterns FIRST
-    _add(CallbackQueryHandler(
-        ask_followup_handler,
-        pattern=re.compile(r"^ask_more:(similar|explain|flash|quickqa|qna5)$")
-    ), group=0)
+    # Basic commands
+    if _has("start"):
+        _add(CommandHandler("start", start), group=0)
+        _add(CommandHandler("menu", start), group=0)
+    if _has("reset_lock"):
+        _add(CommandHandler("reset", reset_lock), group=0)
 
-    _add(CallbackQueryHandler(
-        menu_callback,
-        pattern=re.compile(r"^menu_")
-    ), group=0)
+    # Admin commands
+    if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
+    if _has("which_round"):         _add(CommandHandler("which_round", which_round), group=5)
+    if _has("list_cutoff_sheets"):  _add(CommandHandler("list_sheets", list_cutoff_sheets), group=5)
+    if _has("use_cutoff_sheet"):    _add(CommandHandler("use_cutoff_sheet", use_cutoff_sheet), group=5)
+    if _has("cutoff_headers"):      _add(CommandHandler("cutoff_headers", cutoff_headers), group=5)
+    if _has("set_cutsheet"):        _add(CommandHandler("set_cutsheet", set_cutsheet), group=5)
+    if _has("cutoff_probe"):        _add(CommandHandler("cutoff_probe", cutoff_probe), group=5)
+    if _has("cutdiag"):             _add(CommandHandler("cutdiag", cutdiag), group=5)
+    if _has("quota_counts"):        _add(CommandHandler("quota_counts", quota_counts), group=5)
 
-    # 4) Catch-all callback LAST (for anything unmatched)
-    _add(CallbackQueryHandler(catch_all_callback), group=99)
+    # Ask (Doubt) conversation
+    if _has("ask_start", "ask_subject_select", "ask_receive_photo", "ask_receive_text", "cancel") and \
+       _has_all("ASK_SUBJECT", "ASK_WAIT"):
+        ask_conv = ConversationHandler(
+            entry_points=[
+                CommandHandler("ask", ask_start),
+                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
+            ],
+            states={
+                ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
+                ASK_WAIT: [
+                    MessageHandler(filters.PHOTO, ask_receive_photo),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
+                ],
+            ],
+            fallbacks=[CommandHandler("cancel", cancel)],
+            name="ask_conv",
+            persistent=False,
+            per_message=False,
+        )
+        _add(ask_conv, group=1)
 
-    # 5) Error handler
-    app.add_error_handler(error_handler)
+    # Quiz conversation
+    if _has("quiz_start", "quiz_subject", "quiz_difficulty", "quiz_size", "cancel") and \
+       _has_all("QUIZ_SUBJECT", "QUIZ_DIFFICULTY", "QUIZ_SIZE", "QUIZ_RUNNING"):
+        quiz_conv = ConversationHandler(
+            entry_points=[
+                CommandHandler("quiz", quiz_start),
+                CallbackQueryHandler(quiz_start, pattern=r"^menu_quiz$"),
+            ],
+            states={
+                QUIZ_SUBJECT:    [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_subject)],
+                QUIZ_DIFFICULTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_difficulty)],
+                QUIZ_SIZE:       [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_size)],
+                QUIZ_RUNNING:    [CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:")],
+            ],
+            fallbacks=[CommandHandler("cancel", cancel)],
+            name="quiz_conv",
+            persistent=False,
+            per_message=False,
+        )
+        _add(quiz_conv, group=2)
+        if _has("quiz_answer"):
+            _add(CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:"), group=2)
+        if _has("quiz_review_choice"):
+            _add(CallbackQueryHandler(quiz_review_choice, pattern=r"^QUIZ_REVIEW:(yes|no)$"), group=2)
+        if _has("quiz_predict_choice_noop"):
+            _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
+
+    # Predictor conversation
+    if _has("predict_start", "predict_from_quiz_entry", "on_air", "on_quota", "on_category",
+            "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
+            "on_pref", "cancel_predict") and \
+       _has_all("ASK_AIR", "ASK_MOCK_RANK", "ASK_MOCK_SIZE", "ASK_QUOTA", "ASK_CATEGORY", "ASK_DOMICILE"):
+        predict_conv = ConversationHandler(
+            entry_points=[
+                CommandHandler("predict", predict_start),
+                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
+                CallbackQueryHandler(predict_from_quiz_entry, pattern=r"^predict_from_quiz$"),
+                CommandHandler("mockpredict", predict_mockrank_start),
+                CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
+            ],
+            states={
+                ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+                ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+                ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+                ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+                ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+                ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+            ],
+            fallbacks=[CommandHandler("cancel", cancel_predict)],
+            name="predict_conv",
+            persistent=False,
+            per_message=False,
+        )
+        _add(predict_conv, group=3)
+
+    # Profile conversation
+    if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
+            "profile_set_pref", "profile_set_email", "profile_set_mobile", "profile_set_primary", "cancel") and \
+       _has_all("PROFILE_MENU", "PROFILE_SET_CATEGORY", "PROFILE_SET_DOMICILE",
+                "PROFILE_SET_PREF", "PROFILE_SET_EMAIL", "PROFILE_SET_MOBILE", "PROFILE_SET_PRIMARY"):
+        profile_conv = ConversationHandler(
+            entry_points=[
+                CommandHandler("profile", setup_profile),
+                CallbackQueryHandler(setup_profile, pattern=r"^menu_profile$"),
+            ],
+            states={
+                PROFILE_MENU:         [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu)],
+                PROFILE_SET_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category)],
+                PROFILE_SET_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile)],
+                PROFILE_SET_PREF:     [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref)],
+                PROFILE_SET_EMAIL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email)],
+                PROFILE_SET_MOBILE: [
+                    MessageHandler(filters.CONTACT, profile_set_mobile),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_mobile),
+                ],
+                PROFILE_SET_PRIMARY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
+            ],
+            fallbacks=[CommandHandler("cancel", cancel)],
+            name="profile_conv",
+            persistent=False,
+        )
+        _add(profile_conv, group=4)
+
+    # AI Coach (Preference-List)
+    if _has("coach_start", "coach_adjust_cb", "coach_save_cb"):
+        _add(CommandHandler("coach", coach_start), group=0)
+        _add(CallbackQueryHandler(coach_start, pattern=r"^menu_coach$"), group=0)
+    if _has("coach_notes_cb"):
+        _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
+    if _has("ai_notes_from_shortlist"):
+        _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)
+
+    # Unknown callbacks last (safety net)
+    if _has("_unknown_cb"):
+        _add(CallbackQueryHandler(_unknown_cb), group=9)
+
+    log.info("✅ Handlers registered")
+
 # === END PATCH ===
