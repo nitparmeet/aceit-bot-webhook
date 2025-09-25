@@ -6386,9 +6386,10 @@ def main():
         _add(CommandHandler("menu", start), group=0)
     if _has("reset_lock"):
         _add(CommandHandler("reset", reset_lock), group=0)
+    if _has("quizdiag"):    
+        _add(CommandHandler("quizdiag", quizdiag), group=0)
 
-def _resolve_excel_path() -> str:   
-    if _has("quizdiag"):    _add(CommandHandler("quizdiag", quizdiag), group=0)
+def _resolve_excel_path() -> str:  
     
     # --- Admin commands ---
     if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
