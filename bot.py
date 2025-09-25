@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request, HTTPException
 from telegram.ext import Application
 
 
+
 from pathlib import Path   # <-- add this line
 
 
@@ -39,6 +40,8 @@ from dotenv import load_dotenv
 from unidecode import unidecode
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
+
+
 
 
 log = logging.getLogger("aceit-bot")
@@ -3377,25 +3380,60 @@ async def _ai_followup(mode: str, *, subject: str | None, concept: str) -> str:
 
     return await call_openai(prompt)
 
-async def call_openai(prompt: str) -> str:
-    if not OPENAI_API_KEY.startswith("sk-"):
+async def call_openai(prompt: str, *, model: str | None = None, max_output_tokens: int = 600) -> str:
+    """
+    Minimal REST client for the Responses API that works with raw JSON.
+    Gathers assistant text from data["output"][*]["content"][*]["text"].
+    """
+    key = OPENAI_API_KEY
+    if not key or not key.startswith("sk-"):
         log.error("ask_followup: OPENAI_API_KEY missing/invalid")
         return "Sorry—AI isn’t configured yet."
+
+    payload = {
+        "model": model or OPENAI_MODEL,
+        # Responses API expects 'input' as either a string or structured messages.
+        # A plain string is fine for simple text prompts:
+        "input": prompt,
+        "max_output_tokens": max_output_tokens,
+        "temperature": 0.3,
+        # Small style hint; optional:
+        "instructions": "You are a concise NEET helper. Use plain text only (no Markdown/LaTeX).",
+    }
+    headers = {"Authorization": f"Bearer {key}"}
+
     try:
-        payload = {
-            "model": OPENAI_MODEL,
-            "input": prompt,           # /v1/responses accepts `input`
-            "max_output_tokens": 600,  # keep it compact for Telegram
-        }
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
         async with httpx.AsyncClient(timeout=60) as cli:
             r = await cli.post(f"{OPENAI_BASE_URL.rstrip('/')}/responses",
                                headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()
-            # plain text extraction (Responses API)
-            txt = (data.get("output_text") or "").strip()
-            return txt or "I couldn’t generate a response."
+
+        # 1) SDK convenience field (won't exist in raw REST, but keep just in case)
+        txt = (data.get("output_text") or "").strip()
+
+        # 2) Robust fallback: collect from the generic 'output' array
+        if not txt:
+            parts = []
+            for item in data.get("output", []):
+                if item.get("type") == "message":
+                    for c in item.get("content", []):
+                        # typical shape: {"type": "output_text", "text": "..."}
+                        t = c.get("text")
+                        if t:
+                            parts.append(t)
+            txt = "\n".join(parts).strip()
+
+        return txt or "I couldn’t generate a response."
+    except httpx.HTTPStatusError as e:
+        # Surface useful error details
+        err_body = ""
+        try:
+            err_body = e.response.text[:400]
+        except Exception:
+            pass
+        log.exception("OpenAI HTTP error: %s %s", e, err_body)
+        return f"Sorry—couldn’t generate that. (HTTP {e.response.status_code})"
     except Exception as e:
         log.exception("ask_followup: OpenAI error")
         return f"Sorry—couldn’t generate that. ({type(e).__name__})"
