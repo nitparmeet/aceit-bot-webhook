@@ -6784,7 +6784,7 @@ def register_handlers(app: Application):
                 QUIZ_DIFFICULTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_difficulty)],
                 QUIZ_SIZE:       [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_size)],
                 QUIZ_RUNNING:    [CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:")],
-            ],
+            },
             fallbacks=[CommandHandler("cancel", cancel)],
             name="quiz_conv",
             persistent=False,
@@ -6876,5 +6876,4 @@ def register_handlers(app: Application):
 
 
 
-Sources
 
