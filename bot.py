@@ -4536,8 +4536,6 @@ def _quiz_answer_to_1_based_str(ans, options) -> str | None:
 
     return None
 
-
-
 def _quiz_coerce_item(raw: dict) -> dict | None:
     """
     Coerce a raw dict into your shape:
@@ -4580,7 +4578,6 @@ def _quiz_coerce_item(raw: dict) -> dict | None:
         "tags": tags,
         "explanation": exp,
     }
-
 def _quiz_read_array_or_questions_node(data) -> list[dict]:
     """Accept list[...] or {'questions': [...]}."""
     arr = data.get("questions") if isinstance(data, dict) else data
@@ -4592,7 +4589,6 @@ def _quiz_read_array_or_questions_node(data) -> list[dict]:
         if item:
             out.append(item)
     return out
-
 
 
 async def quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
