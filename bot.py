@@ -4785,28 +4785,40 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _quiz_show_question(query.message, context)
     return QUIZ_RUNNING
 
-def _calc_estimated_air(scaled_marks: float, category_hint: str | None) -> int | None:
+    def _calc_estimated_air(scaled_marks: float, category_hint: str | None) -> int | None:
     """
-    Return an integer AIR or None. Handles bad inputs & category aliasing.
+    Turn scaled marks (0..720) into an AIR (int). Returns None if not computable.
+    Uses your _interp_rank_from_marks, falling back to a coarse curve.
     """
     try:
         cat = canonical_category(category_hint or "General")
     except Exception:
         cat = "General"
 
+    # primary: your curve
     try:
         est = _interp_rank_from_marks(float(scaled_marks), cat)
+        if est is not None:
+            val = float(est)
+            if math.isfinite(val) and val > 0:
+                return int(round(val))
     except Exception:
         log.exception("_interp_rank_from_marks failed")
-        return None
 
+    # coarse fallback curve (kept very simple, monotonic)
     try:
-        if est is None:
-            return None
-        val = float(est)
-        if not math.isfinite(val) or val <= 0:
-            return None
-        return int(round(val))
+        m = float(scaled_marks)
+        if m <= 0:      return None
+        if m >= 700:    return 50
+        if m >= 650:    return 300
+        if m >= 600:    return 1200
+        if m >= 550:    return 3500
+        if m >= 500:    return 9000
+        if m >= 450:    return 20000
+        if m >= 400:    return 38000
+        if m >= 350:    return 65000
+        if m >= 300:    return 100000
+        return 200000
     except Exception:
         return None
         
@@ -4889,9 +4901,9 @@ async def quiz_review_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             await q.message.reply_text("Perfect score—no wrong answers to review 🎯")
 
-    # Prefer AIR from this session; else read from profile
+    # Get AIR from session → profile → recompute from stored marks (fallback)
     est = context.user_data.get("predicted_air")
-    if not isinstance(est, int):
+    if not isinstance(est, int) or est <= 0:
         prof = get_user_profile(update) or {}
         for k in ("latest_predicted_air", "rank_air", "air"):
             v = prof.get(k)
@@ -4902,6 +4914,13 @@ async def quiz_review_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if isinstance(v, int) and v > 0:
                 est = v
                 break
+    if not isinstance(est, int) or est <= 0:
+        sm = context.user_data.get("quiz_scaled_marks")
+        if sm is not None:
+            est2 = _calc_estimated_air(sm, (get_user_profile(update) or {}).get("category"))
+            if isinstance(est2, int) and est2 > 0:
+                est = est2
+                context.user_data["predicted_air"] = est
 
     if isinstance(est, int) and est > 0:
         ask_predict = InlineKeyboardMarkup([
@@ -5465,69 +5484,57 @@ def _quiz_in_progress(context) -> bool:
     # _time_up(context) already exists in your quiz code
     return (idx < len(qs)) and (not _time_up(context))
 
-async def predict_from_quiz_entry(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+async def predict_from_quiz_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Triggered by the 'Predict colleges using ~<AIR>' button.
-    - If a quiz is currently running, show an alert and ignore.
-    - Otherwise, lock to 'predict', read AIR from quiz/profile, and jump to ASK_QUOTA.
+    Entry from the 'Predict colleges using ~<AIR>' button after a quiz.
+    Seeds AIR and asks for quota. Returns ASK_QUOTA to enter the predictor flow.
     """
     q = update.callback_query
     await q.answer()
-
-    # 0) Hard guard: don't let predictor start in the middle of a quiz
-    if _quiz_in_progress(context):
-        # Pop a small alert and bail out; do NOT unlock flows here.
-        await q.answer("Finish or submit the quiz first, then tap again.", show_alert=True)
-        return ConversationHandler.END
-
-    # 1) Respect your flow lock. If another flow is active, bounce.
-    #    _ensure_flow_or_bounce(...) should send the polite message for you.
-    if not _ensure_flow_or_bounce(update, context, "predict"):
-        return ConversationHandler.END
-
-    # 2) Remove the old inline keyboard (ignore if already removed)
     with contextlib.suppress(Exception):
         await q.edit_message_reply_markup(None)
 
-    # 3) Get estimated AIR from quiz → fallback to profile
+    # find an AIR
     est = context.user_data.get("predicted_air")
-    if est is None:
+    if not isinstance(est, int) or est <= 0:
         prof = get_user_profile(update) or {}
-        est = prof.get("latest_predicted_air") or prof.get("rank_air") or prof.get("air")
-    try:
-        est = int(est) if est is not None else None
-    except Exception:
-        est = None
+        for k in ("latest_predicted_air", "rank_air", "air"):
+            v = prof.get(k)
+            try:
+                v = int(v)
+            except Exception:
+                v = None
+            if isinstance(v, int) and v > 0:
+                est = v
+                break
 
-    if not est or est <= 0:
-        await q.message.reply_text(
-            "I couldn’t find the estimated AIR from your quiz.\n"
-            "You can still run the predictor with /predict."
-        )
-        # Do not unlock here — we didn’t start predict flow.
+    # last resort from scaled marks if present
+    if not isinstance(est, int) or est <= 0:
+        sm = context.user_data.get("quiz_scaled_marks")
+        if sm is not None:
+            est2 = _calc_estimated_air(sm, (get_user_profile(update) or {}).get("category"))
+            if isinstance(est2, int) and est2 > 0:
+                est = est2
+
+    if not isinstance(est, int) or est <= 0:
+        await q.message.reply_text("I couldn’t find a valid AIR. Please use /predict.")
         return ConversationHandler.END
 
-    # 4) Seed predictor context
-    prof = get_user_profile(update) or {}
-    cat  = canonical_category(prof.get("category") or "General")
-    context.user_data.update({
-        "rank_air": est,
-        "category": cat,
-        "quota": "AIQ",
-        "round": ACTIVE_CUTOFF_ROUND_DEFAULT,
-    })
+    # seed predictor context
+    context.user_data["rank_air"] = est
+    context.user_data["quota"]    = None
+    context.user_data["category"] = canonical_category((get_user_profile(update) or {}).get("category", "General"))
+    context.user_data["round"]    = context.user_data.get("cutoff_round") or "2025_R1"
 
-    with contextlib.suppress(Exception):
-        await q.message.chat.send_action(action=ChatAction.TYPING)
-
-    # 5) Move into the predictor conversation
-    await q.message.reply_text(f"Using estimated AIR ≈ {est} from your quiz.")
     await q.message.reply_text(
-        "Choose your quota:",
+        "Select your admission quota for prediction:\n"
+        "• AIQ = All India Quota (MCC)\n"
+        "• Deemed = Deemed Universities\n"
+        "• Central = Central Universities",
         reply_markup=quota_keyboard()
     )
     return ASK_QUOTA
-
+    
 # ========== DEBUG: show loaded cutoff record for a college ==========
 async def debug_loaded_record(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
