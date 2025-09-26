@@ -4510,6 +4510,9 @@ QUIZ_JSON_PATH = None  # resolved at load time
 def _quiz_norm_subject(s: str) -> str:
     return (s or "").strip().title()
 
+
+
+
 def _quiz_answer_to_1_based_str(ans, options) -> str | None:
     """
     Convert various encodings to '1'..'4'.
@@ -4725,63 +4728,85 @@ async def quiz_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _quiz_show_question(tgt, context)
     return QUIZ_RUNNING
 
-async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def _call_finish_quiz(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+    """
+    Indirection so quiz_answer never binds _finish_quiz as a local.
+    Avoids UnboundLocalError even if something accidentally shadows the name.
+    """
+    fn = globals().get("_finish_quiz")
+    if callable(fn):
+        return await fn(update, context)
+    with contextlib.suppress(Exception):
+        await update.effective_chat.send_message("Sorry, the quiz finisher is missing.")
+    return None
+
+async def quiz_answer(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
     query = update.callback_query
     await query.answer()
+    data = (query.data or "")
 
-    if (query.data or "") == "QUIZ:SUBMIT" or _time_up(context):
-        try:
+    # Submit or time-up → finish
+    if data == "QUIZ:SUBMIT" or _time_up(context):
+        with contextlib.suppress(Exception):
             await query.edit_message_reply_markup(None)
-        except Exception:
-            pass
-        await _finish_quiz(update, context)
+        await _call_finish_quiz(update, context)
         unlock_flow(context)
         return ConversationHandler.END
 
-    data = (query.data or "")
     if not data.startswith("QUIZ:"):
         return QUIZ_RUNNING
 
+    # Parse chosen option (1..4)
     try:
-        chosen = int(data.split(":")[1])  # 1..4
+        chosen = int(data.split(":", 1)[1])
     except Exception:
         return QUIZ_RUNNING
 
-    idx = context.user_data.get("quiz_idx", 0)
-    qs = context.user_data.get("quiz_questions", [])
+    idx = int(context.user_data.get("quiz_idx", 0))
+    qs  = context.user_data.get("quiz_questions", []) or []
+
+    # Out-of-range safety → finish
     if idx >= len(qs):
-        await _finish_quiz(update, context)
+        await _call_finish_quiz(update, context)
         unlock_flow(context)
         return ConversationHandler.END
 
-    q = qs[idx]
-    options = q.get("options", []) or []
-    correct_answer = str(q.get("answer", "")).strip()
+    qobj       = qs[idx]
+    options    = qobj.get("options", []) or []
+    correct    = str(qobj.get("answer", "")).strip()  # "1".."4"
+    got_it     = (str(chosen) == correct)
 
-    got_it = (str(chosen) == correct_answer)
     if got_it:
-        context.user_data["quiz_correct"] = context.user_data.get("quiz_correct", 0) + 1
+        context.user_data["quiz_correct"] = int(context.user_data.get("quiz_correct", 0)) + 1
     else:
-        explanation = q.get("explanation")
-        context.user_data["quiz_wrong"].append({
-            "q": q.get("question"),
-            "your": options[chosen - 1] if 1 <= chosen <= len(options) else f"option {chosen}",
-            "correct": (options[int(correct_answer) - 1] if correct_answer.isdigit()
-                        and 1 <= int(correct_answer) <= len(options) else f"option {correct_answer}"),
-            "explanation": explanation
+        wrongs = context.user_data.setdefault("quiz_wrong", [])
+        your_txt = options[chosen - 1] if 1 <= chosen <= len(options) else f"option {chosen}"
+        if correct.isdigit() and 1 <= int(correct) <= len(options):
+            corr_txt = options[int(correct) - 1]
+        else:
+            corr_txt = f"option {correct}"
+        wrongs.append({
+            "q": qobj.get("question"),
+            "your": your_txt,
+            "correct": corr_txt,
+            "explanation": qobj.get("explanation")
         })
 
+    # Advance to next
     context.user_data["quiz_idx"] = idx + 1
-    try:
-        await query.edit_message_reply_markup(None)
-    except Exception:
-        pass
 
+    # Remove old buttons (ignore double-edit races)
+    with contextlib.suppress(Exception):
+        await query.edit_message_reply_markup(None)
+
+    # Last question or time-up → finish
     if context.user_data["quiz_idx"] >= len(qs) or _time_up(context):
-        await _finish_quiz(update, context)
+        await _call_finish_quiz(update, context)
         unlock_flow(context)
         return ConversationHandler.END
 
+    # Show next question
     await _quiz_show_question(query.message, context)
     return QUIZ_RUNNING
 
