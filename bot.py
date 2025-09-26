@@ -3180,7 +3180,7 @@ async def setup_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     latest_air = prof.get("latest_predicted_air", "Not set")
 
     kb = ReplyKeyboardMarkup(
-        [["Set Category", "Set Domicile"], ["Set Preference"], ["Set Email", "Set Mobile"], ["Set Primary ID"], ["Show", "Done"]],
+        [["Set Category", "Set Domicile"], ["Set Email", "Set Mobile"], ["Set Primary ID"], ["Show", "Done"]],
         one_time_keyboard=True, resize_keyboard=True
     )
     await tgt.reply_text(
@@ -3209,10 +3209,6 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = ReplyKeyboardMarkup([["Cancel"]], one_time_keyboard=True, resize_keyboard=True)
         await update.message.reply_text("Type your domicile state (e.g., Delhi, Karnataka).", reply_markup=kb)
         return PROFILE_SET_DOMICILE
-    elif text == "set preference":
-        kb = ReplyKeyboardMarkup([["Balanced", "Low Fee", "Top Ranked", "Safety First"]], one_time_keyboard=True, resize_keyboard=True)
-        await update.message.reply_text("Choose your college preference profile:", reply_markup=kb)
-        return PROFILE_SET_PREF
     elif text == "set email":
         kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
         await update.message.reply_text("Type your email (or tap Skip):", reply_markup=kb)
