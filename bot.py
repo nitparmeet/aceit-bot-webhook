@@ -68,6 +68,14 @@ _openai_client: Optional["OpenAI"] = None
 
 _client_singleton = None
 
+
+def _stack_keyboards(*markups: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
+    rows = []
+    for m in markups:
+        if isinstance(m, InlineKeyboardMarkup):
+            rows.extend(m.inline_keyboard or [])
+    return InlineKeyboardMarkup(rows) if rows else None
+
 def _safe_upper(x):
     return (str(x or "")).strip().upper()
 
@@ -4383,99 +4391,123 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
     """
-    Single router for:
+    Handles:
       ask_more:similar | ask_more:explain | ask_more:flash | ask_more:quickqa | ask_more:qna5
 
-    Uses:
-      context.user_data['ask_subject']
-      context.user_data['ask_last_question']
-      context.user_data['ask_last_answer']  (optional; set by your receive handlers)
+    Prefers quiz context from context.user_data["ask_more_ctx"], then falls back
+    to legacy context keys: ask_subject / ask_last_question / ask_last_answer.
+    Output is plain paragraphs (no asterisks/bullets), HTML-escaped for Telegram.
     """
+    # --- imports needed here to avoid NameError in some deploy flows ---
+    import contextlib, html as _html, re
     from telegram.constants import ChatAction
-    import html as _html
+    from telegram.error import BadRequest
 
     q = update.callback_query
-    data = (q.data or "").strip()
     await q.answer()
+    data = (q.data or "").strip()
 
     # Best-effort: remove inline keyboard (avoid 400 on double-edit)
     with contextlib.suppress(BadRequest, Exception):
         await q.edit_message_reply_markup(reply_markup=None)
 
-    # Pull context
-    subject = context.user_data.get("ask_subject")
-    last_q = (context.user_data.get("ask_last_question") or "").strip()
-    last_a = (context.user_data.get("ask_last_answer") or "").strip()
+    # ---- pull context (quiz-first, then legacy) ----
+    ctx_more  = context.user_data.get("ask_more_ctx") or {}
+    subject   = (
+        ctx_more.get("subject")
+        or context.user_data.get("ask_subject")
+        or context.user_data.get("quiz_subject")
+        or "NEET"
+    )
+    last_q    = (ctx_more.get("question") or context.user_data.get("ask_last_question") or "").strip()
+    last_a    = (ctx_more.get("answer_text") or context.user_data.get("ask_last_answer") or "").strip()
+    expl_hint = (ctx_more.get("explanation") or "").strip()
 
     if not last_q:
         await context.bot.send_message(
-            chat_id=q.message.chat_id,
+            chat_id=q.message.chat.id,
             text="I lost the last question’s context. Please use /ask again.",
             reply_to_message_id=q.message.message_id,
         )
         return
 
-    # Helper: safe chunking for Telegram
+    # --- helpers ---
     def _tg_chunks(s: str, n: int = 3800):
         s = s or ""
         for i in range(0, len(s), n):
             yield s[i:i+n]
 
-    mode = data.split(":", 1)[1] if ":" in data else "explain"
+    def _plainify(txt: str) -> str:
+        """Light cleanup to match 'AI notes' style: no asterisks/bullets, keep paragraphs."""
+        if not txt:
+            return ""
+        # remove markdown bold/italics markers and common bullet glyphs
+        txt = txt.replace("**", "").replace("__", "").replace("_", "")
+        txt = txt.replace("•", "")
+        # strip leading list markers like "* ", "- ", "1) ", "1. "
+        txt = re.sub(r"(?m)^\s*([*+-]|\d+[.)])\s+", "", txt)
+        # collapse >2 consecutive newlines to exactly 2 (tidy paragraphs)
+        txt = re.sub(r"\n{3,}", "\n\n", txt)
+        return txt.strip()
 
-    # --- Quick Q&A path (5 items) ---
+    mode = (data.split(":", 1)[1] if ":" in data else "explain").lower()
+
+    # --- Prompt builder with strict formatting contract ---
+    base_instructions = (
+        "Write in plain paragraphs. No asterisks, no bullets, no markdown, no code fences. "
+        "Keep it concise and readable like short notes."
+    )
+
     if mode in ("quickqa", "qna5"):
-        with contextlib.suppress(Exception):
-            await q.message.chat.send_action(action=ChatAction.TYPING)
-        ok, text = await _gen_quick_qna(subject=subject, concept=last_q, n=5)
-        out = text if ok else "Couldn’t generate practice questions this time."
-        for part in _tg_chunks(out, 3800):
-            await context.bot.send_message(
-                chat_id=q.message.chat_id,
-                text=part,
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        return
-
-    # --- Build prompts for the other follow-ups ---
-    if mode == "similar":
         prompt = (
-            "Create ONE NEET-style practice problem similar to the user's last problem. "
-            "Keep difficulty comparable. Provide a worked solution and final answer.\n\n"
-            f"Subject: {subject or 'NEET'}\n"
-            f"Original problem:\n{last_q}\n"
-            + (f"\nReference solution (may be brief):\n{last_a}\n" if last_a else "")
-        )
-    elif mode == "explain":
-        prompt = (
-            "Explain the underlying concepts needed to solve this NEET problem. "
-            "Give a brief step-by-step approach, 2 tips, and one common trap.\n\n"
-            f"Subject: {subject or 'NEET'}\n"
+            f"{base_instructions}\n"
+            f"Create five short NEET practice Q&A items based on the concept of the problem below. "
+            f"Each item should be 1–2 lines: a question then the answer on the next line. "
+            f"Separate items with a blank line. Do not number or bullet them.\n\n"
+            f"Subject: {subject}\n\n"
             f"Problem:\n{last_q}\n"
-            + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else "")
+            + (f"\nReference solution (if helpful):\n{last_a}\n" if last_a else "")
+        )
+    elif mode == "similar":
+        prompt = (
+            f"{base_instructions}\n"
+            f"Create ONE NEET-style problem similar in concept and difficulty to the original. "
+            f"Then provide a brief worked solution and final answer. Use 2–4 short paragraphs total.\n\n"
+            f"Subject: {subject}\n\n"
+            f"Original problem:\n{last_q}\n"
+            + (f"\nReference/approach (optional):\n{last_a}\n" if last_a else "")
         )
     elif mode == "flash":
         prompt = (
-            "Create 5 concise NEET flashcards from the core ideas of this problem. "
-            "Use numbered lines 1..5 in the format: Q: <prompt> | A: <short answer>.\n\n"
-            f"Subject: {subject or 'NEET'}\n"
+            f"{base_instructions}\n"
+            f"Create five concise flashcard pairs (Q then A on next line) from the core ideas in the problem. "
+            f"No numbering or bullets. Separate pairs with a blank line.\n\n"
+            f"Subject: {subject}\n\n"
             f"Problem:\n{last_q}"
         )
-    else:
-        prompt = f"Explain briefly:\n{last_q}"
+    else:  # "explain"
+        prompt = (
+            f"{base_instructions}\n"
+            f"Explain the key concepts behind solving this problem, then give a compact step-by-step approach, "
+            f"two tips, and a common pitfall—each as short paragraphs (no lists).\n\n"
+            f"Subject: {subject}\n\n"
+            f"Problem:\n{last_q}\n"
+            + (f"\nAuthor notes (optional):\n{expl_hint}\n" if expl_hint else "")
+            + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else "")
+        )
 
+    # typing indicator
     with contextlib.suppress(Exception):
         await q.message.chat.send_action(action=ChatAction.TYPING)
 
-    # Call your plain-text OpenAI helper
-    out_text = await call_openai(prompt)
-    # Escape to safe HTML (we allow no rich tags here)
-    safe_html = _html.escape(out_text or "I couldn’t generate a response.")
+    # --- llm call ---
+    raw = await call_openai(prompt)  # your helper should return plain str
+    cleaned = _plainify(raw or "Could not generate a response right now.")
+    safe_html = _html.escape(cleaned)
 
     for part in _tg_chunks(safe_html, 3800):
         await context.bot.send_message(
-            chat_id=q.message.chat_id,
+            chat_id=q.message.chat.id,
             text=part,
             parse_mode="HTML",
             disable_web_page_preview=True,
@@ -4512,6 +4544,33 @@ def _quiz_keyboard(options: List[str], last: bool = False) -> InlineKeyboardMark
     if last:
         rows.append([InlineKeyboardButton("✅ Submit test", callback_data="QUIZ:SUBMIT")])
     return InlineKeyboardMarkup(rows)
+
+def _quiz_set_followup_context(context, q: dict, subject: str | None):
+    """
+    Save the current question so 'Similar Q' / 'Explain concept' can use it.
+    Safe to call for every shown question.
+    """
+    try:
+        opts = list(q.get("options") or [])
+        ans  = str(q.get("answer") or "").strip()
+        ans_text = None
+        if ans.isdigit():
+            i = int(ans) - 1
+            if 0 <= i < len(opts):
+                ans_text = opts[i]
+
+        context.user_data["ask_more_ctx"] = {
+            "source": "quiz",
+            "subject": subject or "General",
+            "question": str(q.get("question") or ""),
+            "options": opts,
+            "answer": ans,
+            "answer_text": ans_text,
+            "explanation": q.get("explanation") or None,
+        }
+    except Exception:
+        # Don't break the quiz if anything here fails
+        pass
 
 def _time_up(context: ContextTypes.DEFAULT_TYPE) -> bool:
     deadline = context.user_data.get("quiz_deadline")
@@ -4596,30 +4655,28 @@ async def quiz_more_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _quiz_show_question(msg_target, context: ContextTypes.DEFAULT_TYPE):
     idx = context.user_data.get("quiz_idx", 0)
-    qs = context.user_data.get("quiz_questions", [])
+    qs  = context.user_data.get("quiz_questions", [])
     if idx >= len(qs):
         return
 
-    q = qs[idx]
-    opts = q.get("options", []) or []
-    last = (idx == len(qs) - 1)
+    q     = qs[idx]
+    opts  = q.get("options", []) or []
+    last  = (idx == len(qs) - 1)
 
-    # (STEP 2) save the current item so “Similar Q / Explain concept” know what to use
+    # Save context for follow-up actions
     _quiz_set_followup_context(context, q, context.user_data.get("quiz_subject"))
 
-    # (STEP 3) build the normal keyboard, then append our extra row
-    kb = _quiz_keyboard(opts, last=last) if opts else None
-    if kb and isinstance(kb, InlineKeyboardMarkup):
-        rows = list(kb.inline_keyboard)  # keep your existing option buttons
-        rows.append([
-            InlineKeyboardButton("Similar Q", callback_data="QUIZ_MORE:similar"),
-            InlineKeyboardButton("Explain concept", callback_data="QUIZ_MORE:explain"),
-        ])
-        kb = InlineKeyboardMarkup(rows)
+    # Build markup: main options + follow-up row
+    main_kb = _quiz_keyboard(opts, last=last) if opts else None
+    more_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Similar Q",       callback_data="ask_more:similar"),
+         InlineKeyboardButton("Explain concept", callback_data="ask_more:explain")]
+    ])
+    markup = _stack_keyboards(main_kb, more_kb)
 
     await msg_target.reply_text(
         f"Q{idx+1}/{len(qs)}: {q.get('question')}",
-        reply_markup=kb
+        reply_markup=markup
     )
 
 # ===================== QUIZ DATA (loader using your _load_json/_save_json) =====================
