@@ -4729,17 +4729,8 @@ async def quiz_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return QUIZ_RUNNING
 
 
-async def _call_finish_quiz(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-    """
-    Indirection so quiz_answer never binds _finish_quiz as a local.
-    Avoids UnboundLocalError even if something accidentally shadows the name.
-    """
-    fn = globals().get("_finish_quiz")
-    if callable(fn):
-        return await fn(update, context)
-    with contextlib.suppress(Exception):
-        await update.effective_chat.send_message("Sorry, the quiz finisher is missing.")
-    return None
+async def _finish_quiz(update, context):
+    return await finish_quiz_flow(update, context)
 
 async def quiz_answer(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
     """Handles each quiz tap; finishes at last question or on timeout."""
