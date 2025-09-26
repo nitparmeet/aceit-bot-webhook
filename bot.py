@@ -4785,6 +4785,32 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _quiz_show_question(query.message, context)
     return QUIZ_RUNNING
 
+def _calc_estimated_air(scaled_marks: float, category_hint: str | None) -> int | None:
+    """
+    Return an integer AIR or None. Handles bad inputs & category aliasing.
+    """
+    try:
+        cat = canonical_category(category_hint or "General")
+    except Exception:
+        cat = "General"
+
+    try:
+        est = _interp_rank_from_marks(float(scaled_marks), cat)
+    except Exception:
+        log.exception("_interp_rank_from_marks failed")
+        return None
+
+    try:
+        if est is None:
+            return None
+        val = float(est)
+        if not math.isfinite(val) or val <= 0:
+            return None
+        return int(round(val))
+    except Exception:
+        return None
+        
+
 async def _finish_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         chat_id = update.effective_chat.id
@@ -4792,26 +4818,27 @@ async def _finish_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     total = len(context.user_data.get("quiz_questions", []))
-    correct = context.user_data.get("quiz_correct", 0)
-    wrongs = context.user_data.get("quiz_wrong", [])
-    spent = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
-    limit = context.user_data.get("quiz_limit_secs", 0)
+    correct = int(context.user_data.get("quiz_correct", 0))
+    wrongs  = context.user_data.get("quiz_wrong", [])
+    spent   = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
+    limit   = int(context.user_data.get("quiz_limit_secs", 0))
 
     wrong_count = len(wrongs)
-    attempted = context.user_data.get("quiz_idx", 0)
+    attempted   = int(context.user_data.get("quiz_idx", 0))
     unattempted = max(0, total - attempted)
 
-    mock_marks = 4 * correct - 1 * wrong_count
-    scaled_neet_marks = (4 * correct - 1 * wrong_count) * (180 / total) if total > 0 else 0.0
+    mock_marks = 4 * correct - 1 * wrong_count                         # out of (4*total)
+    scaled_neet_marks = (mock_marks * 180 / total) if total > 0 else 0  # out of 720
 
-    prof = get_user_profile(update)
-    est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
-    if est_air:
-        context.user_data["predicted_air"] = int(est_air)
-        update_user_profile(update, latest_predicted_air=int(est_air))
+    # Robust AIR estimation + persist for use by the predict button
+    prof = get_user_profile(update) or {}
+    est_air = _calc_estimated_air(scaled_neet_marks, prof.get("category", "General"))
+    if isinstance(est_air, int):
+        context.user_data["predicted_air"] = est_air
+        with contextlib.suppress(Exception):
+            update_user_profile(update, latest_predicted_air=est_air)
 
-    mins = spent // 60
-    secs = spent % 60
+    mins, secs = divmod(spent, 60)
 
     header = (
         "🎉 *Test submitted!*\n"
@@ -4821,27 +4848,29 @@ async def _finish_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
         f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
     )
-    if est_air is not None:
+    if isinstance(est_air, int):
         header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
 
     await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
 
+    # Ask to review now
     context.user_data["quiz_wrongs_buffer"] = wrongs
     ask_review = InlineKeyboardMarkup([
         [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
         [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
     ])
-    await context.bot.send_message(chat_id=chat_id, text="Do you want to review answers & explanations now?",
-                                   reply_markup=ask_review)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Do you want to review answers & explanations now?",
+        reply_markup=ask_review
+    )
 
 async def quiz_review_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     choice = (q.data or "QUIZ_REVIEW:no").split(":")[-1]
-    try:
+    with contextlib.suppress(Exception):
         await q.edit_message_reply_markup(None)
-    except Exception:
-        pass
 
     if choice == "yes":
         wrongs = context.user_data.get("quiz_wrongs_buffer", [])
@@ -4860,14 +4889,29 @@ async def quiz_review_choice(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             await q.message.reply_text("Perfect score—no wrong answers to review 🎯")
 
+    # Prefer AIR from this session; else read from profile
     est = context.user_data.get("predicted_air")
-    if est:
+    if not isinstance(est, int):
+        prof = get_user_profile(update) or {}
+        for k in ("latest_predicted_air", "rank_air", "air"):
+            v = prof.get(k)
+            try:
+                v = int(v)
+            except Exception:
+                v = None
+            if isinstance(v, int) and v > 0:
+                est = v
+                break
+
+    if isinstance(est, int) and est > 0:
         ask_predict = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Predict colleges using ~{est}", callback_data="predict_from_quiz")],
             [InlineKeyboardButton("No thanks", callback_data="QUIZ_PREDICT:no")]
         ])
-        await q.message.reply_text("Do you want to run the college predictor with this estimated AIR?",
-                                   reply_markup=ask_predict)
+        await q.message.reply_text(
+            "Do you want to run the college predictor with this estimated AIR?",
+            reply_markup=ask_predict
+        )
     else:
         await q.message.reply_text("No estimated AIR available. You can still /predict manually.")
 
