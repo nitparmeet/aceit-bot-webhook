@@ -3187,7 +3187,6 @@ async def setup_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👤 *Your Profile*\n"
         f"• Category: *{cat}*\n"
         f"• Domicile: *{dom}*\n"
-        f"• Preference: *{pref}*\n"
         f"• Email: *{email}*\n"
         f"• Mobile: *{mobile}*\n"
         f"• Primary ID: *{primary}*\n"
