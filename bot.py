@@ -5412,63 +5412,76 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          reply_markup=ReplyKeyboardRemove())
     return ASK_AIR
 
+def _quiz_in_progress(context) -> bool:
+    """Return True if a quiz is currently running and time isn't up yet."""
+    qs = context.user_data.get("quiz_questions") or []
+    if not qs:
+        return False
+    idx = int(context.user_data.get("quiz_idx", 0))
+    # _time_up(context) already exists in your quiz code
+    return (idx < len(qs)) and (not _time_up(context))
+
 async def predict_from_quiz_entry(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
     """
-    Entry-point when user taps the 'Predict colleges using ~<AIR>' button after a quiz.
-    - Reads AIR from context.user_data['predicted_air'] (or profile fallback)
-    - Seeds predictor context (AIR, category, round, default quota)
-    - Jumps straight to ASK_QUOTA state
+    Triggered by the 'Predict colleges using ~<AIR>' button.
+    - If a quiz is currently running, show an alert and ignore.
+    - Otherwise, lock to 'predict', read AIR from quiz/profile, and jump to ASK_QUOTA.
     """
-    from telegram.constants import ChatAction
-    import contextlib
-
     q = update.callback_query
     await q.answer()
 
-    # Make sure we can start the Predict flow (your flow guard)
+    # 0) Hard guard: don't let predictor start in the middle of a quiz
+    if _quiz_in_progress(context):
+        # Pop a small alert and bail out; do NOT unlock flows here.
+        await q.answer("Finish or submit the quiz first, then tap again.", show_alert=True)
+        return ConversationHandler.END
+
+    # 1) Respect your flow lock. If another flow is active, bounce.
+    #    _ensure_flow_or_bounce(...) should send the polite message for you.
     if not _ensure_flow_or_bounce(update, context, "predict"):
         return ConversationHandler.END
 
-    # Clean up the old inline keyboard (ignore 400s if already edited)
+    # 2) Remove the old inline keyboard (ignore if already removed)
     with contextlib.suppress(Exception):
         await q.edit_message_reply_markup(None)
 
-    # 1) Get estimated AIR from quiz → fallback to profile if missing
+    # 3) Get estimated AIR from quiz → fallback to profile
     est = context.user_data.get("predicted_air")
     if est is None:
         prof = get_user_profile(update) or {}
         est = prof.get("latest_predicted_air") or prof.get("rank_air") or prof.get("air")
-
     try:
         est = int(est) if est is not None else None
     except Exception:
         est = None
 
-    if est is None or est <= 0:
+    if not est or est <= 0:
         await q.message.reply_text(
             "I couldn’t find the estimated AIR from your quiz.\n"
             "You can still run the predictor with /predict."
         )
-        unlock_flow(context)
+        # Do not unlock here — we didn’t start predict flow.
         return ConversationHandler.END
 
-    # 2) Seed predictor context
+    # 4) Seed predictor context
     prof = get_user_profile(update) or {}
     cat  = canonical_category(prof.get("category") or "General")
     context.user_data.update({
-        "rank_air": est,                           # used by predictor
-        "category": cat,                           # prefill from profile
-        "quota": "AIQ",                            # default; user can change next
-        "round": ACTIVE_CUTOFF_ROUND_DEFAULT,      # your default round key
+        "rank_air": est,
+        "category": cat,
+        "quota": "AIQ",
+        "round": ACTIVE_CUTOFF_ROUND_DEFAULT,
     })
 
     with contextlib.suppress(Exception):
         await q.message.chat.send_action(action=ChatAction.TYPING)
 
-    # 3) Tell the user and move to the next state in the predict convo
+    # 5) Move into the predictor conversation
     await q.message.reply_text(f"Using estimated AIR ≈ {est} from your quiz.")
-    await q.message.reply_text("Choose your quota:", reply_markup=quota_keyboard())
-
+    await q.message.reply_text(
+        "Choose your quota:",
+        reply_markup=quota_keyboard()
+    )
     return ASK_QUOTA
 
 # ========== DEBUG: show loaded cutoff record for a college ==========
