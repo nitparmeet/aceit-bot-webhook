@@ -5962,10 +5962,6 @@ async def on_bond_avoid_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     val = (q.data or "bond:any").split(":", 1)[-1]
     context.user_data["avoid_bond"] = {"yes": True, "no": False}.get(val, None)
-
-    kb = ReplyKeyboardMarkup([["Balanced", "Low Fee", "Top Ranked", "Safety First"]],
-                             one_time_keyboard=True, resize_keyboard=True)
-    await q.message.reply_text("Pick your preference profile (Choose Top Ranked for now):", reply_markup=kb)
     return ASK_PREF
 
 async def on_pg_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5982,10 +5978,6 @@ async def on_pg_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_bond_avoid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = (update.message.text or "").strip().lower()
     context.user_data["avoid_bond"] = True if t == "yes" else False if t == "no" else None
-
-    kb = ReplyKeyboardMarkup([["Balanced", "Low Fee", "Top Ranked", "Safety First"]],
-                             one_time_keyboard=True, resize_keyboard=True)
-    await update.message.reply_text("Pick your preference profile (Choose Top Ranked for now):", reply_markup=kb)
     return ASK_PREF
 
 def _pretty_website(url: str) -> str:
