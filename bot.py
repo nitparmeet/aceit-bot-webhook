@@ -3,6 +3,7 @@
 
 import os
 import re
+import secrets
 
 from fastapi import FastAPI, Request, HTTPException
 
@@ -69,6 +70,10 @@ _openai_client: Optional["OpenAI"] = None
 _client_singleton = None
 
 
+def _new_token(n=8) -> str:
+    # 8 hex chars, upper → short but unique per session
+    return secrets.token_hex(n//2).upper()
+    
 def _stack_keyboards(*markups: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
     rows = []
     for m in markups:
