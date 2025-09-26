@@ -4786,96 +4786,96 @@ async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return QUIZ_RUNNING
 
     def _calc_estimated_air(scaled_marks: float, category_hint: str | None) -> int | None:
-    """
-    Turn scaled marks (0..720) into an AIR (int). Returns None if not computable.
-    Uses your _interp_rank_from_marks, falling back to a coarse curve.
-    """
-    try:
-        cat = canonical_category(category_hint or "General")
-    except Exception:
-        cat = "General"
+        """
+        Turn scaled marks (0..720) into an AIR (int). Returns None if not computable.
+        Uses your _interp_rank_from_marks, falling back to a coarse curve.
+        """
+        try:
+            cat = canonical_category(category_hint or "General")
+        except Exception:
+            cat = "General"
 
     # primary: your curve
-    try:
-        est = _interp_rank_from_marks(float(scaled_marks), cat)
-        if est is not None:
-            val = float(est)
-            if math.isfinite(val) and val > 0:
-                return int(round(val))
-    except Exception:
-        log.exception("_interp_rank_from_marks failed")
+        try:
+            est = _interp_rank_from_marks(float(scaled_marks), cat)
+            if est is not None:
+                val = float(est)
+                if math.isfinite(val) and val > 0:
+                    return int(round(val))
+        except Exception:
+            log.exception("_interp_rank_from_marks failed")
 
-    # coarse fallback curve (kept very simple, monotonic)
-    try:
-        m = float(scaled_marks)
-        if m <= 0:      return None
-        if m >= 700:    return 50
-        if m >= 650:    return 300
-        if m >= 600:    return 1200
-        if m >= 550:    return 3500
-        if m >= 500:    return 9000
-        if m >= 450:    return 20000
-        if m >= 400:    return 38000
-        if m >= 350:    return 65000
-        if m >= 300:    return 100000
-        return 200000
-    except Exception:
-        return None
+        # coarse fallback curve (kept very simple, monotonic)
+        try:
+            m = float(scaled_marks)
+            if m <= 0:      return None
+            if m >= 700:    return 50
+            if m >= 650:    return 300
+            if m >= 600:    return 1200
+            if m >= 550:    return 3500
+            if m >= 500:    return 9000
+            if m >= 450:    return 20000
+            if m >= 400:    return 38000
+            if m >= 350:    return 65000
+            if m >= 300:    return 100000
+            return 200000
+        except Exception:
+            return None
         
 
-async def _finish_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        chat_id = update.effective_chat.id
-    except Exception:
-        return
+    async def _finish_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            chat_id = update.effective_chat.id
+        except Exception:
+            return
 
-    total = len(context.user_data.get("quiz_questions", []))
-    correct = int(context.user_data.get("quiz_correct", 0))
-    wrongs  = context.user_data.get("quiz_wrong", [])
-    spent   = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
-    limit   = int(context.user_data.get("quiz_limit_secs", 0))
+        total = len(context.user_data.get("quiz_questions", []))
+        correct = int(context.user_data.get("quiz_correct", 0))
+        wrongs  = context.user_data.get("quiz_wrong", [])
+        spent   = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
+        limit   = int(context.user_data.get("quiz_limit_secs", 0))
 
-    wrong_count = len(wrongs)
-    attempted   = int(context.user_data.get("quiz_idx", 0))
-    unattempted = max(0, total - attempted)
+        wrong_count = len(wrongs)
+        attempted   = int(context.user_data.get("quiz_idx", 0))
+        unattempted = max(0, total - attempted)
 
-    mock_marks = 4 * correct - 1 * wrong_count                         # out of (4*total)
-    scaled_neet_marks = (mock_marks * 180 / total) if total > 0 else 0  # out of 720
+        mock_marks = 4 * correct - 1 * wrong_count                         # out of (4*total)
+        scaled_neet_marks = (mock_marks * 180 / total) if total > 0 else 0  # out of 720
 
-    # Robust AIR estimation + persist for use by the predict button
-    prof = get_user_profile(update) or {}
-    est_air = _calc_estimated_air(scaled_neet_marks, prof.get("category", "General"))
-    if isinstance(est_air, int):
-        context.user_data["predicted_air"] = est_air
-        with contextlib.suppress(Exception):
-            update_user_profile(update, latest_predicted_air=est_air)
+        # Robust AIR estimation + persist for use by the predict button
+        prof = get_user_profile(update) or {}
+        est_air = _calc_estimated_air(scaled_neet_marks, prof.get("category", "General"))
+        if isinstance(est_air, int):
+            context.user_data["predicted_air"] = est_air
+            with contextlib.suppress(Exception):
+                update_user_profile(update, latest_predicted_air=est_air)
 
-    mins, secs = divmod(spent, 60)
+        mins, secs = divmod(spent, 60)
 
-    header = (
-        "🎉 *Test submitted!*\n"
-        f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempted}\n"
-        f"Correct: {correct}  |  Wrong: {wrong_count}\n"
-        f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
-        f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
-        f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
-    )
-    if isinstance(est_air, int):
-        header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
+        header = (
+            "🎉 *Test submitted!*\n"
+            f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempted}\n"
+            f"Correct: {correct}  |  Wrong: {wrong_count}\n"
+            f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
+            f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
+            f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
+        )
+        if isinstance(est_air, int):
+            header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
 
-    await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
+        await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
 
     # Ask to review now
-    context.user_data["quiz_wrongs_buffer"] = wrongs
-    ask_review = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
-        [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
-    ])
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="Do you want to review answers & explanations now?",
-        reply_markup=ask_review
-    )
+        context.user_data["quiz_wrongs_buffer"] = wrongs
+        ask_review = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
+            [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
+        ])
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Do you want to review answers & explanations now?",
+            reply_markup=ask_review
+        )
 
 async def quiz_review_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
