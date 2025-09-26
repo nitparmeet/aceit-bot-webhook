@@ -5412,6 +5412,65 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          reply_markup=ReplyKeyboardRemove())
     return ASK_AIR
 
+async def predict_from_quiz_entry(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+    """
+    Entry-point when user taps the 'Predict colleges using ~<AIR>' button after a quiz.
+    - Reads AIR from context.user_data['predicted_air'] (or profile fallback)
+    - Seeds predictor context (AIR, category, round, default quota)
+    - Jumps straight to ASK_QUOTA state
+    """
+    from telegram.constants import ChatAction
+    import contextlib
+
+    q = update.callback_query
+    await q.answer()
+
+    # Make sure we can start the Predict flow (your flow guard)
+    if not _ensure_flow_or_bounce(update, context, "predict"):
+        return ConversationHandler.END
+
+    # Clean up the old inline keyboard (ignore 400s if already edited)
+    with contextlib.suppress(Exception):
+        await q.edit_message_reply_markup(None)
+
+    # 1) Get estimated AIR from quiz → fallback to profile if missing
+    est = context.user_data.get("predicted_air")
+    if est is None:
+        prof = get_user_profile(update) or {}
+        est = prof.get("latest_predicted_air") or prof.get("rank_air") or prof.get("air")
+
+    try:
+        est = int(est) if est is not None else None
+    except Exception:
+        est = None
+
+    if est is None or est <= 0:
+        await q.message.reply_text(
+            "I couldn’t find the estimated AIR from your quiz.\n"
+            "You can still run the predictor with /predict."
+        )
+        unlock_flow(context)
+        return ConversationHandler.END
+
+    # 2) Seed predictor context
+    prof = get_user_profile(update) or {}
+    cat  = canonical_category(prof.get("category") or "General")
+    context.user_data.update({
+        "rank_air": est,                           # used by predictor
+        "category": cat,                           # prefill from profile
+        "quota": "AIQ",                            # default; user can change next
+        "round": ACTIVE_CUTOFF_ROUND_DEFAULT,      # your default round key
+    })
+
+    with contextlib.suppress(Exception):
+        await q.message.chat.send_action(action=ChatAction.TYPING)
+
+    # 3) Tell the user and move to the next state in the predict convo
+    await q.message.reply_text(f"Using estimated AIR ≈ {est} from your quiz.")
+    await q.message.reply_text("Choose your quota:", reply_markup=quota_keyboard())
+
+    return ASK_QUOTA
+
 # ========== DEBUG: show loaded cutoff record for a college ==========
 async def debug_loaded_record(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
