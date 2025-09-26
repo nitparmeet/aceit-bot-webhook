@@ -261,6 +261,7 @@ def _closing_rank_for_identifiers(identifiers: list[str],
 
     return _best_of(found) if found else None
 
+
 def _best_of(vals: list):
     """Prefer numeric (smallest). Else first non-empty str."""
     best_num = None
@@ -491,6 +492,28 @@ def hostel_badge(row) -> str:
 
     return "❓"
 
+def _notes_strip_markdown(text: str) -> str:
+    t = str(text or "")
+    t = re.sub(r'^\s{0,3}#{1,6}\s*', '', t, flags=re.M)
+    t = re.sub(r'(\*\*|__)(.+?)(\*\*|__)\s*:?$', r'\2', t, flags=re.M)
+    t = re.sub(r'(\*\*|__)(.+?)\1', r'\2', t, flags=re.S)
+    t = re.sub(r'(\*|_)(.+?)\1', r'\2', t, flags=re.S)
+    t = re.sub(r'`([^`]+)`', r'\1', t)
+    t = re.sub(r'^\s*[-*]|\s*\d+\.', '•', t, flags=re.M)
+    t = re.sub(r'\n{3,}', '\n\n', t)
+    t = re.sub(r'[ \t]+$', '', t, flags=re.M)
+    return t.strip()
+
+async def send_ai_notes(bot, chat_id: int, text: str):
+    msg = _notes_strip_markdown(text)
+    if not msg:
+        msg = "No notes available."
+    chunk = 3500
+    for i in range(0, len(msg), chunk):
+        await bot.send_message(chat_id=chat_id, text=msg[i:i+chunk], parse_mode=None, disable_web_page_preview=True)
+
+
+        
 def _cleanup_latex(s: str) -> str:
     # remove display math markers
     s = re.sub(r"\\\[|\\\]", "", s)
@@ -4494,17 +4517,109 @@ def _time_up(context: ContextTypes.DEFAULT_TYPE) -> bool:
     deadline = context.user_data.get("quiz_deadline")
     return bool(deadline and time.time() >= deadline)
 
+
+def _format_mcq_block(item: dict, title="Similar practice") -> str:
+    q = str(item.get("question") or "").strip()
+    opts = item.get("options") or []
+    bullets = "\n".join([f"• {chr(65+i)}) {o}" for i, o in enumerate(opts)])
+    return f"{title}\n\nQ: {q}\n\n{bullets}".strip()
+
+def _pick_similar(item: dict, subject: str | None) -> dict | None:
+    pool = (quiz_data.get(subject) or []) if subject else []
+    if not pool:
+        return None
+
+    # Prefer same topic/chapter if provided
+    topic = (item.get("topic") or "").strip().lower()
+    if topic:
+        cands = [x for x in pool if (x.get("topic") or x.get("chapter") or "").strip().lower() == topic]
+        cands = [x for x in cands if (x.get("question") or "") != (item.get("question") or "")]
+        if cands:
+            return random.choice(cands)
+
+    # Else: fuzzy on question text to avoid the same one
+    base = (item.get("question") or "")
+    scored = []
+    for x in pool:
+        q2 = x.get("question") or ""
+        if q2.strip() == base.strip():
+            continue
+        score = difflib.SequenceMatcher(None, base, q2).ratio()
+        scored.append((score, x))
+    scored.sort(reverse=True)
+    return (scored[0][1] if scored else random.choice(pool))
+
+def _format_concept_note(item: dict) -> str:
+    q = (item.get("question") or "").strip()
+    exp = (item.get("explanation") or "").strip()
+    if not exp:
+        exp = "No detailed explanation saved for this question yet."
+
+    lines = [
+        "Concept explainer",
+        "",
+        f"Prompt question: {q}",
+        "",
+        "Key points:",
+        "• What’s being tested: identify the principle/definition implied in the prompt.",
+        "• Typical approach: read the stem, map it to the rule/formula, then eliminate distractors.",
+    ]
+    # include saved explanation last
+    if exp:
+        lines += ["", "Worked reasoning:", exp]
+    return "\n".join(lines).strip()
+
+async def quiz_more_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    await _safe_clear_markup(q)
+
+    action = (q.data or "").split(":")[-1]
+    item = context.user_data.get("last_quiz_item") or {}
+    subject = item.get("subject") or context.user_data.get("quiz_subject")
+
+    if action == "similar":
+        sim = _pick_similar(item, subject)
+        if not sim:
+            await send_ai_notes(context.bot, q.message.chat.id, "No similar question found.")
+            return QUIZ_RUNNING
+        text = _format_mcq_block(sim, title="Similar practice")
+        await send_ai_notes(context.bot, q.message.chat.id, text)
+        return QUIZ_RUNNING
+
+    if action == "explain":
+        note = _format_concept_note(item)
+        await send_ai_notes(context.bot, q.message.chat.id, note)
+        return QUIZ_RUNNING
+
+    return QUIZ_RUNNING
+
 async def _quiz_show_question(msg_target, context: ContextTypes.DEFAULT_TYPE):
     idx = context.user_data.get("quiz_idx", 0)
     qs = context.user_data.get("quiz_questions", [])
     if idx >= len(qs):
         return
+
     q = qs[idx]
     opts = q.get("options", []) or []
     last = (idx == len(qs) - 1)
+
+    # (STEP 2) save the current item so “Similar Q / Explain concept” know what to use
+    _quiz_set_followup_context(context, q, context.user_data.get("quiz_subject"))
+
+    # (STEP 3) build the normal keyboard, then append our extra row
+    kb = _quiz_keyboard(opts, last=last) if opts else None
+    if kb and isinstance(kb, InlineKeyboardMarkup):
+        rows = list(kb.inline_keyboard)  # keep your existing option buttons
+        rows.append([
+            InlineKeyboardButton("Similar Q", callback_data="QUIZ_MORE:similar"),
+            InlineKeyboardButton("Explain concept", callback_data="QUIZ_MORE:explain"),
+        ])
+        kb = InlineKeyboardMarkup(rows)
+
     await msg_target.reply_text(
         f"Q{idx+1}/{len(qs)}: {q.get('question')}",
-        reply_markup=_quiz_keyboard(opts, last=last) if opts else None
+        reply_markup=kb
     )
 
 # ===================== QUIZ DATA (loader using your _load_json/_save_json) =====================
