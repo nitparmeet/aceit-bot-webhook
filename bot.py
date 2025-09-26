@@ -601,6 +601,13 @@ def _trim(s: str, n: int = 140) -> str:
     s = str(s or "")
     return s if len(s) <= n else s[: n - 1] + "…"
 
+async def _safe_clear_markup(query):
+    try:
+        await query.edit_message_reply_markup(None)
+    except BadRequest:
+        pass
+    except Exception:
+        pass
 
 def _to_int(x):
     try:
@@ -4729,72 +4736,60 @@ async def quiz_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return QUIZ_RUNNING
 
 
-async def _finish_quiz(update, context):
-    return await finish_quiz_flow(update, context)
 
-async def quiz_answer(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-    """Handles each quiz tap; finishes at last question or on timeout."""
+async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    data = (query.data or "")
 
-    # Submit or timeout → finalize
-    if data == "QUIZ:SUBMIT" or _time_up(context):
-        with contextlib.suppress(BadRequest, Exception):
-            await query.edit_message_reply_markup(None)
-        await finish_quiz_flow(update, context)   # <— renamed (no local var collision)
+    if (query.data or "") == "QUIZ:SUBMIT" or _time_up(context):
+        await _safe_clear_markup(query)
+        await _quiz_finish(update, context)
+        unlock_flow(context)
         return ConversationHandler.END
 
+    data = (query.data or "")
     if not data.startswith("QUIZ:"):
         return QUIZ_RUNNING
 
-    # parse chosen option
     try:
-        chosen = int(data.split(":", 1)[1])  # 1..4
+        chosen = int(data.split(":")[1])  # 1..4
     except Exception:
         return QUIZ_RUNNING
 
-    idx = int(context.user_data.get("quiz_idx", 0))
+    idx = context.user_data.get("quiz_idx", 0)
     qs  = context.user_data.get("quiz_questions", []) or []
-
-    # If out of range → finish
     if idx >= len(qs):
-        await finish_quiz_flow(update, context)
+        await _safe_clear_markup(query)
+        await _quiz_finish(update, context)
+        unlock_flow(context)
         return ConversationHandler.END
 
-    qobj    = qs[idx]
-    options = qobj.get("options", []) or []
-    answer  = str(qobj.get("answer", "")).strip()
+    q = qs[idx]
+    options        = q.get("options", []) or []
+    correct_answer = str(q.get("answer", "")).strip()
 
-    if str(chosen) == answer:
+    got_it = (str(chosen) == correct_answer)
+    if got_it:
         context.user_data["quiz_correct"] = int(context.user_data.get("quiz_correct", 0)) + 1
     else:
+        explanation = q.get("explanation")
         wrongs = context.user_data.setdefault("quiz_wrong", [])
-        your_txt = options[chosen - 1] if 1 <= chosen <= len(options) else f"option {chosen}"
-        corr_txt = (
-            options[int(answer) - 1] if answer.isdigit() and 1 <= int(answer) <= len(options)
-            else f"option {answer}"
-        )
         wrongs.append({
-            "q": qobj.get("question"),
-            "your": your_txt,
-            "correct": corr_txt,
-            "explanation": qobj.get("explanation")
+            "q": q.get("question"),
+            "your": options[chosen - 1] if 1 <= chosen <= len(options) else f"option {chosen}",
+            "correct": (options[int(correct_answer) - 1] if correct_answer.isdigit()
+                        and 1 <= int(correct_answer) <= len(options) else f"option {correct_answer}"),
+            "explanation": explanation
         })
 
-    # advance
     context.user_data["quiz_idx"] = idx + 1
+    await _safe_clear_markup(query)
 
-    # remove old buttons; ignore duplicate edits
-    with contextlib.suppress(BadRequest, Exception):
-        await query.edit_message_reply_markup(None)
-
-    # last Q or timeout → finalize
     if context.user_data["quiz_idx"] >= len(qs) or _time_up(context):
-        await finish_quiz_flow(update, context)
+        await _quiz_finish(update, context)
+        unlock_flow(context)
         return ConversationHandler.END
 
-    # else next question
     await _quiz_show_question(query.message, context)
     return QUIZ_RUNNING
     
@@ -4836,74 +4831,67 @@ async def quiz_answer(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
             return None
         
 
-    async def finish_quiz_flow(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-        """Compute result, post summary, then show Review + Predict options."""
-        try:
-            chat_id = update.effective_chat.id
-        except Exception:
-            return
+async def _quiz_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        chat_id = update.effective_chat.id
+    except Exception:
+        return
 
-        qs        = context.user_data.get("quiz_questions", []) or []
-        total     = len(qs)
-        correct   = int(context.user_data.get("quiz_correct", 0))
-        wrongs    = context.user_data.get("quiz_wrong", []) or []
-        wrong_cnt = len(wrongs)
-        attempted = int(context.user_data.get("quiz_idx", 0))
-        unattempt = max(0, total - attempted)
+    total   = len(context.user_data.get("quiz_questions", []))
+    correct = int(context.user_data.get("quiz_correct", 0))
+    wrongs  = context.user_data.get("quiz_wrong", []) or []
+    spent   = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
+    limit   = int(context.user_data.get("quiz_limit_secs", 0))
 
-        spent  = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
-        limit  = int(context.user_data.get("quiz_limit_secs", 0))
-        mins, secs = divmod(spent, 60)
+    wrong_count = len(wrongs)
+    attempted   = int(context.user_data.get("quiz_idx", 0))
+    unattempted = max(0, total - attempted)
 
-        mock_marks = 4 * correct - 1 * wrong_cnt
-        scaled_neet_marks = (4 * correct - 1 * wrong_cnt) * (180 / total) if total > 0 else 0.0
+    mock_marks = 4 * correct - 1 * wrong_count
+    scaled_neet_marks = (4 * correct - 1 * wrong_count) * (180 / total) if total > 0 else 0.0
 
-       # Estimated AIR (same as your previous logic)
-        est_air = None
-        try:
-            prof = get_user_profile(update)
-            est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
-            if est_air:
-                est_air = int(est_air)
-                context.user_data["predicted_air"] = est_air
-                update_user_profile(update, latest_predicted_air=est_air)
-        except Exception:
-            est_air = None
+    prof    = get_user_profile(update)
+    est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
+    if est_air is not None:
+        context.user_data["predicted_air"] = int(est_air)
+        update_user_profile(update, latest_predicted_air=int(est_air))
 
-        header = (
-            "🎉 *Test submitted!*\n"
-            f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempt}\n"
-            f"Correct: {correct}  |  Wrong: {wrong_cnt}\n"
-            f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
-            f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
-            f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
-        )
-        if est_air is not None:
-            header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
+    mins = spent // 60
+    secs = spent % 60
 
-        with contextlib.suppress(Exception):
-            await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
+    header = (
+        "🎉 *Test submitted!*\n"
+        f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempted}\n"
+        f"Correct: {correct}  |  Wrong: {wrong_count}\n"
+        f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
+        f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
+        f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
+    )
+    if est_air is not None:
+        header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
 
-    # keep wrongs for review
-        context.user_data["quiz_wrongs_buffer"] = wrongs
+    await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
 
-    # Ask to review
-        ask_review = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
-            [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
-        ])
-        with contextlib.suppress(Exception):
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="Do you want to review answers & explanations now?",
-                reply_markup=ask_review
-            )
+    # store wrongs for review step
+    context.user_data["quiz_wrongs_buffer"] = wrongs
+    ask_review = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
+        [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
+    ])
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Do you want to review answers & explanations now?",
+        reply_markup=ask_review
+    )
 
-async def quiz_review_choice(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+# Back-compat shim (in case anything still calls _finish_quiz)
+async def _finish_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await _quiz_finish(update, context)
+    
+async def quiz_review_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    with contextlib.suppress(BadRequest, Exception):
-        await q.edit_message_reply_markup(None)
+    await _safe_clear_markup(q)
 
     choice = (q.data or "QUIZ_REVIEW:no").split(":")[-1]
     if choice == "yes":
@@ -4919,11 +4907,9 @@ async def quiz_review_choice(update: "Update", context: "ContextTypes.DEFAULT_TY
                 if row.get("explanation"):
                     b.append(f"   Why: {row['explanation']}")
                 blocks.append("\n".join(b))
-            with contextlib.suppress(Exception):
-                await send_long_message(context.bot, q.message.chat.id, "\n".join(blocks))
+            await send_long_message(context.bot, q.message.chat.id, "\n".join(blocks))
         else:
-            with contextlib.suppress(Exception):
-                await q.message.reply_text("Perfect score—no wrong answers to review 🎯")
+            await q.message.reply_text("Perfect score—no wrong answers to review 🎯")
 
     est = context.user_data.get("predicted_air")
     if est:
@@ -4931,32 +4917,23 @@ async def quiz_review_choice(update: "Update", context: "ContextTypes.DEFAULT_TY
             [InlineKeyboardButton(f"Predict colleges using ~{est}", callback_data="predict_from_quiz")],
             [InlineKeyboardButton("No thanks", callback_data="QUIZ_PREDICT:no")]
         ])
-        with contextlib.suppress(Exception):
-            await q.message.reply_text(
-                "Do you want to run the college predictor with this estimated AIR?",
-                reply_markup=ask_predict
-            )
+        await q.message.reply_text(
+            "Do you want to run the college predictor with this estimated AIR?",
+            reply_markup=ask_predict
+        )
     else:
-        with contextlib.suppress(Exception):
-            await q.message.reply_text("No estimated AIR available. You can still /predict manually.")
+        await q.message.reply_text("No estimated AIR available. You can still /predict manually.")
             
-async def quiz_predict_choice_noop(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+async def quiz_predict_choice_noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-    with contextlib.suppress(BadRequest, Exception):
-        await q.edit_message_reply_markup(None)
-    with contextlib.suppress(Exception):
-        await q.message.reply_text("Okay! You can run /predict anytime from the menu.")
-
-    # Clear quiz state
+    await _safe_clear_markup(q)
+    await q.message.reply_text("Okay! You can run /predict anytime from the menu.")
     for k in ("quiz_subject","quiz_difficulty","quiz_size","quiz_questions","quiz_idx",
               "quiz_correct","quiz_wrong","quiz_deadline","quiz_started_at","quiz_limit_secs",
-              "quiz_wrongs_buffer","predicted_air"):
+              "quiz_wrongs_buffer"):
         context.user_data.pop(k, None)
-
-    with contextlib.suppress(Exception):
-        unlock_flow(context)
-        await show_menu(update)
+    await show_menu(update)
 
 # ========================= Predictor =========================
 CATEGORY_OPTIONS = [["General", "OBC", "EWS", "SC", "ST"]]
