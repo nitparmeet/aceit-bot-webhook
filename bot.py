@@ -4849,62 +4849,62 @@ async def quiz_answer(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
         
 
     async def _finish_quiz(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-    """Compute score, show summary, then offer review and 'predict from quiz'."""
-    try:
-        chat_id = update.effective_chat.id
-    except Exception:
-        return
+        """Compute score, show summary, then offer review and 'predict from quiz'."""
+        try:
+            chat_id = update.effective_chat.id
+        except Exception:
+            return
 
-    total   = len(context.user_data.get("quiz_questions", []))
-    correct = int(context.user_data.get("quiz_correct", 0))
-    wrongs  = context.user_data.get("quiz_wrong", [])
-    spent   = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
-    limit   = int(context.user_data.get("quiz_limit_secs", 0))
+        total   = len(context.user_data.get("quiz_questions", []))
+        correct = int(context.user_data.get("quiz_correct", 0))
+        wrongs  = context.user_data.get("quiz_wrong", [])
+        spent   = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
+        limit   = int(context.user_data.get("quiz_limit_secs", 0))
 
-    wrong_count = len(wrongs or [])
-    attempted   = int(context.user_data.get("quiz_idx", 0))
-    unattempted = max(0, total - attempted)
+        wrong_count = len(wrongs or [])
+        attempted   = int(context.user_data.get("quiz_idx", 0))
+        unattempted = max(0, total - attempted)
 
-    mock_marks = 4 * correct - 1 * wrong_count
-    scaled_neet_marks = (4 * correct - 1 * wrong_count) * (180 / total) if total > 0 else 0.0
+        mock_marks = 4 * correct - 1 * wrong_count
+        scaled_neet_marks = (4 * correct - 1 * wrong_count) * (180 / total) if total > 0 else 0.0
 
-    prof = get_user_profile(update)
-    est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
+        prof = get_user_profile(update)
+        est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
 
-    if est_air is not None:
-        est_air = int(est_air)
-        context.user_data["predicted_air"] = est_air
-        update_user_profile(update, latest_predicted_air=est_air)
+        if est_air is not None:
+            est_air = int(est_air)
+            context.user_data["predicted_air"] = est_air
+            update_user_profile(update, latest_predicted_air=est_air)
 
-    mins = spent // 60
-    secs = spent % 60
+        mins = spent // 60
+        secs = spent % 60
 
-    header = (
-        "🎉 *Test submitted!*\n"
-        f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempted}\n"
-        f"Correct: {correct}  |  Wrong: {wrong_count}\n"
-        f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
-        f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
-        f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
-    )
-    if est_air is not None:
-        header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
+        header = (
+            "🎉 *Test submitted!*\n"
+            f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempted}\n"
+            f"Correct: {correct}  |  Wrong: {wrong_count}\n"
+            f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
+            f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
+            f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
+        )
+        if est_air is not None:
+            header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
 
-    with contextlib.suppress(Exception):
-        await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
+        with contextlib.suppress(Exception):
+            await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
 
     # Offer review
-    context.user_data["quiz_wrongs_buffer"] = wrongs or []
-    ask_review = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
-        [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
-    ])
-    with contextlib.suppress(Exception):
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="Do you want to review answers & explanations now?",
-            reply_markup=ask_review
-        )
+        context.user_data["quiz_wrongs_buffer"] = wrongs or []
+        ask_review = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
+            [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
+        ])
+        with contextlib.suppress(Exception):
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Do you want to review answers & explanations now?",
+                reply_markup=ask_review
+            )
 
 async def quiz_review_choice(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
     q = update.callback_query
