@@ -4847,71 +4847,71 @@ async def quiz_answer(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
         
 
     async def _finish_quiz(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-    """Compute result, post summary, then show Review + Predict options."""
-    try:
-        chat_id = update.effective_chat.id
-    except Exception:
-        return
+        """Compute result, post summary, then show Review + Predict options."""
+        try:
+            chat_id = update.effective_chat.id
+        except Exception:
+            return
 
     # --- read state safely ---
-    qs        = context.user_data.get("quiz_questions", []) or []
-    total     = len(qs)
-    correct   = int(context.user_data.get("quiz_correct", 0))
-    wrongs    = context.user_data.get("quiz_wrong", []) or []
-    wrong_cnt = len(wrongs)
-    attempted = int(context.user_data.get("quiz_idx", 0))
-    unattempt = max(0, total - attempted)
+        qs        = context.user_data.get("quiz_questions", []) or []
+        total     = len(qs)
+        correct   = int(context.user_data.get("quiz_correct", 0))
+        wrongs    = context.user_data.get("quiz_wrong", []) or []
+        wrong_cnt = len(wrongs)
+        attempted = int(context.user_data.get("quiz_idx", 0))
+        unattempt = max(0, total - attempted)
 
-    spent  = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
-    limit  = int(context.user_data.get("quiz_limit_secs", 0))
-    mins, secs = divmod(spent, 60)
+        spent  = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
+        limit  = int(context.user_data.get("quiz_limit_secs", 0))
+        mins, secs = divmod(spent, 60)
 
     # --- marks ---
-    mock_marks = 4 * correct - 1 * wrong_cnt
-    scaled_neet_marks = (4 * correct - 1 * wrong_cnt) * (180 / total) if total > 0 else 0.0
+        mock_marks = 4 * correct - 1 * wrong_cnt
+        scaled_neet_marks = (4 * correct - 1 * wrong_cnt) * (180 / total) if total > 0 else 0.0
 
     # --- estimated AIR (kept as before) ---
-    est_air = None
-    try:
-        prof = get_user_profile(update)  # your existing helper
-        est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
-        if est_air:
-            est_air = int(est_air)
-            context.user_data["predicted_air"] = est_air
-            update_user_profile(update, latest_predicted_air=est_air)
-    except Exception:
-        # don't break summary if estimator fails
         est_air = None
+        try:
+            prof = get_user_profile(update)  # your existing helper
+            est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
+            if est_air:
+                est_air = int(est_air)
+                context.user_data["predicted_air"] = est_air
+                update_user_profile(update, latest_predicted_air=est_air)
+        except Exception:
+        # don't break summary if estimator fails
+            est_air = None
 
-    header = (
-        "🎉 *Test submitted!*\n"
-        f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempt}\n"
-        f"Correct: {correct}  |  Wrong: {wrong_cnt}\n"
-        f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
-        f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
-        f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
-    )
-    if est_air is not None:
-        header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
+        header = (
+            "🎉 *Test submitted!*\n"
+            f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempt}\n"
+            f"Correct: {correct}  |  Wrong: {wrong_cnt}\n"
+            f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
+            f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
+            f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
+        )
+        if est_air is not None:
+            header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
 
     # send summary (long or normal)
-    with contextlib.suppress(Exception):
-        await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
+        with contextlib.suppress(Exception):
+            await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
 
     # keep wrongs for review
-    context.user_data["quiz_wrongs_buffer"] = wrongs
+        context.user_data["quiz_wrongs_buffer"] = wrongs
 
     # Ask to review now
-    ask_review = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
-        [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
-    ])
-    with contextlib.suppress(Exception):
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="Do you want to review answers & explanations now?",
-            reply_markup=ask_review
-        )
+        ask_review = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
+            [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
+        ])
+        with contextlib.suppress(Exception):
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Do you want to review answers & explanations now?",
+                reply_markup=ask_review
+            )
     # NOTE: Do NOT clear quiz keys yet; we need them for the review step.
 
 
