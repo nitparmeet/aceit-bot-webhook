@@ -6503,7 +6503,7 @@ def register_handlers(app: Application) -> None:
 
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
-    _add(CommandHandler("menu", show_menu), group=0)
+    _add(CommandHandler("menu", show_menu), group=0)  # /menu must show menu
 
     # --- Quick quiz commands (optional shortcuts) ---
     _add(CommandHandler("quiz5",         quiz5), group=0)
@@ -6512,16 +6512,11 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("quiz5medium",   quiz5medium), group=0)
 
     # --- QUIZ: menu + router + answers ---
-    # Open the quiz menu from a menu button
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-
-    # Route the quiz sub-menu actions (single handler covers all quiz actions)
     _add(CallbackQueryHandler(
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
-
-    # Handle answer button presses
     _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
     # -------------------------------
@@ -6533,12 +6528,14 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
         ],
         states={
-            ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
+            ASK_SUBJECT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
+            ],
             ASK_WAIT: [
                 MessageHandler(filters.PHOTO, ask_receive_photo),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
             ],
-        },
+        },  # <-- dict closes with }
         fallbacks=[CommandHandler("cancel", cancel)],
         name="ask_conv",
         persistent=False,
@@ -6557,13 +6554,25 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
         ],
         states={
-            ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-            ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-            ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-            ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-            ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-            ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
-        ],
+            ASK_AIR: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_air),
+            ],
+            ASK_MOCK_RANK: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank),
+            ],
+            ASK_MOCK_SIZE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
+            ],
+            ASK_QUOTA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota),
+            ],
+            ASK_CATEGORY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_category),
+            ],
+            ASK_DOMICILE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile),
+            ],
+        },  # <-- dict closes with }
         fallbacks=[CommandHandler("cancel", cancel_predict)],
         name="predict_conv",
         persistent=False,
@@ -6580,17 +6589,29 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(setup_profile, pattern=r"^menu_profile$"),
         ],
         states={
-            PROFILE_MENU:         [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu)],
-            PROFILE_SET_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category)],
-            PROFILE_SET_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile)],
-            PROFILE_SET_PREF:     [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref)],
-            PROFILE_SET_EMAIL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email)],
+            PROFILE_MENU: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu),
+            ],
+            PROFILE_SET_CATEGORY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category),
+            ],
+            PROFILE_SET_DOMICILE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile),
+            ],
+            PROFILE_SET_PREF: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref),
+            ],
+            PROFILE_SET_EMAIL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email),
+            ],
             PROFILE_SET_MOBILE: [
                 MessageHandler(filters.CONTACT, profile_set_mobile),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_mobile),
             ],
-            PROFILE_SET_PRIMARY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
-        ],
+            PROFILE_SET_PRIMARY: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary),
+            ],
+        },  # <-- dict closes with }
         fallbacks=[CommandHandler("cancel", cancel)],
         name="profile_conv",
         persistent=False,
@@ -6606,11 +6627,10 @@ def register_handlers(app: Application) -> None:
         _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
         _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)
     except NameError:
-        # If those functions aren't present, just skip them.
         pass
 
     # -------------------------------
-    # Error handler (if you have one)
+    # Error handler (optional)
     # -------------------------------
     try:
         app.add_error_handler(on_error)
