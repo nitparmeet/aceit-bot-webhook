@@ -1,3035 +1,2210 @@
-{
-  "Physics": [
-    {
-      "question": "Which of the following is correct regarding: A block slides down a smooth plane inclined at angle θ. What is its acceleration?",
-      "options": [
-        "g",
-        "g sinθ",
-        "g cosθ",
-        "g tanθ"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Mechanics",
-        "Inclined plane"
-      ],
-      "explanation": "On a frictionless incline the component of weight along the plane is mg sinθ, so a = g sinθ."
-    },
-    {
-      "question": "Which of the following is correct regarding: For SHM x = A sin(ωt). At x = 0, which is true?",
-      "options": [
-        "Speed is zero",
-        "Acceleration is maximum",
-        "Acceleration is zero",
-        "Potential energy is maximum"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "SHM"
-      ],
-      "explanation": "At mean position, a = −ω²x = 0 and speed is maximum; potential energy is minimum."
-    },
-    {
-      "question": "Which of the following is correct regarding: A projectile is fired with speed u at 45°. What is its range on level ground (no air resistance)?",
-      "options": [
-        "u²/g",
-        "u²/2g",
-        "2u²/g",
-        "u/g"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Projectile"
-      ],
-      "explanation": "R = u² sin2θ / g; for θ=45°, sin2θ = 1 ⇒ R = u²/g."
-    },
-    {
-      "question": "Which of the following is correct regarding: A wire of length L has resistance R. If length is doubled and area halved, the new resistance is",
-      "options": [
-        "R/4",
-        "R",
-        "2R",
-        "4R"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Current electricity"
-      ],
-      "explanation": "R = ρL/A. New L' = 2L, A' = A/2 ⇒ R' = ρ(2L)/(A/2) = 4R."
-    },
-    {
-      "question": "Which of the following is correct regarding: In Young’s double-slit experiment, fringe width β is proportional to",
-      "options": [
-        "1/λ",
-        "D/d",
-        "λd/D",
-        "λD/d"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Waves",
-        "Optics"
-      ],
-      "explanation": "Fringe width β = λD/d (D: screen distance, d: slit separation)."
-    },
-    {
-      "question": "Which of the following is correct regarding: Dimensional formula of Planck’s constant h is",
-      "options": [
-        "ML²T⁻¹",
-        "ML²T⁻²",
-        "MLT⁻²",
-        "M⁰L⁰T⁰"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Units"
-      ],
-      "explanation": "h has dimensions of action (energy×time): (ML²T⁻²)×T = ML²T⁻¹."
-    },
-    {
-      "question": "Which of the following is correct regarding: In an isothermal expansion of an ideal gas, the change in internal energy ΔU is",
-      "options": [
-        "> 0",
-        "= 0",
-        "< 0",
-        "Path-dependent"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Thermodynamics"
-      ],
-      "explanation": "For ideal gas, U depends only on T. Isothermal ⇒ ΔT=0 ⇒ ΔU=0."
-    },
-    {
-      "question": "Which of the following is correct regarding: Escape speed from a planet of mass M and radius R is",
-      "options": [
-        "√(GM/R)",
-        "√(2GM/R)",
-        "√(GM/2R)",
-        "√(GR/M)"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Gravitation"
-      ],
-      "explanation": "From energy conservation: ½mv² = GMm/R ⇒ v = √(2GM/R)."
-    },
-    {
-      "question": "Which of the following is correct regarding: A convex lens of focal length f is placed in a liquid whose refractive index equals the lens material. The lens acts as",
-      "options": [
-        "Converging lens",
-        "Diverging lens",
-        "No lens (f=∞)",
-        "Mirror"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Optics"
-      ],
-      "explanation": "No refraction if n_lens = n_medium, so effective focal length is infinite."
-    },
-    {
-      "question": "Which of the following is correct regarding: Capacitors C and 2C in series across a battery V carry charge",
-      "options": [
-        "CV",
-        "2CV",
-        "2CV/3",
-        "Same on each: Q = 2CV/3"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Electrostatics"
-      ],
-      "explanation": "Series capacitors carry equal charge. C_eq = 2C/3 ⇒ Q = C_eq V = 2CV/3."
-    },
-    {
-      "question": "Which of the following is correct regarding: Magnetic flux through a loop changes uniformly from Φ₁ to Φ₂ in time Δt. The induced emf magnitude is",
-      "options": [
-        "(Φ₂−Φ₁)/Δt",
-        "−(Φ₂−Φ₁)/Δt",
-        "I(R)",
-        "Zero always"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Electromagnetic induction"
-      ],
-      "explanation": "Faraday’s law: |emf| = |dΦ/dt| ≈ |Φ₂−Φ₁|/Δt."
-    },
-    {
-      "question": "Which of the following is correct regarding: For a photoelectric effect experiment, stopping potential increases when",
-      "options": [
-        "Light intensity increases",
-        "Frequency increases",
-        "Area of cathode increases",
-        "Anode potential increases"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Modern physics",
-        "Photoelectric"
-      ],
-      "explanation": "Stopping potential depends on maximum KE = hν − φ, hence increases with frequency, not intensity."
-    },
-    {
-      "question": "Which of the following is correct regarding: A satellite in circular orbit of radius r around Earth has speed v. Its period T is",
-      "options": [
-        "2πr/v",
-        "πr/v",
-        "2r/v",
-        "independent of r"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Gravitation",
-        "Satellites"
-      ],
-      "explanation": "Period is distance over speed: T = 2πr / v."
-    },
-    {
-      "question": "Which of the following is correct regarding: If temperature of a blackbody is doubled, total radiant power (Stefan–Boltzmann) changes by",
-      "options": [
-        "×2",
-        "×4",
-        "×8",
-        "×16"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Thermal radiation"
-      ],
-      "explanation": "Power ∝ T⁴. Doubling T increases power by 2⁴ = 16."
-    },
-    {
-      "question": "Which of the following is correct regarding: A current-carrying straight conductor produces magnetic field B at distance r. B is proportional to",
-      "options": [
-        "I/r",
-        "I/r²",
-        "1/Ir",
-        "I²r"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Magnetism"
-      ],
-      "explanation": "B = μ₀I/(2πr); proportional to I and inversely to r."
-    },
-    {
-      "question": "Which of the following is correct regarding: De Broglie wavelength λ of a particle of momentum p is",
-      "options": [
-        "h/p",
-        "hp",
-        "h/2p",
-        "2hp"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Modern physics",
-        "Waves"
-      ],
-      "explanation": "λ = h/p (de Broglie relation)."
-    },
-    {
-      "question": "Which of the following is correct regarding: Two springs in series with spring constants k₁ and k₂ have equivalent k_eq equal to",
-      "options": [
-        "k₁+k₂",
-        "k₁k₂/(k₁+k₂)",
-        "k₁k₂",
-        "(k₁+k₂)/(k₁k₂)"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "SHM",
-        "Elasticity"
-      ],
-      "explanation": "For series: 1/k_eq = 1/k₁ + 1/k₂ ⇒ k_eq = k₁k₂/(k₁+k₂)."
-    },
-    {
-      "question": "Which of the following is correct regarding: The speed of sound in a gas is proportional to",
-      "options": [
-        "√T",
-        "T",
-        "1/T",
-        "independent of T"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Waves",
-        "Thermodynamics"
-      ],
-      "explanation": "v = √(γRT/M) ∝ √T for a given gas."
-    },
-    {
-      "question": "Which of the following is correct regarding: In a PN junction at equilibrium, the built-in potential barrier exists because of",
-      "options": [
-        "External field",
-        "Ionized impurities creating an electric field",
-        "Thermal radiation",
-        "Magnetic field"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Semiconductors"
-      ],
-      "explanation": "Diffusion of carriers leaves behind ionized donors/acceptors, creating an internal electric field (barrier)."
-    },
-    {
-      "question": "Which of the following is correct regarding: Work done by conservative force around a closed path is",
-      "options": [
-        "Positive",
-        "Negative",
-        "Zero",
-        "Path-dependent"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Work-Energy"
-      ],
-      "explanation": "For conservative forces (e.g., gravity), net work over a closed loop is zero."
-    },
-    {
-      "question": "Identify the correct statement: A block slides down a smooth plane inclined at angle θ. What is its acceleration?",
-      "options": [
-        "g",
-        "g sinθ",
-        "g cosθ",
-        "g tanθ"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Mechanics",
-        "Inclined plane"
-      ],
-      "explanation": "On a frictionless incline the component of weight along the plane is mg sinθ, so a = g sinθ."
-    },
-    {
-      "question": "Identify the correct statement: For SHM x = A sin(ωt). At x = 0, which is true?",
-      "options": [
-        "Speed is zero",
-        "Acceleration is maximum",
-        "Acceleration is zero",
-        "Potential energy is maximum"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "SHM"
-      ],
-      "explanation": "At mean position, a = −ω²x = 0 and speed is maximum; potential energy is minimum."
-    },
-    {
-      "question": "Identify the correct statement: A projectile is fired with speed u at 45°. What is its range on level ground (no air resistance)?",
-      "options": [
-        "u²/g",
-        "u²/2g",
-        "2u²/g",
-        "u/g"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Projectile"
-      ],
-      "explanation": "R = u² sin2θ / g; for θ=45°, sin2θ = 1 ⇒ R = u²/g."
-    },
-    {
-      "question": "Identify the correct statement: A wire of length L has resistance R. If length is doubled and area halved, the new resistance is",
-      "options": [
-        "R/4",
-        "R",
-        "2R",
-        "4R"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Current electricity"
-      ],
-      "explanation": "R = ρL/A. New L' = 2L, A' = A/2 ⇒ R' = ρ(2L)/(A/2) = 4R."
-    },
-    {
-      "question": "Identify the correct statement: In Young’s double-slit experiment, fringe width β is proportional to",
-      "options": [
-        "1/λ",
-        "D/d",
-        "λd/D",
-        "λD/d"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Waves",
-        "Optics"
-      ],
-      "explanation": "Fringe width β = λD/d (D: screen distance, d: slit separation)."
-    },
-    {
-      "question": "Identify the correct statement: Dimensional formula of Planck’s constant h is",
-      "options": [
-        "ML²T⁻¹",
-        "ML²T⁻²",
-        "MLT⁻²",
-        "M⁰L⁰T⁰"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Units"
-      ],
-      "explanation": "h has dimensions of action (energy×time): (ML²T⁻²)×T = ML²T⁻¹."
-    },
-    {
-      "question": "Identify the correct statement: In an isothermal expansion of an ideal gas, the change in internal energy ΔU is",
-      "options": [
-        "> 0",
-        "= 0",
-        "< 0",
-        "Path-dependent"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Thermodynamics"
-      ],
-      "explanation": "For ideal gas, U depends only on T. Isothermal ⇒ ΔT=0 ⇒ ΔU=0."
-    },
-    {
-      "question": "Identify the correct statement: Escape speed from a planet of mass M and radius R is",
-      "options": [
-        "√(GM/R)",
-        "√(2GM/R)",
-        "√(GM/2R)",
-        "√(GR/M)"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Gravitation"
-      ],
-      "explanation": "From energy conservation: ½mv² = GMm/R ⇒ v = √(2GM/R)."
-    },
-    {
-      "question": "Identify the correct statement: A convex lens of focal length f is placed in a liquid whose refractive index equals the lens material. The lens acts as",
-      "options": [
-        "Converging lens",
-        "Diverging lens",
-        "No lens (f=∞)",
-        "Mirror"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Optics"
-      ],
-      "explanation": "No refraction if n_lens = n_medium, so effective focal length is infinite."
-    },
-    {
-      "question": "Identify the correct statement: Capacitors C and 2C in series across a battery V carry charge",
-      "options": [
-        "CV",
-        "2CV",
-        "2CV/3",
-        "Same on each: Q = 2CV/3"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Electrostatics"
-      ],
-      "explanation": "Series capacitors carry equal charge. C_eq = 2C/3 ⇒ Q = C_eq V = 2CV/3."
-    },
-    {
-      "question": "Identify the correct statement: Magnetic flux through a loop changes uniformly from Φ₁ to Φ₂ in time Δt. The induced emf magnitude is",
-      "options": [
-        "(Φ₂−Φ₁)/Δt",
-        "−(Φ₂−Φ₁)/Δt",
-        "I(R)",
-        "Zero always"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Electromagnetic induction"
-      ],
-      "explanation": "Faraday’s law: |emf| = |dΦ/dt| ≈ |Φ₂−Φ₁|/Δt."
-    },
-    {
-      "question": "Identify the correct statement: For a photoelectric effect experiment, stopping potential increases when",
-      "options": [
-        "Light intensity increases",
-        "Frequency increases",
-        "Area of cathode increases",
-        "Anode potential increases"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Modern physics",
-        "Photoelectric"
-      ],
-      "explanation": "Stopping potential depends on maximum KE = hν − φ, hence increases with frequency, not intensity."
-    },
-    {
-      "question": "Identify the correct statement: A satellite in circular orbit of radius r around Earth has speed v. Its period T is",
-      "options": [
-        "2πr/v",
-        "πr/v",
-        "2r/v",
-        "independent of r"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Gravitation",
-        "Satellites"
-      ],
-      "explanation": "Period is distance over speed: T = 2πr / v."
-    },
-    {
-      "question": "Identify the correct statement: If temperature of a blackbody is doubled, total radiant power (Stefan–Boltzmann) changes by",
-      "options": [
-        "×2",
-        "×4",
-        "×8",
-        "×16"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Thermal radiation"
-      ],
-      "explanation": "Power ∝ T⁴. Doubling T increases power by 2⁴ = 16."
-    },
-    {
-      "question": "Identify the correct statement: A current-carrying straight conductor produces magnetic field B at distance r. B is proportional to",
-      "options": [
-        "I/r",
-        "I/r²",
-        "1/Ir",
-        "I²r"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Magnetism"
-      ],
-      "explanation": "B = μ₀I/(2πr); proportional to I and inversely to r."
-    },
-    {
-      "question": "Identify the correct statement: De Broglie wavelength λ of a particle of momentum p is",
-      "options": [
-        "h/p",
-        "hp",
-        "h/2p",
-        "2hp"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Modern physics",
-        "Waves"
-      ],
-      "explanation": "λ = h/p (de Broglie relation)."
-    },
-    {
-      "question": "Identify the correct statement: Two springs in series with spring constants k₁ and k₂ have equivalent k_eq equal to",
-      "options": [
-        "k₁+k₂",
-        "k₁k₂/(k₁+k₂)",
-        "k₁k₂",
-        "(k₁+k₂)/(k₁k₂)"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "SHM",
-        "Elasticity"
-      ],
-      "explanation": "For series: 1/k_eq = 1/k₁ + 1/k₂ ⇒ k_eq = k₁k₂/(k₁+k₂)."
-    },
-    {
-      "question": "Identify the correct statement: The speed of sound in a gas is proportional to",
-      "options": [
-        "√T",
-        "T",
-        "1/T",
-        "independent of T"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Waves",
-        "Thermodynamics"
-      ],
-      "explanation": "v = √(γRT/M) ∝ √T for a given gas."
-    },
-    {
-      "question": "Identify the correct statement: In a PN junction at equilibrium, the built-in potential barrier exists because of",
-      "options": [
-        "External field",
-        "Ionized impurities creating an electric field",
-        "Thermal radiation",
-        "Magnetic field"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Semiconductors"
-      ],
-      "explanation": "Diffusion of carriers leaves behind ionized donors/acceptors, creating an internal electric field (barrier)."
-    },
-    {
-      "question": "Identify the correct statement: Work done by conservative force around a closed path is",
-      "options": [
-        "Positive",
-        "Negative",
-        "Zero",
-        "Path-dependent"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Work-Energy"
-      ],
-      "explanation": "For conservative forces (e.g., gravity), net work over a closed loop is zero."
-    },
-    {
-      "question": "Choose the correct option: A block slides down a smooth plane inclined at angle θ. What is its acceleration?",
-      "options": [
-        "g",
-        "g sinθ",
-        "g cosθ",
-        "g tanθ"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Mechanics",
-        "Inclined plane"
-      ],
-      "explanation": "On a frictionless incline the component of weight along the plane is mg sinθ, so a = g sinθ."
-    },
-    {
-      "question": "Choose the correct option: For SHM x = A sin(ωt). At x = 0, which is true?",
-      "options": [
-        "Speed is zero",
-        "Acceleration is maximum",
-        "Acceleration is zero",
-        "Potential energy is maximum"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "SHM"
-      ],
-      "explanation": "At mean position, a = −ω²x = 0 and speed is maximum; potential energy is minimum."
-    },
-    {
-      "question": "Choose the correct option: A projectile is fired with speed u at 45°. What is its range on level ground (no air resistance)?",
-      "options": [
-        "u²/g",
-        "u²/2g",
-        "2u²/g",
-        "u/g"
-      ],
-      "answer": "1",
-      "difficulty": "high",
-      "tags": [
-        "Projectile"
-      ],
-      "explanation": "R = u² sin2θ / g; for θ=45°, sin2θ = 1 ⇒ R = u²/g."
-    },
-    {
-      "question": "Choose the correct option: A wire of length L has resistance R. If length is doubled and area halved, the new resistance is",
-      "options": [
-        "R/4",
-        "R",
-        "2R",
-        "4R"
-      ],
-      "answer": "4",
-      "difficulty": "high",
-      "tags": [
-        "Current electricity"
-      ],
-      "explanation": "R = ρL/A. New L' = 2L, A' = A/2 ⇒ R' = ρ(2L)/(A/2) = 4R."
-    },
-    {
-      "question": "Choose the correct option: In Young’s double-slit experiment, fringe width β is proportional to",
-      "options": [
-        "1/λ",
-        "D/d",
-        "λd/D",
-        "λD/d"
-      ],
-      "answer": "4",
-      "difficulty": "high",
-      "tags": [
-        "Waves",
-        "Optics"
-      ],
-      "explanation": "Fringe width β = λD/d (D: screen distance, d: slit separation)."
-    },
-    {
-      "question": "Choose the correct option: Dimensional formula of Planck’s constant h is",
-      "options": [
-        "ML²T⁻¹",
-        "ML²T⁻²",
-        "MLT⁻²",
-        "M⁰L⁰T⁰"
-      ],
-      "answer": "1",
-      "difficulty": "high",
-      "tags": [
-        "Units"
-      ],
-      "explanation": "h has dimensions of action (energy×time): (ML²T⁻²)×T = ML²T⁻¹."
-    },
-    {
-      "question": "Choose the correct option: In an isothermal expansion of an ideal gas, the change in internal energy ΔU is",
-      "options": [
-        "> 0",
-        "= 0",
-        "< 0",
-        "Path-dependent"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Thermodynamics"
-      ],
-      "explanation": "For ideal gas, U depends only on T. Isothermal ⇒ ΔT=0 ⇒ ΔU=0."
-    },
-    {
-      "question": "Choose the correct option: Escape speed from a planet of mass M and radius R is",
-      "options": [
-        "√(GM/R)",
-        "√(2GM/R)",
-        "√(GM/2R)",
-        "√(GR/M)"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Gravitation"
-      ],
-      "explanation": "From energy conservation: ½mv² = GMm/R ⇒ v = √(2GM/R)."
-    },
-    {
-      "question": "Choose the correct option: A convex lens of focal length f is placed in a liquid whose refractive index equals the lens material. The lens acts as",
-      "options": [
-        "Converging lens",
-        "Diverging lens",
-        "No lens (f=∞)",
-        "Mirror"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Optics"
-      ],
-      "explanation": "No refraction if n_lens = n_medium, so effective focal length is infinite."
-    },
-    {
-      "question": "Choose the correct option: Capacitors C and 2C in series across a battery V carry charge",
-      "options": [
-        "CV",
-        "2CV",
-        "2CV/3",
-        "Same on each: Q = 2CV/3"
-      ],
-      "answer": "4",
-      "difficulty": "high",
-      "tags": [
-        "Electrostatics"
-      ],
-      "explanation": "Series capacitors carry equal charge. C_eq = 2C/3 ⇒ Q = C_eq V = 2CV/3."
-    }
-  ],
-  "Chemistry": [
-    {
-      "question": "Which of the following is correct regarding: pH of 10⁻³ M HCl is approximately",
-      "options": [
-        "3",
-        "11",
-        "1",
-        "14"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Acids & Bases"
-      ],
-      "explanation": "Strong acid fully dissociates: [H⁺]=10⁻³ M ⇒ pH=3."
-    },
-    {
-      "question": "Which of the following is correct regarding: Hybridization of carbon in ethene (C₂H₄) is",
-      "options": [
-        "sp³",
-        "sp²",
-        "sp",
-        "sp³d"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Organic",
-        "Hybridization"
-      ],
-      "explanation": "Each C forms three σ bonds in trigonal planar geometry ⇒ sp²."
-    },
-    {
-      "question": "Which of the following is correct regarding: Rate constant k has units s⁻¹ for",
-      "options": [
-        "Zero order",
-        "First order",
-        "Second order",
-        "Third order"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Kinetics"
-      ],
-      "explanation": "Only first-order reactions have k with units s⁻¹."
-    },
-    {
-      "question": "Which of the following is correct regarding: Langmuir adsorption isotherm assumes",
-      "options": [
-        "Multilayer",
-        "Heterogeneous surface",
-        "Monolayer",
-        "Chemisorption only"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Surface Chemistry"
-      ],
-      "explanation": "Langmuir model: uniform sites, monolayer, no lateral interactions."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which reagent converts alcohol to alkyl chloride?",
-      "options": [
-        "KMnO₄",
-        "SOCl₂",
-        "Cu",
-        "KOH(aq)"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Organic Reagents"
-      ],
-      "explanation": "Thionyl chloride converts ROH to RCl, often with pyridine."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which is aromatic by Hückel’s rule?",
-      "options": [
-        "Cyclobutadiene",
-        "Cyclooctatetraene (planar)",
-        "Benzene",
-        "Cyclopropenyl anion"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Aromaticity"
-      ],
-      "explanation": "Benzene has 6π electrons (4n+2, n=1), planar and conjugated."
-    },
-    {
-      "question": "Which of the following is correct regarding: The complex [Fe(CN)₆]⁴⁻ is",
-      "options": [
-        "High spin",
-        "Low spin",
-        "Paramagnetic",
-        "Both high spin and paramagnetic"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Coordination"
-      ],
-      "explanation": "CN⁻ causes strong-field splitting; Fe²⁺ (d⁶) becomes low spin (paired), diamagnetic."
-    },
-    {
-      "question": "Which of the following is correct regarding: Order of oxidizing power among halogens (weak → strong)",
-      "options": [
-        "I₂ < Br₂ < Cl₂ < F₂",
-        "F₂ < Cl₂ < Br₂ < I₂",
-        "Cl₂ < F₂ < Br₂ < I₂",
-        "Br₂ < I₂ < F₂ < Cl₂"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "p-Block"
-      ],
-      "explanation": "Oxidizing power increases up the group."
-    },
-    {
-      "question": "Which of the following is correct regarding: Number of atoms in 1 mole is",
-      "options": [
-        "6.022×10²³",
-        "6.022×10²²",
-        "3.011×10²³",
-        "1.66×10⁻²⁴"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Mole Concept"
-      ],
-      "explanation": "Avogadro’s number NA = 6.022×10²³."
-    },
-    {
-      "question": "Which of the following is correct regarding: The strongest hydrogen bonding is expected in",
-      "options": [
-        "HCl",
-        "HF",
-        "H₂S",
-        "PH₃"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Intermolecular Forces"
-      ],
-      "explanation": "HF forms strong hydrogen bonds due to high electronegativity and small size of F."
-    },
-    {
-      "question": "Which of the following is correct regarding: Electrophile in nitration of benzene is",
-      "options": [
-        "NO₂⁻",
-        "NO₂⁺",
-        "NO₃⁻",
-        "HNO₃"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Organic Mechanism"
-      ],
-      "explanation": "The nitronium ion (NO₂⁺) formed from HNO₃ + H₂SO₄ attacks benzene."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which of the following is most stable carbocation?",
-      "options": [
-        "CH₃⁺",
-        "1°",
-        "2°",
-        "3°"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Carbocations"
-      ],
-      "explanation": "Tertiary carbocations are stabilized by hyperconjugation and inductive effects."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which fluoride is most ionic?",
-      "options": [
-        "LiF",
-        "NaF",
-        "KF",
-        "CsF"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Chemical Bonding"
-      ],
-      "explanation": "Lattice energy decreases down the group; CsF has the most ionic character."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which oxide is amphoteric?",
-      "options": [
-        "Na₂O",
-        "MgO",
-        "Al₂O₃",
-        "CO₂"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Inorganic"
-      ],
-      "explanation": "Al₂O₃ reacts with acids and bases, hence amphoteric."
-    },
-    {
-      "question": "Which of the following is correct regarding: The unit cell with a = b = c and α = β = γ ≠ 90° is",
-      "options": [
-        "Cubic",
-        "Tetragonal",
-        "Hexagonal",
-        "Rhombohedral (trigonal)"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Solid State"
-      ],
-      "explanation": "Rhombohedral has equal edges and equal angles not equal to 90°."
-    },
-    {
-      "question": "Which of the following is correct regarding: Coordination number of Na⁺ and Cl⁻ in rock-salt structure is",
-      "options": [
-        "4,4",
-        "6,6",
-        "8,8",
-        "12,12"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Solid State"
-      ],
-      "explanation": "Both ions are octahedrally coordinated ⇒ CN = 6,6."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which statement is true for a buffer solution?",
-      "options": [
-        "pH changes drastically on dilution",
-        "pH remains nearly constant upon small acid/base addition",
-        "Only acidic buffers exist",
-        "Only basic buffers exist"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Solutions"
-      ],
-      "explanation": "Buffers resist small additions of acid or base, maintaining pH nearly constant."
-    },
-    {
-      "question": "Which of the following is correct regarding: IUPAC name of CH₃–CH₂–CH(OH)–CH₃ is",
-      "options": [
-        "Propan-2-ol",
-        "Butan-2-ol",
-        "Butan-1-ol",
-        "Propan-1-ol"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Nomenclature"
-      ],
-      "explanation": "Longest chain has 4 carbons; OH on carbon 2 ⇒ butan-2-ol."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which gas is released at anode during electrolysis of aqueous NaCl?",
-      "options": [
-        "H₂",
-        "Cl₂",
-        "O₂",
-        "Na"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Electrochemistry"
-      ],
-      "explanation": "In dilute aqueous NaCl, O₂ evolves at anode (water oxidation) and H₂ at cathode; concentrated brine yields Cl₂ at anode."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which pair shows geometrical isomerism?",
-      "options": [
-        "CH₂=CH₂",
-        "[Pt(NH₃)₂Cl₂]",
-        "CH₃–CH₃",
-        "CCl₄"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Isomerism"
-      ],
-      "explanation": "[Pt(NH₃)₂Cl₂] has cis/trans square-planar isomers."
-    },
-    {
-      "question": "Identify the correct statement: pH of 10⁻³ M HCl is approximately",
-      "options": [
-        "3",
-        "11",
-        "1",
-        "14"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Acids & Bases"
-      ],
-      "explanation": "Strong acid fully dissociates: [H⁺]=10⁻³ M ⇒ pH=3."
-    },
-    {
-      "question": "Identify the correct statement: Hybridization of carbon in ethene (C₂H₄) is",
-      "options": [
-        "sp³",
-        "sp²",
-        "sp",
-        "sp³d"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Organic",
-        "Hybridization"
-      ],
-      "explanation": "Each C forms three σ bonds in trigonal planar geometry ⇒ sp²."
-    },
-    {
-      "question": "Identify the correct statement: Rate constant k has units s⁻¹ for",
-      "options": [
-        "Zero order",
-        "First order",
-        "Second order",
-        "Third order"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Kinetics"
-      ],
-      "explanation": "Only first-order reactions have k with units s⁻¹."
-    },
-    {
-      "question": "Identify the correct statement: Langmuir adsorption isotherm assumes",
-      "options": [
-        "Multilayer",
-        "Heterogeneous surface",
-        "Monolayer",
-        "Chemisorption only"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Surface Chemistry"
-      ],
-      "explanation": "Langmuir model: uniform sites, monolayer, no lateral interactions."
-    },
-    {
-      "question": "Identify the correct statement: Which reagent converts alcohol to alkyl chloride?",
-      "options": [
-        "KMnO₄",
-        "SOCl₂",
-        "Cu",
-        "KOH(aq)"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Organic Reagents"
-      ],
-      "explanation": "Thionyl chloride converts ROH to RCl, often with pyridine."
-    },
-    {
-      "question": "Identify the correct statement: Which is aromatic by Hückel’s rule?",
-      "options": [
-        "Cyclobutadiene",
-        "Cyclooctatetraene (planar)",
-        "Benzene",
-        "Cyclopropenyl anion"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Aromaticity"
-      ],
-      "explanation": "Benzene has 6π electrons (4n+2, n=1), planar and conjugated."
-    },
-    {
-      "question": "Identify the correct statement: The complex [Fe(CN)₆]⁴⁻ is",
-      "options": [
-        "High spin",
-        "Low spin",
-        "Paramagnetic",
-        "Both high spin and paramagnetic"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Coordination"
-      ],
-      "explanation": "CN⁻ causes strong-field splitting; Fe²⁺ (d⁶) becomes low spin (paired), diamagnetic."
-    },
-    {
-      "question": "Identify the correct statement: Order of oxidizing power among halogens (weak → strong)",
-      "options": [
-        "I₂ < Br₂ < Cl₂ < F₂",
-        "F₂ < Cl₂ < Br₂ < I₂",
-        "Cl₂ < F₂ < Br₂ < I₂",
-        "Br₂ < I₂ < F₂ < Cl₂"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "p-Block"
-      ],
-      "explanation": "Oxidizing power increases up the group."
-    },
-    {
-      "question": "Identify the correct statement: Number of atoms in 1 mole is",
-      "options": [
-        "6.022×10²³",
-        "6.022×10²²",
-        "3.011×10²³",
-        "1.66×10⁻²⁴"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Mole Concept"
-      ],
-      "explanation": "Avogadro’s number NA = 6.022×10²³."
-    },
-    {
-      "question": "Identify the correct statement: The strongest hydrogen bonding is expected in",
-      "options": [
-        "HCl",
-        "HF",
-        "H₂S",
-        "PH₃"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Intermolecular Forces"
-      ],
-      "explanation": "HF forms strong hydrogen bonds due to high electronegativity and small size of F."
-    },
-    {
-      "question": "Identify the correct statement: Electrophile in nitration of benzene is",
-      "options": [
-        "NO₂⁻",
-        "NO₂⁺",
-        "NO₃⁻",
-        "HNO₃"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Organic Mechanism"
-      ],
-      "explanation": "The nitronium ion (NO₂⁺) formed from HNO₃ + H₂SO₄ attacks benzene."
-    },
-    {
-      "question": "Identify the correct statement: Which of the following is most stable carbocation?",
-      "options": [
-        "CH₃⁺",
-        "1°",
-        "2°",
-        "3°"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Carbocations"
-      ],
-      "explanation": "Tertiary carbocations are stabilized by hyperconjugation and inductive effects."
-    },
-    {
-      "question": "Identify the correct statement: Which fluoride is most ionic?",
-      "options": [
-        "LiF",
-        "NaF",
-        "KF",
-        "CsF"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Chemical Bonding"
-      ],
-      "explanation": "Lattice energy decreases down the group; CsF has the most ionic character."
-    },
-    {
-      "question": "Identify the correct statement: Which oxide is amphoteric?",
-      "options": [
-        "Na₂O",
-        "MgO",
-        "Al₂O₃",
-        "CO₂"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Inorganic"
-      ],
-      "explanation": "Al₂O₃ reacts with acids and bases, hence amphoteric."
-    },
-    {
-      "question": "Identify the correct statement: The unit cell with a = b = c and α = β = γ ≠ 90° is",
-      "options": [
-        "Cubic",
-        "Tetragonal",
-        "Hexagonal",
-        "Rhombohedral (trigonal)"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Solid State"
-      ],
-      "explanation": "Rhombohedral has equal edges and equal angles not equal to 90°."
-    },
-    {
-      "question": "Identify the correct statement: Coordination number of Na⁺ and Cl⁻ in rock-salt structure is",
-      "options": [
-        "4,4",
-        "6,6",
-        "8,8",
-        "12,12"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Solid State"
-      ],
-      "explanation": "Both ions are octahedrally coordinated ⇒ CN = 6,6."
-    },
-    {
-      "question": "Identify the correct statement: Which statement is true for a buffer solution?",
-      "options": [
-        "pH changes drastically on dilution",
-        "pH remains nearly constant upon small acid/base addition",
-        "Only acidic buffers exist",
-        "Only basic buffers exist"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Solutions"
-      ],
-      "explanation": "Buffers resist small additions of acid or base, maintaining pH nearly constant."
-    },
-    {
-      "question": "Identify the correct statement: IUPAC name of CH₃–CH₂–CH(OH)–CH₃ is",
-      "options": [
-        "Propan-2-ol",
-        "Butan-2-ol",
-        "Butan-1-ol",
-        "Propan-1-ol"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Nomenclature"
-      ],
-      "explanation": "Longest chain has 4 carbons; OH on carbon 2 ⇒ butan-2-ol."
-    },
-    {
-      "question": "Identify the correct statement: Which gas is released at anode during electrolysis of aqueous NaCl?",
-      "options": [
-        "H₂",
-        "Cl₂",
-        "O₂",
-        "Na"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Electrochemistry"
-      ],
-      "explanation": "In dilute aqueous NaCl, O₂ evolves at anode (water oxidation) and H₂ at cathode; concentrated brine yields Cl₂ at anode."
-    },
-    {
-      "question": "Identify the correct statement: Which pair shows geometrical isomerism?",
-      "options": [
-        "CH₂=CH₂",
-        "[Pt(NH₃)₂Cl₂]",
-        "CH₃–CH₃",
-        "CCl₄"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Isomerism"
-      ],
-      "explanation": "[Pt(NH₃)₂Cl₂] has cis/trans square-planar isomers."
-    },
-    {
-      "question": "Choose the correct option: pH of 10⁻³ M HCl is approximately",
-      "options": [
-        "3",
-        "11",
-        "1",
-        "14"
-      ],
-      "answer": "1",
-      "difficulty": "high",
-      "tags": [
-        "Acids & Bases"
-      ],
-      "explanation": "Strong acid fully dissociates: [H⁺]=10⁻³ M ⇒ pH=3."
-    },
-    {
-      "question": "Choose the correct option: Hybridization of carbon in ethene (C₂H₄) is",
-      "options": [
-        "sp³",
-        "sp²",
-        "sp",
-        "sp³d"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Organic",
-        "Hybridization"
-      ],
-      "explanation": "Each C forms three σ bonds in trigonal planar geometry ⇒ sp²."
-    },
-    {
-      "question": "Choose the correct option: Rate constant k has units s⁻¹ for",
-      "options": [
-        "Zero order",
-        "First order",
-        "Second order",
-        "Third order"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Kinetics"
-      ],
-      "explanation": "Only first-order reactions have k with units s⁻¹."
-    },
-    {
-      "question": "Choose the correct option: Langmuir adsorption isotherm assumes",
-      "options": [
-        "Multilayer",
-        "Heterogeneous surface",
-        "Monolayer",
-        "Chemisorption only"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Surface Chemistry"
-      ],
-      "explanation": "Langmuir model: uniform sites, monolayer, no lateral interactions."
-    },
-    {
-      "question": "Choose the correct option: Which reagent converts alcohol to alkyl chloride?",
-      "options": [
-        "KMnO₄",
-        "SOCl₂",
-        "Cu",
-        "KOH(aq)"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Organic Reagents"
-      ],
-      "explanation": "Thionyl chloride converts ROH to RCl, often with pyridine."
-    },
-    {
-      "question": "Choose the correct option: Which is aromatic by Hückel’s rule?",
-      "options": [
-        "Cyclobutadiene",
-        "Cyclooctatetraene (planar)",
-        "Benzene",
-        "Cyclopropenyl anion"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Aromaticity"
-      ],
-      "explanation": "Benzene has 6π electrons (4n+2, n=1), planar and conjugated."
-    },
-    {
-      "question": "Choose the correct option: The complex [Fe(CN)₆]⁴⁻ is",
-      "options": [
-        "High spin",
-        "Low spin",
-        "Paramagnetic",
-        "Both high spin and paramagnetic"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Coordination"
-      ],
-      "explanation": "CN⁻ causes strong-field splitting; Fe²⁺ (d⁶) becomes low spin (paired), diamagnetic."
-    },
-    {
-      "question": "Choose the correct option: Order of oxidizing power among halogens (weak → strong)",
-      "options": [
-        "I₂ < Br₂ < Cl₂ < F₂",
-        "F₂ < Cl₂ < Br₂ < I₂",
-        "Cl₂ < F₂ < Br₂ < I₂",
-        "Br₂ < I₂ < F₂ < Cl₂"
-      ],
-      "answer": "1",
-      "difficulty": "high",
-      "tags": [
-        "p-Block"
-      ],
-      "explanation": "Oxidizing power increases up the group."
-    },
-    {
-      "question": "Choose the correct option: Number of atoms in 1 mole is",
-      "options": [
-        "6.022×10²³",
-        "6.022×10²²",
-        "3.011×10²³",
-        "1.66×10⁻²⁴"
-      ],
-      "answer": "1",
-      "difficulty": "high",
-      "tags": [
-        "Mole Concept"
-      ],
-      "explanation": "Avogadro’s number NA = 6.022×10²³."
-    },
-    {
-      "question": "Choose the correct option: The strongest hydrogen bonding is expected in",
-      "options": [
-        "HCl",
-        "HF",
-        "H₂S",
-        "PH₃"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Intermolecular Forces"
-      ],
-      "explanation": "HF forms strong hydrogen bonds due to high electronegativity and small size of F."
-    }
-  ],
-  "Zoology": [
-    {
-      "question": "Which of the following is correct regarding: Largest artery in the human body is",
-      "options": [
-        "Pulmonary artery",
-        "Aorta",
-        "Carotid artery",
-        "Femoral artery"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Circulation"
-      ],
-      "explanation": "The aorta arises from the left ventricle and is the largest artery."
-    },
-    {
-      "question": "Which of the following is correct regarding: Cells that secrete antibodies are",
-      "options": [
-        "T-helper cells",
-        "B-lymphocytes (plasma cells)",
-        "Neutrophils",
-        "Basophils"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Immunology"
-      ],
-      "explanation": "Activated B cells differentiate into plasma cells which secrete antibodies."
-    },
-    {
-      "question": "Which of the following is correct regarding: Loop of Henle primarily functions to",
-      "options": [
-        "Filter blood",
-        "Concentrate urine via counter-current",
-        "Secrete aldosterone",
-        "Reabsorb glucose via SGLT"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Excretion"
-      ],
-      "explanation": "Counter-current multiplication establishes osmotic gradient to concentrate urine."
-    },
-    {
-      "question": "Which of the following is correct regarding: Hormone that increases blood glucose by promoting glycogenolysis is",
-      "options": [
-        "Insulin",
-        "Glucagon",
-        "Thyroxine",
-        "Aldosterone"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Endocrine"
-      ],
-      "explanation": "Glucagon from α-cells stimulates glycogen breakdown and gluconeogenesis."
-    },
-    {
-      "question": "Which of the following is correct regarding: Basic contractile unit of skeletal muscle is",
-      "options": [
-        "Myofibril",
-        "Sarcomere",
-        "Myosin",
-        "Actin"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Muscle"
-      ],
-      "explanation": "A sarcomere (Z to Z) is the functional contractile unit."
-    },
-    {
-      "question": "Which of the following is correct regarding: Vitamin deficiency causing night blindness is",
-      "options": [
-        "Vitamin A",
-        "Vitamin B₁₂",
-        "Vitamin C",
-        "Vitamin K"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Nutrition"
-      ],
-      "explanation": "Vitamin A is essential for rhodopsin in rods."
-    },
-    {
-      "question": "Which of the following is correct regarding: Innate immunity includes all EXCEPT",
-      "options": [
-        "Skin barrier",
-        "Mucus",
-        "Inflammation",
-        "Antibody memory"
-      ],
-      "answer": "4",
-      "difficulty": "low",
-      "tags": [
-        "Immunity"
-      ],
-      "explanation": "Immunological memory is a feature of adaptive immunity."
-    },
-    {
-      "question": "Which of the following is correct regarding: ABO blood group antigens are present on",
-      "options": [
-        "Plasma proteins",
-        "RBC membrane",
-        "Leukocyte nuclei",
-        "Platelets"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Blood"
-      ],
-      "explanation": "ABO antigens are glycoconjugates on RBC membrane."
-    },
-    {
-      "question": "Which of the following is correct regarding: Vector of malaria in humans is",
-      "options": [
-        "Culex mosquito",
-        "Anopheles mosquito (female)",
-        "Aedes mosquito",
-        "Glossina"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Parasitology"
-      ],
-      "explanation": "Female Anopheles transmits Plasmodium spp."
-    },
-    {
-      "question": "Which of the following is correct regarding: Site of fertilization in human females is usually the",
-      "options": [
-        "Ovary",
-        "Uterus",
-        "Ampulla of fallopian tube",
-        "Cervix"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "Fertilization commonly occurs in the ampulla of the oviduct."
-    },
-    {
-      "question": "Which of the following is correct regarding: Neuron that carries impulse from receptor to CNS is",
-      "options": [
-        "Motor neuron",
-        "Sensory neuron",
-        "Relay neuron",
-        "Interneuron only"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Neurobiology"
-      ],
-      "explanation": "Sensory (afferent) neurons carry impulses from receptors to CNS."
-    },
-    {
-      "question": "Which of the following is correct regarding: Bohr effect in hemoglobin refers to",
-      "options": [
-        "Increased O₂ affinity at low pH",
-        "Decreased O₂ affinity at low pH",
-        "Unchanged O₂ affinity",
-        "CO₂ binding to heme iron"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Respiration"
-      ],
-      "explanation": "At low pH/high CO₂, hemoglobin’s O₂ affinity decreases, favoring O₂ release."
-    },
-    {
-      "question": "Which of the following is correct regarding: The primary pacemaker of the heart is the",
-      "options": [
-        "AV node",
-        "SA node",
-        "Bundle of His",
-        "Purkinje fibers"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Cardiac"
-      ],
-      "explanation": "SA node initiates heartbeat, setting the pace."
-    },
-    {
-      "question": "Which of the following is correct regarding: Antigen-presenting cells include",
-      "options": [
-        "Neutrophils",
-        "Eosinophils",
-        "Macrophages and dendritic cells",
-        "Basophils"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Immunology"
-      ],
-      "explanation": "APCs such as macrophages and dendritic cells present antigens via MHC to T cells."
-    },
-    {
-      "question": "Which of the following is correct regarding: Typhoid fever is caused by",
-      "options": [
-        "Vibrio cholerae",
-        "Salmonella typhi",
-        "Plasmodium vivax",
-        "Mycobacterium tuberculosis"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Microbiology"
-      ],
-      "explanation": "Typhoid is caused by Salmonella enterica serovar Typhi."
-    },
-    {
-      "question": "Which of the following is correct regarding: During pregnancy, which hormone maintains uterine lining after first trimester?",
-      "options": [
-        "FSH",
-        "LH",
-        "Progesterone from placenta",
-        "Prolactin"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Endocrine",
-        "Reproduction"
-      ],
-      "explanation": "Placenta produces progesterone maintaining endometrium after initial corpus luteum support."
-    },
-    {
-      "question": "Which of the following is correct regarding: Adaptive immunity specificity is due to",
-      "options": [
-        "Pattern recognition receptors",
-        "Clonal selection of lymphocytes",
-        "Phagocytosis only",
-        "Inflammation"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Immunity"
-      ],
-      "explanation": "Clonal selection and expansion of specific B/T cells confer specificity and memory."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which vitamin is synthesized by gut bacteria?",
-      "options": [
-        "Vitamin C",
-        "Vitamin K",
-        "Vitamin A",
-        "Vitamin D"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Nutrition",
-        "Microbiome"
-      ],
-      "explanation": "Vitamin K is produced by intestinal bacteria contributing to host supply."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which structure connects hypothalamus and pituitary?",
-      "options": [
-        "Infundibulum",
-        "Pons",
-        "Medulla",
-        "Corpus callosum"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Endocrine",
-        "Neuroanatomy"
-      ],
-      "explanation": "The infundibulum (pituitary stalk) connects hypothalamus to pituitary."
-    },
-    {
-      "question": "Which of the following is correct regarding: Primary function of bile salts is to",
-      "options": [
-        "Digest proteins",
-        "Emulsify fats",
-        "Absorb glucose",
-        "Neutralize pepsin"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Digestion"
-      ],
-      "explanation": "Bile salts emulsify lipids, increasing surface area for lipase action."
-    },
-    {
-      "question": "Identify the correct statement: Largest artery in the human body is",
-      "options": [
-        "Pulmonary artery",
-        "Aorta",
-        "Carotid artery",
-        "Femoral artery"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Circulation"
-      ],
-      "explanation": "The aorta arises from the left ventricle and is the largest artery."
-    },
-    {
-      "question": "Identify the correct statement: Cells that secrete antibodies are",
-      "options": [
-        "T-helper cells",
-        "B-lymphocytes (plasma cells)",
-        "Neutrophils",
-        "Basophils"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Immunology"
-      ],
-      "explanation": "Activated B cells differentiate into plasma cells which secrete antibodies."
-    },
-    {
-      "question": "Identify the correct statement: Loop of Henle primarily functions to",
-      "options": [
-        "Filter blood",
-        "Concentrate urine via counter-current",
-        "Secrete aldosterone",
-        "Reabsorb glucose via SGLT"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Excretion"
-      ],
-      "explanation": "Counter-current multiplication establishes osmotic gradient to concentrate urine."
-    },
-    {
-      "question": "Identify the correct statement: Hormone that increases blood glucose by promoting glycogenolysis is",
-      "options": [
-        "Insulin",
-        "Glucagon",
-        "Thyroxine",
-        "Aldosterone"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Endocrine"
-      ],
-      "explanation": "Glucagon from α-cells stimulates glycogen breakdown and gluconeogenesis."
-    },
-    {
-      "question": "Identify the correct statement: Basic contractile unit of skeletal muscle is",
-      "options": [
-        "Myofibril",
-        "Sarcomere",
-        "Myosin",
-        "Actin"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Muscle"
-      ],
-      "explanation": "A sarcomere (Z to Z) is the functional contractile unit."
-    },
-    {
-      "question": "Identify the correct statement: Vitamin deficiency causing night blindness is",
-      "options": [
-        "Vitamin A",
-        "Vitamin B₁₂",
-        "Vitamin C",
-        "Vitamin K"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Nutrition"
-      ],
-      "explanation": "Vitamin A is essential for rhodopsin in rods."
-    },
-    {
-      "question": "Identify the correct statement: Innate immunity includes all EXCEPT",
-      "options": [
-        "Skin barrier",
-        "Mucus",
-        "Inflammation",
-        "Antibody memory"
-      ],
-      "answer": "4",
-      "difficulty": "medium",
-      "tags": [
-        "Immunity"
-      ],
-      "explanation": "Immunological memory is a feature of adaptive immunity."
-    },
-    {
-      "question": "Identify the correct statement: ABO blood group antigens are present on",
-      "options": [
-        "Plasma proteins",
-        "RBC membrane",
-        "Leukocyte nuclei",
-        "Platelets"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Blood"
-      ],
-      "explanation": "ABO antigens are glycoconjugates on RBC membrane."
-    },
-    {
-      "question": "Identify the correct statement: Vector of malaria in humans is",
-      "options": [
-        "Culex mosquito",
-        "Anopheles mosquito (female)",
-        "Aedes mosquito",
-        "Glossina"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Parasitology"
-      ],
-      "explanation": "Female Anopheles transmits Plasmodium spp."
-    },
-    {
-      "question": "Identify the correct statement: Site of fertilization in human females is usually the",
-      "options": [
-        "Ovary",
-        "Uterus",
-        "Ampulla of fallopian tube",
-        "Cervix"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "Fertilization commonly occurs in the ampulla of the oviduct."
-    },
-    {
-      "question": "Identify the correct statement: Neuron that carries impulse from receptor to CNS is",
-      "options": [
-        "Motor neuron",
-        "Sensory neuron",
-        "Relay neuron",
-        "Interneuron only"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Neurobiology"
-      ],
-      "explanation": "Sensory (afferent) neurons carry impulses from receptors to CNS."
-    },
-    {
-      "question": "Identify the correct statement: Bohr effect in hemoglobin refers to",
-      "options": [
-        "Increased O₂ affinity at low pH",
-        "Decreased O₂ affinity at low pH",
-        "Unchanged O₂ affinity",
-        "CO₂ binding to heme iron"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Respiration"
-      ],
-      "explanation": "At low pH/high CO₂, hemoglobin’s O₂ affinity decreases, favoring O₂ release."
-    },
-    {
-      "question": "Identify the correct statement: The primary pacemaker of the heart is the",
-      "options": [
-        "AV node",
-        "SA node",
-        "Bundle of His",
-        "Purkinje fibers"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Cardiac"
-      ],
-      "explanation": "SA node initiates heartbeat, setting the pace."
-    },
-    {
-      "question": "Identify the correct statement: Antigen-presenting cells include",
-      "options": [
-        "Neutrophils",
-        "Eosinophils",
-        "Macrophages and dendritic cells",
-        "Basophils"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Immunology"
-      ],
-      "explanation": "APCs such as macrophages and dendritic cells present antigens via MHC to T cells."
-    },
-    {
-      "question": "Identify the correct statement: Typhoid fever is caused by",
-      "options": [
-        "Vibrio cholerae",
-        "Salmonella typhi",
-        "Plasmodium vivax",
-        "Mycobacterium tuberculosis"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Microbiology"
-      ],
-      "explanation": "Typhoid is caused by Salmonella enterica serovar Typhi."
-    },
-    {
-      "question": "Identify the correct statement: During pregnancy, which hormone maintains uterine lining after first trimester?",
-      "options": [
-        "FSH",
-        "LH",
-        "Progesterone from placenta",
-        "Prolactin"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Endocrine",
-        "Reproduction"
-      ],
-      "explanation": "Placenta produces progesterone maintaining endometrium after initial corpus luteum support."
-    },
-    {
-      "question": "Identify the correct statement: Adaptive immunity specificity is due to",
-      "options": [
-        "Pattern recognition receptors",
-        "Clonal selection of lymphocytes",
-        "Phagocytosis only",
-        "Inflammation"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Immunity"
-      ],
-      "explanation": "Clonal selection and expansion of specific B/T cells confer specificity and memory."
-    },
-    {
-      "question": "Identify the correct statement: Which vitamin is synthesized by gut bacteria?",
-      "options": [
-        "Vitamin C",
-        "Vitamin K",
-        "Vitamin A",
-        "Vitamin D"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Nutrition",
-        "Microbiome"
-      ],
-      "explanation": "Vitamin K is produced by intestinal bacteria contributing to host supply."
-    },
-    {
-      "question": "Identify the correct statement: Which structure connects hypothalamus and pituitary?",
-      "options": [
-        "Infundibulum",
-        "Pons",
-        "Medulla",
-        "Corpus callosum"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Endocrine",
-        "Neuroanatomy"
-      ],
-      "explanation": "The infundibulum (pituitary stalk) connects hypothalamus to pituitary."
-    },
-    {
-      "question": "Identify the correct statement: Primary function of bile salts is to",
-      "options": [
-        "Digest proteins",
-        "Emulsify fats",
-        "Absorb glucose",
-        "Neutralize pepsin"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Digestion"
-      ],
-      "explanation": "Bile salts emulsify lipids, increasing surface area for lipase action."
-    },
-    {
-      "question": "Choose the correct option: Largest artery in the human body is",
-      "options": [
-        "Pulmonary artery",
-        "Aorta",
-        "Carotid artery",
-        "Femoral artery"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Circulation"
-      ],
-      "explanation": "The aorta arises from the left ventricle and is the largest artery."
-    },
-    {
-      "question": "Choose the correct option: Cells that secrete antibodies are",
-      "options": [
-        "T-helper cells",
-        "B-lymphocytes (plasma cells)",
-        "Neutrophils",
-        "Basophils"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Immunology"
-      ],
-      "explanation": "Activated B cells differentiate into plasma cells which secrete antibodies."
-    },
-    {
-      "question": "Choose the correct option: Loop of Henle primarily functions to",
-      "options": [
-        "Filter blood",
-        "Concentrate urine via counter-current",
-        "Secrete aldosterone",
-        "Reabsorb glucose via SGLT"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Excretion"
-      ],
-      "explanation": "Counter-current multiplication establishes osmotic gradient to concentrate urine."
-    },
-    {
-      "question": "Choose the correct option: Hormone that increases blood glucose by promoting glycogenolysis is",
-      "options": [
-        "Insulin",
-        "Glucagon",
-        "Thyroxine",
-        "Aldosterone"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Endocrine"
-      ],
-      "explanation": "Glucagon from α-cells stimulates glycogen breakdown and gluconeogenesis."
-    },
-    {
-      "question": "Choose the correct option: Basic contractile unit of skeletal muscle is",
-      "options": [
-        "Myofibril",
-        "Sarcomere",
-        "Myosin",
-        "Actin"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Muscle"
-      ],
-      "explanation": "A sarcomere (Z to Z) is the functional contractile unit."
-    },
-    {
-      "question": "Choose the correct option: Vitamin deficiency causing night blindness is",
-      "options": [
-        "Vitamin A",
-        "Vitamin B₁₂",
-        "Vitamin C",
-        "Vitamin K"
-      ],
-      "answer": "1",
-      "difficulty": "high",
-      "tags": [
-        "Nutrition"
-      ],
-      "explanation": "Vitamin A is essential for rhodopsin in rods."
-    },
-    {
-      "question": "Choose the correct option: Innate immunity includes all EXCEPT",
-      "options": [
-        "Skin barrier",
-        "Mucus",
-        "Inflammation",
-        "Antibody memory"
-      ],
-      "answer": "4",
-      "difficulty": "high",
-      "tags": [
-        "Immunity"
-      ],
-      "explanation": "Immunological memory is a feature of adaptive immunity."
-    },
-    {
-      "question": "Choose the correct option: ABO blood group antigens are present on",
-      "options": [
-        "Plasma proteins",
-        "RBC membrane",
-        "Leukocyte nuclei",
-        "Platelets"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Blood"
-      ],
-      "explanation": "ABO antigens are glycoconjugates on RBC membrane."
-    },
-    {
-      "question": "Choose the correct option: Vector of malaria in humans is",
-      "options": [
-        "Culex mosquito",
-        "Anopheles mosquito (female)",
-        "Aedes mosquito",
-        "Glossina"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Parasitology"
-      ],
-      "explanation": "Female Anopheles transmits Plasmodium spp."
-    },
-    {
-      "question": "Choose the correct option: Site of fertilization in human females is usually the",
-      "options": [
-        "Ovary",
-        "Uterus",
-        "Ampulla of fallopian tube",
-        "Cervix"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "Fertilization commonly occurs in the ampulla of the oviduct."
-    }
-  ],
-  "Botany": [
-    {
-      "question": "Which of the following is correct regarding: Pigment directly participating in light reactions is",
-      "options": [
-        "Chlorophyll a",
-        "Chlorophyll b",
-        "Carotene",
-        "Xanthophyll"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Chlorophyll a is the primary pigment in reaction centers."
-    },
-    {
-      "question": "Which of the following is correct regarding: Stomata open primarily due to",
-      "options": [
-        "Decreased turgor of guard cells",
-        "Increased turgor of guard cells",
-        "ABA accumulation",
-        "High CO₂ in leaf"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Opening occurs when guard cells absorb water and bow apart."
-    },
-    {
-      "question": "Which of the following is correct regarding: Tissue responsible for secondary growth in dicot stems is",
-      "options": [
-        "Apical meristem",
-        "Cork cambium only",
-        "Vascular cambium",
-        "Intercalary meristem"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Vascular cambium forms secondary xylem and phloem, increasing girth."
-    },
-    {
-      "question": "Which of the following is correct regarding: End product of glycolysis is",
-      "options": [
-        "Acetyl-CoA",
-        "Pyruvate",
-        "Lactate only",
-        "Ethanol"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Respiration"
-      ],
-      "explanation": "Glycolysis converts glucose to two pyruvate molecules."
-    },
-    {
-      "question": "Which of the following is correct regarding: Double fertilization in angiosperms involves fusion of",
-      "options": [
-        "Egg and sperm only",
-        "Two sperms with egg",
-        "One sperm with egg and another with polar nuclei",
-        "Two eggs with one sperm"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "One sperm fuses with egg (zygote), another with polar nuclei (endosperm)."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which is a C₄ plant?",
-      "options": [
-        "Wheat",
-        "Rice",
-        "Maize",
-        "Barley"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Maize uses the C₄ pathway with PEP carboxylase."
-    },
-    {
-      "question": "Which of the following is correct regarding: Mycorrhiza is a symbiotic association between",
-      "options": [
-        "Alga and fungus",
-        "Root and fungus",
-        "Root and nitrogen-fixing bacteria",
-        "Leaf and bacteria"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Associations"
-      ],
-      "explanation": "Fungal hyphae aid in mineral uptake; plant supplies carbohydrates."
-    },
-    {
-      "question": "Which of the following is correct regarding: Guttation occurs through",
-      "options": [
-        "Lenticels",
-        "Stomata",
-        "Hydathodes",
-        "Trichomes"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Guttation droplets exude through hydathodes at leaf margins."
-    },
-    {
-      "question": "Which of the following is correct regarding: Common biofertilizer for paddy fields contains",
-      "options": [
-        "Azotobacter",
-        "Anabaena (blue-green alga)",
-        "Rhizobium",
-        "Nitrobacter"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Agriculture"
-      ],
-      "explanation": "Anabaena in Azolla symbiosis is used as biofertilizer in paddy."
-    },
-    {
-      "question": "Which of the following is correct regarding: Plant hormone that delays senescence is",
-      "options": [
-        "Auxin",
-        "Cytokinin",
-        "Abscisic acid",
-        "Ethylene"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Hormones"
-      ],
-      "explanation": "Cytokinins delay leaf senescence by promoting nutrient mobilization."
-    },
-    {
-      "question": "Which of the following is correct regarding: Casparian strip occurs in",
-      "options": [
-        "Epidermis",
-        "Endodermis",
-        "Cortex",
-        "Pericycle"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Casparian strips of suberin are characteristic of endodermal cell walls in roots."
-    },
-    {
-      "question": "Which of the following is correct regarding: Photoperiodism is the response of plants to",
-      "options": [
-        "Water",
-        "Light duration",
-        "Temperature",
-        "Minerals"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Flowering and other processes respond to length of light and dark periods."
-    },
-    {
-      "question": "Which of the following is correct regarding: Primary CO₂ acceptor in Calvin cycle is",
-      "options": [
-        "PEP",
-        "RuBP",
-        "PGA",
-        "OAA"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Ribulose-1,5-bisphosphate (RuBP) accepts CO₂ catalyzed by Rubisco."
-    },
-    {
-      "question": "Which of the following is correct regarding: Etiolation in plants is caused by",
-      "options": [
-        "Excess light",
-        "Darkness",
-        "Excess nutrients",
-        "Low CO₂"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Growth"
-      ],
-      "explanation": "Growth in darkness leads to elongated, pale shoots (etiolation)."
-    },
-    {
-      "question": "Which of the following is correct regarding: Transpiration pull is generated mainly by",
-      "options": [
-        "Root pressure",
-        "Capillarity alone",
-        "Cohesion-tension mechanism",
-        "Active transport"
-      ],
-      "answer": "3",
-      "difficulty": "low",
-      "tags": [
-        "Water Transport"
-      ],
-      "explanation": "Cohesion of water molecules and tension from evaporation drive xylem ascent."
-    },
-    {
-      "question": "Which of the following is correct regarding: Which is a CAM plant?",
-      "options": [
-        "Opuntia",
-        "Wheat",
-        "Rice",
-        "Maize"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Opuntia fixes CO₂ at night (CAM pathway) reducing water loss."
-    },
-    {
-      "question": "Which of the following is correct regarding: Nodulation in legume roots is induced by",
-      "options": [
-        "Azotobacter",
-        "Rhizobium",
-        "Nitrosomonas",
-        "Nitrobacter"
-      ],
-      "answer": "2",
-      "difficulty": "low",
-      "tags": [
-        "Nitrogen cycle"
-      ],
-      "explanation": "Rhizobium forms nodules where nitrogen is fixed to ammonia."
-    },
-    {
-      "question": "Which of the following is correct regarding: Sieve tube elements are associated with",
-      "options": [
-        "Companion cells",
-        "Tracheids",
-        "Vessels",
-        "Guard cells"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Companion cells aid sieve tubes metabolically in phloem."
-    },
-    {
-      "question": "Which of the following is correct regarding: Pollen grains in angiosperms are produced in",
-      "options": [
-        "Anther",
-        "Stigma",
-        "Style",
-        "Ovule"
-      ],
-      "answer": "1",
-      "difficulty": "low",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "Pollen develops in microsporangia (pollen sacs) of the anther."
-    },
-    {
-      "question": "Identify the correct statement: Pigment directly participating in light reactions is",
-      "options": [
-        "Chlorophyll a",
-        "Chlorophyll b",
-        "Carotene",
-        "Xanthophyll"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Chlorophyll a is the primary pigment in reaction centers."
-    },
-    {
-      "question": "Identify the correct statement: Stomata open primarily due to",
-      "options": [
-        "Decreased turgor of guard cells",
-        "Increased turgor of guard cells",
-        "ABA accumulation",
-        "High CO₂ in leaf"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Opening occurs when guard cells absorb water and bow apart."
-    },
-    {
-      "question": "Identify the correct statement: Tissue responsible for secondary growth in dicot stems is",
-      "options": [
-        "Apical meristem",
-        "Cork cambium only",
-        "Vascular cambium",
-        "Intercalary meristem"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Vascular cambium forms secondary xylem and phloem, increasing girth."
-    },
-    {
-      "question": "Identify the correct statement: End product of glycolysis is",
-      "options": [
-        "Acetyl-CoA",
-        "Pyruvate",
-        "Lactate only",
-        "Ethanol"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Respiration"
-      ],
-      "explanation": "Glycolysis converts glucose to two pyruvate molecules."
-    },
-    {
-      "question": "Identify the correct statement: Double fertilization in angiosperms involves fusion of",
-      "options": [
-        "Egg and sperm only",
-        "Two sperms with egg",
-        "One sperm with egg and another with polar nuclei",
-        "Two eggs with one sperm"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "One sperm fuses with egg (zygote), another with polar nuclei (endosperm)."
-    },
-    {
-      "question": "Identify the correct statement: Which is a C₄ plant?",
-      "options": [
-        "Wheat",
-        "Rice",
-        "Maize",
-        "Barley"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Maize uses the C₄ pathway with PEP carboxylase."
-    },
-    {
-      "question": "Identify the correct statement: Mycorrhiza is a symbiotic association between",
-      "options": [
-        "Alga and fungus",
-        "Root and fungus",
-        "Root and nitrogen-fixing bacteria",
-        "Leaf and bacteria"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Associations"
-      ],
-      "explanation": "Fungal hyphae aid in mineral uptake; plant supplies carbohydrates."
-    },
-    {
-      "question": "Identify the correct statement: Guttation occurs through",
-      "options": [
-        "Lenticels",
-        "Stomata",
-        "Hydathodes",
-        "Trichomes"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Guttation droplets exude through hydathodes at leaf margins."
-    },
-    {
-      "question": "Identify the correct statement: Common biofertilizer for paddy fields contains",
-      "options": [
-        "Azotobacter",
-        "Anabaena (blue-green alga)",
-        "Rhizobium",
-        "Nitrobacter"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Agriculture"
-      ],
-      "explanation": "Anabaena in Azolla symbiosis is used as biofertilizer in paddy."
-    },
-    {
-      "question": "Identify the correct statement: Plant hormone that delays senescence is",
-      "options": [
-        "Auxin",
-        "Cytokinin",
-        "Abscisic acid",
-        "Ethylene"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Hormones"
-      ],
-      "explanation": "Cytokinins delay leaf senescence by promoting nutrient mobilization."
-    },
-    {
-      "question": "Identify the correct statement: Casparian strip occurs in",
-      "options": [
-        "Epidermis",
-        "Endodermis",
-        "Cortex",
-        "Pericycle"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Casparian strips of suberin are characteristic of endodermal cell walls in roots."
-    },
-    {
-      "question": "Identify the correct statement: Photoperiodism is the response of plants to",
-      "options": [
-        "Water",
-        "Light duration",
-        "Temperature",
-        "Minerals"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Flowering and other processes respond to length of light and dark periods."
-    },
-    {
-      "question": "Identify the correct statement: Primary CO₂ acceptor in Calvin cycle is",
-      "options": [
-        "PEP",
-        "RuBP",
-        "PGA",
-        "OAA"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Ribulose-1,5-bisphosphate (RuBP) accepts CO₂ catalyzed by Rubisco."
-    },
-    {
-      "question": "Identify the correct statement: Etiolation in plants is caused by",
-      "options": [
-        "Excess light",
-        "Darkness",
-        "Excess nutrients",
-        "Low CO₂"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Growth"
-      ],
-      "explanation": "Growth in darkness leads to elongated, pale shoots (etiolation)."
-    },
-    {
-      "question": "Identify the correct statement: Transpiration pull is generated mainly by",
-      "options": [
-        "Root pressure",
-        "Capillarity alone",
-        "Cohesion-tension mechanism",
-        "Active transport"
-      ],
-      "answer": "3",
-      "difficulty": "medium",
-      "tags": [
-        "Water Transport"
-      ],
-      "explanation": "Cohesion of water molecules and tension from evaporation drive xylem ascent."
-    },
-    {
-      "question": "Identify the correct statement: Which is a CAM plant?",
-      "options": [
-        "Opuntia",
-        "Wheat",
-        "Rice",
-        "Maize"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Opuntia fixes CO₂ at night (CAM pathway) reducing water loss."
-    },
-    {
-      "question": "Identify the correct statement: Nodulation in legume roots is induced by",
-      "options": [
-        "Azotobacter",
-        "Rhizobium",
-        "Nitrosomonas",
-        "Nitrobacter"
-      ],
-      "answer": "2",
-      "difficulty": "medium",
-      "tags": [
-        "Nitrogen cycle"
-      ],
-      "explanation": "Rhizobium forms nodules where nitrogen is fixed to ammonia."
-    },
-    {
-      "question": "Identify the correct statement: Sieve tube elements are associated with",
-      "options": [
-        "Companion cells",
-        "Tracheids",
-        "Vessels",
-        "Guard cells"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Companion cells aid sieve tubes metabolically in phloem."
-    },
-    {
-      "question": "Identify the correct statement: Pollen grains in angiosperms are produced in",
-      "options": [
-        "Anther",
-        "Stigma",
-        "Style",
-        "Ovule"
-      ],
-      "answer": "1",
-      "difficulty": "medium",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "Pollen develops in microsporangia (pollen sacs) of the anther."
-    },
-    {
-      "question": "Choose the correct option: Pigment directly participating in light reactions is",
-      "options": [
-        "Chlorophyll a",
-        "Chlorophyll b",
-        "Carotene",
-        "Xanthophyll"
-      ],
-      "answer": "1",
-      "difficulty": "high",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Chlorophyll a is the primary pigment in reaction centers."
-    },
-    {
-      "question": "Choose the correct option: Stomata open primarily due to",
-      "options": [
-        "Decreased turgor of guard cells",
-        "Increased turgor of guard cells",
-        "ABA accumulation",
-        "High CO₂ in leaf"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Opening occurs when guard cells absorb water and bow apart."
-    },
-    {
-      "question": "Choose the correct option: Tissue responsible for secondary growth in dicot stems is",
-      "options": [
-        "Apical meristem",
-        "Cork cambium only",
-        "Vascular cambium",
-        "Intercalary meristem"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Vascular cambium forms secondary xylem and phloem, increasing girth."
-    },
-    {
-      "question": "Choose the correct option: End product of glycolysis is",
-      "options": [
-        "Acetyl-CoA",
-        "Pyruvate",
-        "Lactate only",
-        "Ethanol"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Respiration"
-      ],
-      "explanation": "Glycolysis converts glucose to two pyruvate molecules."
-    },
-    {
-      "question": "Choose the correct option: Double fertilization in angiosperms involves fusion of",
-      "options": [
-        "Egg and sperm only",
-        "Two sperms with egg",
-        "One sperm with egg and another with polar nuclei",
-        "Two eggs with one sperm"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Reproduction"
-      ],
-      "explanation": "One sperm fuses with egg (zygote), another with polar nuclei (endosperm)."
-    },
-    {
-      "question": "Choose the correct option: Which is a C₄ plant?",
-      "options": [
-        "Wheat",
-        "Rice",
-        "Maize",
-        "Barley"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Photosynthesis"
-      ],
-      "explanation": "Maize uses the C₄ pathway with PEP carboxylase."
-    },
-    {
-      "question": "Choose the correct option: Mycorrhiza is a symbiotic association between",
-      "options": [
-        "Alga and fungus",
-        "Root and fungus",
-        "Root and nitrogen-fixing bacteria",
-        "Leaf and bacteria"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Associations"
-      ],
-      "explanation": "Fungal hyphae aid in mineral uptake; plant supplies carbohydrates."
-    },
-    {
-      "question": "Choose the correct option: Guttation occurs through",
-      "options": [
-        "Lenticels",
-        "Stomata",
-        "Hydathodes",
-        "Trichomes"
-      ],
-      "answer": "3",
-      "difficulty": "high",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Guttation droplets exude through hydathodes at leaf margins."
-    },
-    {
-      "question": "Choose the correct option: Common biofertilizer for paddy fields contains",
-      "options": [
-        "Azotobacter",
-        "Anabaena (blue-green alga)",
-        "Rhizobium",
-        "Nitrobacter"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Agriculture"
-      ],
-      "explanation": "Anabaena in Azolla symbiosis is used as biofertilizer in paddy."
-    },
-    {
-      "question": "Choose the correct option: Plant hormone that delays senescence is",
-      "options": [
-        "Auxin",
-        "Cytokinin",
-        "Abscisic acid",
-        "Ethylene"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Hormones"
-      ],
-      "explanation": "Cytokinins delay leaf senescence by promoting nutrient mobilization."
-    },
-    {
-      "question": "Choose the correct option: Casparian strip occurs in",
-      "options": [
-        "Epidermis",
-        "Endodermis",
-        "Cortex",
-        "Pericycle"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Anatomy"
-      ],
-      "explanation": "Casparian strips of suberin are characteristic of endodermal cell walls in roots."
-    },
-    {
-      "question": "Choose the correct option: Photoperiodism is the response of plants to",
-      "options": [
-        "Water",
-        "Light duration",
-        "Temperature",
-        "Minerals"
-      ],
-      "answer": "2",
-      "difficulty": "high",
-      "tags": [
-        "Plant Physiology"
-      ],
-      "explanation": "Flowering and other processes respond to length of light and dark periods."
-    }
-  ]
-}
+[
+  {
+    "id": "PHY-MECHAN-0001",
+    "subject": "Physics",
+    "topic": "Mechanics",
+    "difficulty": 1,
+    "question": "A block slides down a smooth plane inclined at angle θ. What is its acceleration?",
+    "options": ["g", "g sinθ", "g cosθ", "g tanθ"],
+    "answer_index": 1,
+    "explanation": "On a frictionless incline the component of weight along the plane is mg sinθ, so a = g sinθ.",
+    "tags": ["Mechanics", "Inclined plane"]
+  },
+  {
+    "id": "PHY-SHM-0002",
+    "subject": "Physics",
+    "topic": "SHM",
+    "difficulty": 1,
+    "question": "For SHM x = A sin(ωt). At x = 0, which is true?",
+    "options": ["Speed is zero", "Acceleration is maximum", "Acceleration is zero", "Potential energy is maximum"],
+    "answer_index": 2,
+    "explanation": "At mean position, a = −ω²x = 0 and speed is maximum; potential energy is minimum.",
+    "tags": ["SHM"]
+  },
+  {
+    "id": "PHY-PROJEC-0003",
+    "subject": "Physics",
+    "topic": "Projectile",
+    "difficulty": 1,
+    "question": "A projectile is fired with speed u at 45°. What is its range on level ground (no air resistance)?",
+    "options": ["u²/g", "u²/2g", "2u²/g", "u/g"],
+    "answer_index": 0,
+    "explanation": "R = u² sin2θ / g; for θ=45°, sin2θ = 1 ⇒ R = u²/g.",
+    "tags": ["Projectile"]
+  },
+  {
+    "id": "PHY-CURREN-0004",
+    "subject": "Physics",
+    "topic": "Current electricity",
+    "difficulty": 1,
+    "question": "A wire of length L has resistance R. If length is doubled and area halved, the new resistance is",
+    "options": ["R/4", "R", "2R", "4R"],
+    "answer_index": 3,
+    "explanation": "R = ρL/A. New L' = 2L, A' = A/2 ⇒ R' = ρ(2L)/(A/2) = 4R.",
+    "tags": ["Current electricity"]
+  },
+  {
+    "id": "PHY-WAVES-0005",
+    "subject": "Physics",
+    "topic": "Waves",
+    "difficulty": 1,
+    "question": "In Young’s double-slit experiment, fringe width β is proportional to",
+    "options": ["1/λ", "D/d", "λd/D", "λD/d"],
+    "answer_index": 3,
+    "explanation": "Fringe width β = λD/d (D: screen distance, d: slit separation).",
+    "tags": ["Waves", "Optics"]
+  },
+  {
+    "id": "PHY-UNITS-0006",
+    "subject": "Physics",
+    "topic": "Units",
+    "difficulty": 1,
+    "question": "Dimensional formula of Planck’s constant h is",
+    "options": ["ML²T⁻¹", "ML²T⁻²", "MLT⁻²", "M⁰L⁰T⁰"],
+    "answer_index": 0,
+    "explanation": "h has dimensions of action (energy×time): (ML²T⁻²)×T = ML²T⁻¹.",
+    "tags": ["Units"]
+  },
+  {
+    "id": "PHY-THERMO-0007",
+    "subject": "Physics",
+    "topic": "Thermodynamics",
+    "difficulty": 1,
+    "question": "In an isothermal expansion of an ideal gas, the change in internal energy ΔU is",
+    "options": ["> 0", "= 0", "< 0", "Path-dependent"],
+    "answer_index": 1,
+    "explanation": "For ideal gas, U depends only on T. Isothermal ⇒ ΔT=0 ⇒ ΔU=0.",
+    "tags": ["Thermodynamics"]
+  },
+  {
+    "id": "PHY-GRAVIT-0008",
+    "subject": "Physics",
+    "topic": "Gravitation",
+    "difficulty": 1,
+    "question": "Escape speed from a planet of mass M and radius R is",
+    "options": ["√(GM/R)", "√(2GM/R)", "√(GM/2R)", "√(GR/M)"],
+    "answer_index": 1,
+    "explanation": "From energy conservation: ½mv² = GMm/R ⇒ v = √(2GM/R).",
+    "tags": ["Gravitation"]
+  },
+  {
+    "id": "PHY-OPTICS-0009",
+    "subject": "Physics",
+    "topic": "Optics",
+    "difficulty": 1,
+    "question": "A convex lens of focal length f is placed in a liquid whose refractive index equals the lens material. The lens acts as",
+    "options": ["Converging lens", "Diverging lens", "No lens (f=∞)", "Mirror"],
+    "answer_index": 2,
+    "explanation": "No refraction if n_lens = n_medium, so effective focal length is infinite.",
+    "tags": ["Optics"]
+  },
+  {
+    "id": "PHY-ELESTA-0010",
+    "subject": "Physics",
+    "topic": "Electrostatics",
+    "difficulty": 1,
+    "question": "Capacitors C and 2C in series across a battery V carry charge",
+    "options": ["CV", "2CV", "2CV/3", "Same on each: Q = 2CV/3"],
+    "answer_index": 3,
+    "explanation": "Series capacitors carry equal charge. C_eq = 2C/3 ⇒ Q = C_eq V = 2CV/3.",
+    "tags": ["Electrostatics"]
+  },
+  {
+    "id": "PHY-EMINDU-0011",
+    "subject": "Physics",
+    "topic": "Electromagnetic induction",
+    "difficulty": 1,
+    "question": "Magnetic flux through a loop changes uniformly from Φ₁ to Φ₂ in time Δt. The induced emf magnitude is",
+    "options": ["(Φ₂−Φ₁)/Δt", "−(Φ₂−Φ₁)/Δt", "I(R)", "Zero always"],
+    "answer_index": 0,
+    "explanation": "Faraday’s law: |emf| = |dΦ/dt| ≈ |Φ₂−Φ₁|/Δt.",
+    "tags": ["Electromagnetic induction"]
+  },
+  {
+    "id": "PHY-MODERN-0012",
+    "subject": "Physics",
+    "topic": "Modern physics",
+    "difficulty": 1,
+    "question": "For a photoelectric effect experiment, stopping potential increases when",
+    "options": ["Light intensity increases", "Frequency increases", "Area of cathode increases", "Anode potential increases"],
+    "answer_index": 1,
+    "explanation": "Stopping potential depends on maximum KE = hν − φ, hence increases with frequency, not intensity.",
+    "tags": ["Modern physics", "Photoelectric"]
+  },
+  {
+    "id": "PHY-GRAVIT-0013",
+    "subject": "Physics",
+    "topic": "Gravitation",
+    "difficulty": 1,
+    "question": "A satellite in circular orbit of radius r around Earth has speed v. Its period T is",
+    "options": ["2πr/v", "πr/v", "2r/v", "independent of r"],
+    "answer_index": 0,
+    "explanation": "Period is distance over speed: T = 2πr / v.",
+    "tags": ["Gravitation", "Satellites"]
+  },
+  {
+    "id": "PHY-THERMA-0014",
+    "subject": "Physics",
+    "topic": "Thermal radiation",
+    "difficulty": 1,
+    "question": "If temperature of a blackbody is doubled, total radiant power (Stefan–Boltzmann) changes by",
+    "options": ["×2", "×4", "×8", "×16"],
+    "answer_index": 3,
+    "explanation": "Power ∝ T⁴. Doubling T increases power by 2⁴ = 16.",
+    "tags": ["Thermal radiation"]
+  },
+  {
+    "id": "PHY-MAGNET-0015",
+    "subject": "Physics",
+    "topic": "Magnetism",
+    "difficulty": 1,
+    "question": "A current-carrying straight conductor produces magnetic field B at distance r. B is proportional to",
+    "options": ["I/r", "I/r²", "1/Ir", "I²r"],
+    "answer_index": 0,
+    "explanation": "B = μ₀I/(2πr); proportional to I and inversely to r.",
+    "tags": ["Magnetism"]
+  },
+  {
+    "id": "PHY-MODERN-0016",
+    "subject": "Physics",
+    "topic": "Modern physics",
+    "difficulty": 1,
+    "question": "De Broglie wavelength λ of a particle of momentum p is",
+    "options": ["h/p", "hp", "h/2p", "2hp"],
+    "answer_index": 0,
+    "explanation": "λ = h/p (de Broglie relation).",
+    "tags": ["Modern physics", "Waves"]
+  },
+  {
+    "id": "PHY-SHM-0017",
+    "subject": "Physics",
+    "topic": "SHM",
+    "difficulty": 1,
+    "question": "Two springs in series with spring constants k₁ and k₂ have equivalent k_eq equal to",
+    "options": ["k₁+k₂", "k₁k₂/(k₁+k₂)", "k₁k₂", "(k₁+k₂)/(k₁k₂)"],
+    "answer_index": 1,
+    "explanation": "For series: 1/k_eq = 1/k₁ + 1/k₂ ⇒ k_eq = k₁k₂/(k₁+k₂).",
+    "tags": ["SHM", "Elasticity"]
+  },
+  {
+    "id": "PHY-WAVES-0018",
+    "subject": "Physics",
+    "topic": "Waves",
+    "difficulty": 1,
+    "question": "The speed of sound in a gas is proportional to",
+    "options": ["√T", "T", "1/T", "independent of T"],
+    "answer_index": 0,
+    "explanation": "v = √(γRT/M) ∝ √T for a given gas.",
+    "tags": ["Waves", "Thermodynamics"]
+  },
+  {
+    "id": "PHY-SEMICO-0019",
+    "subject": "Physics",
+    "topic": "Semiconductors",
+    "difficulty": 1,
+    "question": "In a PN junction at equilibrium, the built-in potential barrier exists because of",
+    "options": ["External field", "Ionized impurities creating an electric field", "Thermal radiation", "Magnetic field"],
+    "answer_index": 1,
+    "explanation": "Diffusion of carriers leaves behind ionized donors/acceptors, creating an internal electric field (barrier).",
+    "tags": ["Semiconductors"]
+  },
+  {
+    "id": "PHY-WORKEN-0020",
+    "subject": "Physics",
+    "topic": "Work-Energy",
+    "difficulty": 1,
+    "question": "Work done by conservative force around a closed path is",
+    "options": ["Positive", "Negative", "Zero", "Path-dependent"],
+    "answer_index": 2,
+    "explanation": "For conservative forces (e.g., gravity), net work over a closed loop is zero.",
+    "tags": ["Work-Energy"]
+  },
+  {
+    "id": "PHY-MECHAN-0021",
+    "subject": "Physics",
+    "topic": "Mechanics",
+    "difficulty": 2,
+    "question": "A block slides down a smooth plane inclined at angle θ. What is its acceleration?",
+    "options": ["g", "g sinθ", "g cosθ", "g tanθ"],
+    "answer_index": 1,
+    "explanation": "On a frictionless incline the component of weight along the plane is mg sinθ, so a = g sinθ.",
+    "tags": ["Mechanics", "Inclined plane"]
+  },
+  {
+    "id": "PHY-SHM-0022",
+    "subject": "Physics",
+    "topic": "SHM",
+    "difficulty": 2,
+    "question": "For SHM x = A sin(ωt). At x = 0, which is true?",
+    "options": ["Speed is zero", "Acceleration is maximum", "Acceleration is zero", "Potential energy is maximum"],
+    "answer_index": 2,
+    "explanation": "At mean position, a = −ω²x = 0 and speed is maximum; potential energy is minimum.",
+    "tags": ["SHM"]
+  },
+  {
+    "id": "PHY-PROJEC-0023",
+    "subject": "Physics",
+    "topic": "Projectile",
+    "difficulty": 2,
+    "question": "A projectile is fired with speed u at 45°. What is its range on level ground (no air resistance)?",
+    "options": ["u²/g", "u²/2g", "2u²/g", "u/g"],
+    "answer_index": 0,
+    "explanation": "R = u² sin2θ / g; for θ=45°, sin2θ = 1 ⇒ R = u²/g.",
+    "tags": ["Projectile"]
+  },
+  {
+    "id": "PHY-CURREN-0024",
+    "subject": "Physics",
+    "topic": "Current electricity",
+    "difficulty": 2,
+    "question": "A wire of length L has resistance R. If length is doubled and area halved, the new resistance is",
+    "options": ["R/4", "R", "2R", "4R"],
+    "answer_index": 3,
+    "explanation": "R = ρL/A. New L' = 2L, A' = A/2 ⇒ R' = ρ(2L)/(A/2) = 4R.",
+    "tags": ["Current electricity"]
+  },
+  {
+    "id": "PHY-WAVES-0025",
+    "subject": "Physics",
+    "topic": "Waves",
+    "difficulty": 2,
+    "question": "In Young’s double-slit experiment, fringe width β is proportional to",
+    "options": ["1/λ", "D/d", "λd/D", "λD/d"],
+    "answer_index": 3,
+    "explanation": "Fringe width β = λD/d (D: screen distance, d: slit separation).",
+    "tags": ["Waves", "Optics"]
+  },
+  {
+    "id": "PHY-UNITS-0026",
+    "subject": "Physics",
+    "topic": "Units",
+    "difficulty": 2,
+    "question": "Dimensional formula of Planck’s constant h is",
+    "options": ["ML²T⁻¹", "ML²T⁻²", "MLT⁻²", "M⁰L⁰T⁰"],
+    "answer_index": 0,
+    "explanation": "h has dimensions of action (energy×time): (ML²T⁻²)×T = ML²T⁻¹.",
+    "tags": ["Units"]
+  },
+  {
+    "id": "PHY-THERMO-0027",
+    "subject": "Physics",
+    "topic": "Thermodynamics",
+    "difficulty": 2,
+    "question": "In an isothermal expansion of an ideal gas, the change in internal energy ΔU is",
+    "options": ["> 0", "= 0", "< 0", "Path-dependent"],
+    "answer_index": 1,
+    "explanation": "For ideal gas, U depends only on T. Isothermal ⇒ ΔT=0 ⇒ ΔU=0.",
+    "tags": ["Thermodynamics"]
+  },
+  {
+    "id": "PHY-GRAVIT-0028",
+    "subject": "Physics",
+    "topic": "Gravitation",
+    "difficulty": 2,
+    "question": "Escape speed from a planet of mass M and radius R is",
+    "options": ["√(GM/R)", "√(2GM/R)", "√(GM/2R)", "√(GR/M)"],
+    "answer_index": 1,
+    "explanation": "From energy conservation: ½mv² = GMm/R ⇒ v = √(2GM/R).",
+    "tags": ["Gravitation"]
+  },
+  {
+    "id": "PHY-OPTICS-0029",
+    "subject": "Physics",
+    "topic": "Optics",
+    "difficulty": 2,
+    "question": "A convex lens of focal length f is placed in a liquid whose refractive index equals the lens material. The lens acts as",
+    "options": ["Converging lens", "Diverging lens", "No lens (f=∞)", "Mirror"],
+    "answer_index": 2,
+    "explanation": "No refraction if n_lens = n_medium, so effective focal length is infinite.",
+    "tags": ["Optics"]
+  },
+  {
+    "id": "PHY-ELESTA-0030",
+    "subject": "Physics",
+    "topic": "Electrostatics",
+    "difficulty": 2,
+    "question": "Capacitors C and 2C in series across a battery V carry charge",
+    "options": ["CV", "2CV", "2CV/3", "Same on each: Q = 2CV/3"],
+    "answer_index": 3,
+    "explanation": "Series capacitors carry equal charge. C_eq = 2C/3 ⇒ Q = C_eq V = 2CV/3.",
+    "tags": ["Electrostatics"]
+  },
+  {
+    "id": "PHY-EMINDU-0031",
+    "subject": "Physics",
+    "topic": "Electromagnetic induction",
+    "difficulty": 2,
+    "question": "Magnetic flux through a loop changes uniformly from Φ₁ to Φ₂ in time Δt. The induced emf magnitude is",
+    "options": ["(Φ₂−Φ₁)/Δt", "−(Φ₂−Φ₁)/Δt", "I(R)", "Zero always"],
+    "answer_index": 0,
+    "explanation": "Faraday’s law: |emf| = |dΦ/dt| ≈ |Φ₂−Φ₁|/Δt.",
+    "tags": ["Electromagnetic induction"]
+  },
+  {
+    "id": "PHY-MODERN-0032",
+    "subject": "Physics",
+    "topic": "Modern physics",
+    "difficulty": 2,
+    "question": "For a photoelectric effect experiment, stopping potential increases when",
+    "options": ["Light intensity increases", "Frequency increases", "Area of cathode increases", "Anode potential increases"],
+    "answer_index": 1,
+    "explanation": "Stopping potential depends on maximum KE = hν − φ, hence increases with frequency, not intensity.",
+    "tags": ["Modern physics", "Photoelectric"]
+  },
+  {
+    "id": "PHY-GRAVIT-0033",
+    "subject": "Physics",
+    "topic": "Gravitation",
+    "difficulty": 2,
+    "question": "A satellite in circular orbit of radius r around Earth has speed v. Its period T is",
+    "options": ["2πr/v", "πr/v", "2r/v", "independent of r"],
+    "answer_index": 0,
+    "explanation": "Period is distance over speed: T = 2πr / v.",
+    "tags": ["Gravitation", "Satellites"]
+  },
+  {
+    "id": "PHY-THERMA-0034",
+    "subject": "Physics",
+    "topic": "Thermal radiation",
+    "difficulty": 2,
+    "question": "If temperature of a blackbody is doubled, total radiant power (Stefan–Boltzmann) changes by",
+    "options": ["×2", "×4", "×8", "×16"],
+    "answer_index": 3,
+    "explanation": "Power ∝ T⁴. Doubling T increases power by 2⁴ = 16.",
+    "tags": ["Thermal radiation"]
+  },
+  {
+    "id": "PHY-MAGNET-0035",
+    "subject": "Physics",
+    "topic": "Magnetism",
+    "difficulty": 2,
+    "question": "A current-carrying straight conductor produces magnetic field B at distance r. B is proportional to",
+    "options": ["I/r", "I/r²", "1/Ir", "I²r"],
+    "answer_index": 0,
+    "explanation": "B = μ₀I/(2πr); proportional to I and inversely to r.",
+    "tags": ["Magnetism"]
+  },
+  {
+    "id": "PHY-MODERN-0036",
+    "subject": "Physics",
+    "topic": "Modern physics",
+    "difficulty": 2,
+    "question": "De Broglie wavelength λ of a particle of momentum p is",
+    "options": ["h/p", "hp", "h/2p", "2hp"],
+    "answer_index": 0,
+    "explanation": "λ = h/p (de Broglie relation).",
+    "tags": ["Modern physics", "Waves"]
+  },
+  {
+    "id": "PHY-SHM-0037",
+    "subject": "Physics",
+    "topic": "SHM",
+    "difficulty": 2,
+    "question": "Two springs in series with spring constants k₁ and k₂ have equivalent k_eq equal to",
+    "options": ["k₁+k₂", "k₁k₂/(k₁+k₂)", "k₁k₂", "(k₁+k₂)/(k₁k₂)"],
+    "answer_index": 1,
+    "explanation": "For series: 1/k_eq = 1/k₁ + 1/k₂ ⇒ k_eq = k₁k₂/(k₁+k₂).",
+    "tags": ["SHM", "Elasticity"]
+  },
+  {
+    "id": "PHY-WAVES-0038",
+    "subject": "Physics",
+    "topic": "Waves",
+    "difficulty": 2,
+    "question": "The speed of sound in a gas is proportional to",
+    "options": ["√T", "T", "1/T", "independent of T"],
+    "answer_index": 0,
+    "explanation": "v = √(γRT/M) ∝ √T for a given gas.",
+    "tags": ["Waves", "Thermodynamics"]
+  },
+  {
+    "id": "PHY-SEMICO-0039",
+    "subject": "Physics",
+    "topic": "Semiconductors",
+    "difficulty": 2,
+    "question": "In a PN junction at equilibrium, the built-in potential barrier exists because of",
+    "options": ["External field", "Ionized impurities creating an electric field", "Thermal radiation", "Magnetic field"],
+    "answer_index": 1,
+    "explanation": "Diffusion of carriers leaves behind ionized donors/acceptors, creating an internal electric field (barrier).",
+    "tags": ["Semiconductors"]
+  },
+
+  {
+    "id": "PHY-WORKEN-0040",
+    "subject": "Physics",
+    "topic": "Work-Energy",
+    "difficulty": 2,
+    "question": "Work done by conservative force around a closed path is",
+    "options": ["Positive", "Negative", "Zero", "Path-dependent"],
+    "answer_index": 2,
+    "explanation": "For conservative forces (e.g., gravity), net work over a closed loop is zero.",
+    "tags": ["Work-Energy"]
+  },
+  {
+    "id": "PHY-MECHAN-0041",
+    "subject": "Physics",
+    "topic": "Mechanics",
+    "difficulty": 3,
+    "question": "A block slides down a smooth plane inclined at angle θ. What is its acceleration?",
+    "options": ["g", "g sinθ", "g cosθ", "g tanθ"],
+    "answer_index": 1,
+    "explanation": "On a frictionless incline the component of weight along the plane is mg sinθ, so a = g sinθ.",
+    "tags": ["Mechanics", "Inclined plane"]
+  },
+  {
+    "id": "PHY-SHM-0042",
+    "subject": "Physics",
+    "topic": "SHM",
+    "difficulty": 3,
+    "question": "For SHM x = A sin(ωt). At x = 0, which is true?",
+    "options": ["Speed is zero", "Acceleration is maximum", "Acceleration is zero", "Potential energy is maximum"],
+    "answer_index": 2,
+    "explanation": "At mean position, a = −ω²x = 0 and speed is maximum; potential energy is minimum.",
+    "tags": ["SHM"]
+  },
+  {
+    "id": "PHY-PROJEC-0043",
+    "subject": "Physics",
+    "topic": "Projectile",
+    "difficulty": 3,
+    "question": "A projectile is fired with speed u at 45°. What is its range on level ground (no air resistance)?",
+    "options": ["u²/g", "u²/2g", "2u²/g", "u/g"],
+    "answer_index": 0,
+    "explanation": "R = u² sin2θ / g; for θ=45°, sin2θ = 1 ⇒ R = u²/g.",
+    "tags": ["Projectile"]
+  },
+  {
+    "id": "PHY-CURREN-0044",
+    "subject": "Physics",
+    "topic": "Current electricity",
+    "difficulty": 3,
+    "question": "A wire of length L has resistance R. If length is doubled and area halved, the new resistance is",
+    "options": ["R/4", "R", "2R", "4R"],
+    "answer_index": 3,
+    "explanation": "R = ρL/A. New L' = 2L, A' = A/2 ⇒ R' = ρ(2L)/(A/2) = 4R.",
+    "tags": ["Current electricity"]
+  },
+  {
+    "id": "PHY-WAVES-0045",
+    "subject": "Physics",
+    "topic": "Waves",
+    "difficulty": 3,
+    "question": "In Young’s double-slit experiment, fringe width β is proportional to",
+    "options": ["1/λ", "D/d", "λd/D", "λD/d"],
+    "answer_index": 3,
+    "explanation": "Fringe width β = λD/d (D: screen distance, d: slit separation).",
+    "tags": ["Waves", "Optics"]
+  },
+  {
+    "id": "PHY-UNITS-0046",
+    "subject": "Physics",
+    "topic": "Units",
+    "difficulty": 3,
+    "question": "Dimensional formula of Planck’s constant h is",
+    "options": ["ML²T⁻¹", "ML²T⁻²", "MLT⁻²", "M⁰L⁰T⁰"],
+    "answer_index": 0,
+    "explanation": "h has dimensions of action (energy×time): (ML²T⁻²)×T = ML²T⁻¹.",
+    "tags": ["Units"]
+  },
+  {
+    "id": "PHY-THERMO-0047",
+    "subject": "Physics",
+    "topic": "Thermodynamics",
+    "difficulty": 3,
+    "question": "In an isothermal expansion of an ideal gas, the change in internal energy ΔU is",
+    "options": ["> 0", "= 0", "< 0", "Path-dependent"],
+    "answer_index": 1,
+    "explanation": "For ideal gas, U depends only on T. Isothermal ⇒ ΔT=0 ⇒ ΔU=0.",
+    "tags": ["Thermodynamics"]
+  },
+  {
+    "id": "PHY-GRAVIT-0048",
+    "subject": "Physics",
+    "topic": "Gravitation",
+    "difficulty": 3,
+    "question": "Escape speed from a planet of mass M and radius R is",
+    "options": ["√(GM/R)", "√(2GM/R)", "√(GM/2R)", "√(GR/M)"],
+    "answer_index": 1,
+    "explanation": "From energy conservation: ½mv² = GMm/R ⇒ v = √(2GM/R).",
+    "tags": ["Gravitation"]
+  },
+  {
+    "id": "PHY-OPTICS-0049",
+    "subject": "Physics",
+    "topic": "Optics",
+    "difficulty": 3,
+    "question": "A convex lens of focal length f is placed in a liquid whose refractive index equals the lens material. The lens acts as",
+    "options": ["Converging lens", "Diverging lens", "No lens (f=∞)", "Mirror"],
+    "answer_index": 2,
+    "explanation": "No refraction if n_lens = n_medium, so effective focal length is infinite.",
+    "tags": ["Optics"]
+  },
+  {
+    "id": "PHY-ELESTA-0050",
+    "subject": "Physics",
+    "topic": "Electrostatics",
+    "difficulty": 3,
+    "question": "Capacitors C and 2C in series across a battery V carry charge",
+    "options": ["CV", "2CV", "2CV/3", "Same on each: Q = 2CV/3"],
+    "answer_index": 3,
+    "explanation": "Series capacitors carry equal charge. C_eq = 2C/3 ⇒ Q = C_eq V = 2CV/3.",
+    "tags": ["Electrostatics"]
+  },
+
+  {
+    "id": "CHE-ACIDB-0001",
+    "subject": "Chemistry",
+    "topic": "Acids & Bases",
+    "difficulty": 1,
+    "question": "pH of 10⁻³ M HCl is approximately",
+    "options": ["3", "11", "1", "14"],
+    "answer_index": 0,
+    "explanation": "Strong acid fully dissociates: [H⁺]=10⁻³ M ⇒ pH=3.",
+    "tags": ["Acids & Bases"]
+  },
+  {
+    "id": "CHE-ORGAN-0002",
+    "subject": "Chemistry",
+    "topic": "Organic",
+    "difficulty": 1,
+    "question": "Hybridization of carbon in ethene (C₂H₄) is",
+    "options": ["sp³", "sp²", "sp", "sp³d"],
+    "answer_index": 1,
+    "explanation": "Each C forms three σ bonds in trigonal planar geometry ⇒ sp².",
+    "tags": ["Organic", "Hybridization"]
+  },
+  {
+    "id": "CHE-KINET-0003",
+    "subject": "Chemistry",
+    "topic": "Kinetics",
+    "difficulty": 1,
+    "question": "Rate constant k has units s⁻¹ for",
+    "options": ["Zero order", "First order", "Second order", "Third order"],
+    "answer_index": 1,
+    "explanation": "Only first-order reactions have k with units s⁻¹.",
+    "tags": ["Kinetics"]
+  },
+  {
+    "id": "CHE-SURFAC-0004",
+    "subject": "Chemistry",
+    "topic": "Surface Chemistry",
+    "difficulty": 1,
+    "question": "Langmuir adsorption isotherm assumes",
+    "options": ["Multilayer", "Heterogeneous surface", "Monolayer", "Chemisorption only"],
+    "answer_index": 2,
+    "explanation": "Langmuir model: uniform sites, monolayer, no lateral interactions.",
+    "tags": ["Surface Chemistry"]
+  },
+  {
+    "id": "CHE-ORGRE-0005",
+    "subject": "Chemistry",
+    "topic": "Organic Reagents",
+    "difficulty": 1,
+    "question": "Which reagent converts alcohol to alkyl chloride?",
+    "options": ["KMnO₄", "SOCl₂", "Cu", "KOH(aq)"],
+    "answer_index": 1,
+    "explanation": "Thionyl chloride converts ROH to RCl, often with pyridine.",
+    "tags": ["Organic Reagents"]
+  },
+  {
+    "id": "CHE-AROMAT-0006",
+    "subject": "Chemistry",
+    "topic": "Aromaticity",
+    "difficulty": 1,
+    "question": "Which is aromatic by Hückel’s rule?",
+    "options": ["Cyclobutadiene", "Cyclooctatetraene (planar)", "Benzene", "Cyclopropenyl anion"],
+    "answer_index": 2,
+    "explanation": "Benzene has 6π electrons (4n+2, n=1), planar and conjugated.",
+    "tags": ["Aromaticity"]
+  },
+  {
+    "id": "CHE-COORD-0007",
+    "subject": "Chemistry",
+    "topic": "Coordination",
+    "difficulty": 1,
+    "question": "The complex [Fe(CN)₆]⁴⁻ is",
+    "options": ["High spin", "Low spin", "Paramagnetic", "Both high spin and paramagnetic"],
+    "answer_index": 1,
+    "explanation": "CN⁻ causes strong-field splitting; Fe²⁺ (d⁶) becomes low spin (paired), diamagnetic.",
+    "tags": ["Coordination"]
+  },
+  {
+    "id": "CHE-PBLOCK-0008",
+    "subject": "Chemistry",
+    "topic": "p-Block",
+    "difficulty": 1,
+    "question": "Order of oxidizing power among halogens (weak → strong)",
+    "options": ["I₂ < Br₂ < Cl₂ < F₂", "F₂ < Cl₂ < Br₂ < I₂", "Cl₂ < F₂ < Br₂ < I₂", "Br₂ < I₂ < F₂ < Cl₂"],
+    "answer_index": 0,
+    "explanation": "Oxidizing power increases up the group.",
+    "tags": ["p-Block"]
+  },
+  {
+    "id": "CHE-MOLEC-0009",
+    "subject": "Chemistry",
+    "topic": "Mole Concept",
+    "difficulty": 1,
+    "question": "Number of atoms in 1 mole is",
+    "options": ["6.022×10²³", "6.022×10²²", "3.011×10²³", "1.66×10⁻²⁴"],
+    "answer_index": 0,
+    "explanation": "Avogadro’s number NA = 6.022×10²³.",
+    "tags": ["Mole Concept"]
+  },
+  {
+    "id": "CHE-INTERM-0010",
+    "subject": "Chemistry",
+    "topic": "Intermolecular Forces",
+    "difficulty": 1,
+    "question": "The strongest hydrogen bonding is expected in",
+    "options": ["HCl", "HF", "H₂S", "PH₃"],
+    "answer_index": 1,
+    "explanation": "HF forms strong hydrogen bonds due to high electronegativity and small size of F.",
+    "tags": ["Intermolecular Forces"]
+  },
+  {
+    "id": "CHE-ORGMECH-0011",
+    "subject": "Chemistry",
+    "topic": "Organic Mechanism",
+    "difficulty": 1,
+    "question": "Electrophile in nitration of benzene is",
+    "options": ["NO₂⁻", "NO₂⁺", "NO₃⁻", "HNO₃"],
+    "answer_index": 1,
+    "explanation": "The nitronium ion (NO₂⁺) formed from HNO₃ + H₂SO₄ attacks benzene.",
+    "tags": ["Organic Mechanism"]
+  },
+  {
+    "id": "CHE-CARBCA-0012",
+    "subject": "Chemistry",
+    "topic": "Carbocations",
+    "difficulty": 1,
+    "question": "Which of the following is most stable carbocation?",
+    "options": ["CH₃⁺", "1°", "2°", "3°"],
+    "answer_index": 3,
+    "explanation": "Tertiary carbocations are stabilized by hyperconjugation and inductive effects.",
+    "tags": ["Carbocations"]
+  },
+  {
+    "id": "CHE-BONDIN-0013",
+    "subject": "Chemistry",
+    "topic": "Chemical Bonding",
+    "difficulty": 1,
+    "question": "Which fluoride is most ionic?",
+    "options": ["LiF", "NaF", "KF", "CsF"],
+    "answer_index": 3,
+    "explanation": "Lattice energy decreases down the group; CsF has the most ionic character.",
+    "tags": ["Chemical Bonding"]
+  },
+  {
+    "id": "CHE-INORGA-0014",
+    "subject": "Chemistry",
+    "topic": "Inorganic",
+    "difficulty": 1,
+    "question": "Which oxide is amphoteric?",
+    "options": ["Na₂O", "MgO", "Al₂O₃", "CO₂"],
+    "answer_index": 2,
+    "explanation": "Al₂O₃ reacts with acids and bases, hence amphoteric.",
+    "tags": ["Inorganic"]
+  },
+  {
+    "id": "CHE-SOLIDS-0015",
+    "subject": "Chemistry",
+    "topic": "Solid State",
+    "difficulty": 1,
+    "question": "The unit cell with a = b = c and α = β = γ ≠ 90° is",
+    "options": ["Cubic", "Tetragonal", "Hexagonal", "Rhombohedral (trigonal)"],
+    "answer_index": 3,
+    "explanation": "Rhombohedral has equal edges and equal angles not equal to 90°.",
+    "tags": ["Solid State"]
+  },
+  {
+    "id": "CHE-SOLIDS-0016",
+    "subject": "Chemistry",
+    "topic": "Solid State",
+    "difficulty": 1,
+    "question": "Coordination number of Na⁺ and Cl⁻ in rock-salt structure is",
+    "options": ["4,4", "6,6", "8,8", "12,12"],
+    "answer_index": 1,
+    "explanation": "Both ions are octahedrally coordinated ⇒ CN = 6,6.",
+    "tags": ["Solid State"]
+  },
+
+  {
+    "id": "CHE-SOLUTN-0017",
+    "subject": "Chemistry",
+    "topic": "Solutions",
+    "difficulty": 1,
+    "question": "Which statement is true for a buffer solution?",
+    "options": ["pH changes drastically on dilution", "pH remains nearly constant upon small acid/base addition", "Only acidic buffers exist", "Only basic buffers exist"],
+    "answer_index": 1,
+    "explanation": "Buffers resist small additions of acid or base, maintaining pH nearly constant.",
+    "tags": ["Solutions"]
+  },
+  {
+    "id": "CHE-NOMENC-0018",
+    "subject": "Chemistry",
+    "topic": "Nomenclature",
+    "difficulty": 1,
+    "question": "IUPAC name of CH₃–CH₂–CH(OH)–CH₃ is",
+    "options": ["Propan-2-ol", "Butan-2-ol", "Butan-1-ol", "Propan-1-ol"],
+    "answer_index": 1,
+    "explanation": "Longest chain has 4 carbons; OH on carbon 2 ⇒ butan-2-ol.",
+    "tags": ["Nomenclature"]
+  },
+  {
+    "id": "CHE-ELECCH-0019",
+    "subject": "Chemistry",
+    "topic": "Electrochemistry",
+    "difficulty": 1,
+    "question": "Which gas is released at anode during electrolysis of aqueous NaCl?",
+    "options": ["H₂", "Cl₂", "O₂", "Na"],
+    "answer_index": 2,
+    "explanation": "In dilute aqueous NaCl, O₂ evolves at anode (water oxidation) and H₂ at cathode; concentrated brine yields Cl₂ at anode.",
+    "tags": ["Electrochemistry"]
+  },
+  {
+    "id": "CHE-ISOMER-0020",
+    "subject": "Chemistry",
+    "topic": "Isomerism",
+    "difficulty": 1,
+    "question": "Which pair shows geometrical isomerism?",
+    "options": ["CH₂=CH₂", "[Pt(NH₃)₂Cl₂]", "CH₃–CH₃", "CCl₄"],
+    "answer_index": 1,
+    "explanation": "[Pt(NH₃)₂Cl₂] has cis/trans square-planar isomers.",
+    "tags": ["Isomerism"]
+  },
+  {
+    "id": "CHE-ACIDB-0021",
+    "subject": "Chemistry",
+    "topic": "Acids & Bases",
+    "difficulty": 2,
+    "question": "pH of 10⁻³ M HCl is approximately",
+    "options": ["3", "11", "1", "14"],
+    "answer_index": 0,
+    "explanation": "Strong acid fully dissociates: [H⁺]=10⁻³ M ⇒ pH=3.",
+    "tags": ["Acids & Bases"]
+  },
+  {
+    "id": "CHE-ORGAN-0022",
+    "subject": "Chemistry",
+    "topic": "Organic",
+    "difficulty": 2,
+    "question": "Hybridization of carbon in ethene (C₂H₄) is",
+    "options": ["sp³", "sp²", "sp", "sp³d"],
+    "answer_index": 1,
+    "explanation": "Each C forms three σ bonds in trigonal planar geometry ⇒ sp².",
+    "tags": ["Organic", "Hybridization"]
+  },
+  {
+    "id": "CHE-KINET-0023",
+    "subject": "Chemistry",
+    "topic": "Kinetics",
+    "difficulty": 2,
+    "question": "Rate constant k has units s⁻¹ for",
+    "options": ["Zero order", "First order", "Second order", "Third order"],
+    "answer_index": 1,
+    "explanation": "Only first-order reactions have k with units s⁻¹.",
+    "tags": ["Kinetics"]
+  },
+  {
+    "id": "CHE-SURFAC-0024",
+    "subject": "Chemistry",
+    "topic": "Surface Chemistry",
+    "difficulty": 2,
+    "question": "Langmuir adsorption isotherm assumes",
+    "options": ["Multilayer", "Heterogeneous surface", "Monolayer", "Chemisorption only"],
+    "answer_index": 2,
+    "explanation": "Langmuir model: uniform sites, monolayer, no lateral interactions.",
+    "tags": ["Surface Chemistry"]
+  },
+  {
+    "id": "CHE-ORGRE-0025",
+    "subject": "Chemistry",
+    "topic": "Organic Reagents",
+    "difficulty": 2,
+    "question": "Which reagent converts alcohol to alkyl chloride?",
+    "options": ["KMnO₄", "SOCl₂", "Cu", "KOH(aq)"],
+    "answer_index": 1,
+    "explanation": "Thionyl chloride converts ROH to RCl, often with pyridine.",
+    "tags": ["Organic Reagents"]
+  },
+  {
+    "id": "CHE-AROMAT-0026",
+    "subject": "Chemistry",
+    "topic": "Aromaticity",
+    "difficulty": 2,
+    "question": "Which is aromatic by Hückel’s rule?",
+    "options": ["Cyclobutadiene", "Cyclooctatetraene (planar)", "Benzene", "Cyclopropenyl anion"],
+    "answer_index": 2,
+    "explanation": "Benzene has 6π electrons (4n+2, n=1), planar and conjugated.",
+    "tags": ["Aromaticity"]
+  },
+  {
+    "id": "CHE-COORD-0027",
+    "subject": "Chemistry",
+    "topic": "Coordination",
+    "difficulty": 2,
+    "question": "The complex [Fe(CN)₆]⁴⁻ is",
+    "options": ["High spin", "Low spin", "Paramagnetic", "Both high spin and paramagnetic"],
+    "answer_index": 1,
+    "explanation": "CN⁻ causes strong-field splitting; Fe²⁺ (d⁶) becomes low spin (paired), diamagnetic.",
+    "tags": ["Coordination"]
+  },
+  {
+    "id": "CHE-PBLOCK-0028",
+    "subject": "Chemistry",
+    "topic": "p-Block",
+    "difficulty": 2,
+    "question": "Order of oxidizing power among halogens (weak → strong)",
+    "options": ["I₂ < Br₂ < Cl₂ < F₂", "F₂ < Cl₂ < Br₂ < I₂", "Cl₂ < F₂ < Br₂ < I₂", "Br₂ < I₂ < F₂ < Cl₂"],
+    "answer_index": 0,
+    "explanation": "Oxidizing power increases up the group.",
+    "tags": ["p-Block"]
+  },
+  {
+    "id": "CHE-MOLEC-0029",
+    "subject": "Chemistry",
+    "topic": "Mole Concept",
+    "difficulty": 2,
+    "question": "Number of atoms in 1 mole is",
+    "options": ["6.022×10²³", "6.022×10²²", "3.011×10²³", "1.66×10⁻²⁴"],
+    "answer_index": 0,
+    "explanation": "Avogadro’s number NA = 6.022×10²³.",
+    "tags": ["Mole Concept"]
+  },
+  {
+    "id": "CHE-INTERM-0030",
+    "subject": "Chemistry",
+    "topic": "Intermolecular Forces",
+    "difficulty": 2,
+    "question": "The strongest hydrogen bonding is expected in",
+    "options": ["HCl", "HF", "H₂S", "PH₃"],
+    "answer_index": 1,
+    "explanation": "HF forms strong hydrogen bonds due to high electronegativity and small size of F.",
+    "tags": ["Intermolecular Forces"]
+  },
+  {
+    "id": "CHE-ORGMECH-0031",
+    "subject": "Chemistry",
+    "topic": "Organic Mechanism",
+    "difficulty": 2,
+    "question": "Electrophile in nitration of benzene is",
+    "options": ["NO₂⁻", "NO₂⁺", "NO₃⁻", "HNO₃"],
+    "answer_index": 1,
+    "explanation": "The nitronium ion (NO₂⁺) formed from HNO₃ + H₂SO₄ attacks benzene.",
+    "tags": ["Organic Mechanism"]
+  },
+  {
+    "id": "CHE-CARBCA-0032",
+    "subject": "Chemistry",
+    "topic": "Carbocations",
+    "difficulty": 2,
+    "question": "Which of the following is most stable carbocation?",
+    "options": ["CH₃⁺", "1°", "2°", "3°"],
+    "answer_index": 3,
+    "explanation": "Tertiary carbocations are stabilized by hyperconjugation and inductive effects.",
+    "tags": ["Carbocations"]
+  },
+  {
+    "id": "CHE-BONDIN-0033",
+    "subject": "Chemistry",
+    "topic": "Chemical Bonding",
+    "difficulty": 2,
+    "question": "Which fluoride is most ionic?",
+    "options": ["LiF", "NaF", "KF", "CsF"],
+    "answer_index": 3,
+    "explanation": "Lattice energy decreases down the group; CsF has the most ionic character.",
+    "tags": ["Chemical Bonding"]
+  },
+  {
+    "id": "CHE-INORGA-0034",
+    "subject": "Chemistry",
+    "topic": "Inorganic",
+    "difficulty": 2,
+    "question": "Which oxide is amphoteric?",
+    "options": ["Na₂O", "MgO", "Al₂O₃", "CO₂"],
+    "answer_index": 2,
+    "explanation": "Al₂O₃ reacts with acids and bases, hence amphoteric.",
+    "tags": ["Inorganic"]
+  },
+  {
+    "id": "CHE-SOLIDS-0035",
+    "subject": "Chemistry",
+    "topic": "Solid State",
+    "difficulty": 2,
+    "question": "The unit cell with a = b = c and α = β = γ ≠ 90° is",
+    "options": ["Cubic", "Tetragonal", "Hexagonal", "Rhombohedral (trigonal)"],
+    "answer_index": 3,
+    "explanation": "Rhombohedral has equal edges and equal angles not equal to 90°.",
+    "tags": ["Solid State"]
+  },
+  {
+    "id": "CHE-SOLIDS-0036",
+    "subject": "Chemistry",
+    "topic": "Solid State",
+    "difficulty": 2,
+    "question": "Coordination number of Na⁺ and Cl⁻ in rock-salt structure is",
+    "options": ["4,4", "6,6", "8,8", "12,12"],
+    "answer_index": 1,
+    "explanation": "Both ions are octahedrally coordinated ⇒ CN = 6,6.",
+    "tags": ["Solid State"]
+  },
+  {
+    "id": "CHE-SOLUTN-0037",
+    "subject": "Chemistry",
+    "topic": "Solutions",
+    "difficulty": 2,
+    "question": "Which statement is true for a buffer solution?",
+    "options": ["pH changes drastically on dilution", "pH remains nearly constant upon small acid/base addition", "Only acidic buffers exist", "Only basic buffers exist"],
+    "answer_index": 1,
+    "explanation": "Buffers resist small additions of acid or base, maintaining pH nearly constant.",
+    "tags": ["Solutions"]
+  },
+  {
+    "id": "CHE-NOMENC-0038",
+    "subject": "Chemistry",
+    "topic": "Nomenclature",
+    "difficulty": 2,
+    "question": "IUPAC name of CH₃–CH₂–CH(OH)–CH₃ is",
+    "options": ["Propan-2-ol", "Butan-2-ol", "Butan-1-ol", "Propan-1-ol"],
+    "answer_index": 1,
+    "explanation": "Longest chain has 4 carbons; OH on carbon 2 ⇒ butan-2-ol.",
+    "tags": ["Nomenclature"]
+  },
+  {
+    "id": "CHE-ELECCH-0039",
+    "subject": "Chemistry",
+    "topic": "Electrochemistry",
+    "difficulty": 2,
+    "question": "Which gas is released at anode during electrolysis of aqueous NaCl?",
+    "options": ["H₂", "Cl₂", "O₂", "Na"],
+    "answer_index": 2,
+    "explanation": "In dilute aqueous NaCl, O₂ evolves at anode (water oxidation) and H₂ at cathode; concentrated brine yields Cl₂ at anode.",
+    "tags": ["Electrochemistry"]
+  },
+  {
+    "id": "CHE-ISOMER-0040",
+    "subject": "Chemistry",
+    "topic": "Isomerism",
+    "difficulty": 2,
+    "question": "Which pair shows geometrical isomerism?",
+    "options": ["CH₂=CH₂", "[Pt(NH₃)₂Cl₂]", "CH₃–CH₃", "CCl₄"],
+    "answer_index": 1,
+    "explanation": "[Pt(NH₃)₂Cl₂] has cis/trans square-planar isomers.",
+    "tags": ["Isomerism"]
+  },
+  {
+    "id": "CHE-ACIDB-0041",
+    "subject": "Chemistry",
+    "topic": "Acids & Bases",
+    "difficulty": 3,
+    "question": "pH of 10⁻³ M HCl is approximately",
+    "options": ["3", "11", "1", "14"],
+    "answer_index": 0,
+    "explanation": "Strong acid fully dissociates: [H⁺]=10⁻³ M ⇒ pH=3.",
+    "tags": ["Acids & Bases"]
+  },
+  {
+    "id": "CHE-ORGAN-0042",
+    "subject": "Chemistry",
+    "topic": "Organic",
+    "difficulty": 3,
+    "question": "Hybridization of carbon in ethene (C₂H₄) is",
+    "options": ["sp³", "sp²", "sp", "sp³d"],
+    "answer_index": 1,
+    "explanation": "Each C forms three σ bonds in trigonal planar geometry ⇒ sp².",
+    "tags": ["Organic", "Hybridization"]
+  },
+  {
+    "id": "CHE-KINET-0043",
+    "subject": "Chemistry",
+    "topic": "Kinetics",
+    "difficulty": 3,
+    "question": "Rate constant k has units s⁻¹ for",
+    "options": ["Zero order", "First order", "Second order", "Third order"],
+    "answer_index": 1,
+    "explanation": "Only first-order reactions have k with units s⁻¹.",
+    "tags": ["Kinetics"]
+  },
+  {
+    "id": "CHE-SURFAC-0044",
+    "subject": "Chemistry",
+    "topic": "Surface Chemistry",
+    "difficulty": 3,
+    "question": "Langmuir adsorption isotherm assumes",
+    "options": ["Multilayer", "Heterogeneous surface", "Monolayer", "Chemisorption only"],
+    "answer_index": 2,
+    "explanation": "Langmuir model: uniform sites, monolayer, no lateral interactions.",
+    "tags": ["Surface Chemistry"]
+  },
+  {
+    "id": "CHE-ORGRE-0045",
+    "subject": "Chemistry",
+    "topic": "Organic Reagents",
+    "difficulty": 3,
+    "question": "Which reagent converts alcohol to alkyl chloride?",
+    "options": ["KMnO₄", "SOCl₂", "Cu", "KOH(aq)"],
+    "answer_index": 1,
+    "explanation": "Thionyl chloride converts ROH to RCl, often with pyridine.",
+    "tags": ["Organic Reagents"]
+  },
+  {
+    "id": "CHE-AROMAT-0046",
+    "subject": "Chemistry",
+    "topic": "Aromaticity",
+    "difficulty": 3,
+    "question": "Which is aromatic by Hückel’s rule?",
+    "options": ["Cyclobutadiene", "Cyclooctatetraene (planar)", "Benzene", "Cyclopropenyl anion"],
+    "answer_index": 2,
+    "explanation": "Benzene has 6π electrons (4n+2, n=1), planar and conjugated.",
+    "tags": ["Aromaticity"]
+  },
+  {
+    "id": "CHE-COORD-0047",
+    "subject": "Chemistry",
+    "topic": "Coordination",
+    "difficulty": 3,
+    "question": "The complex [Fe(CN)₆]⁴⁻ is",
+    "options": ["High spin", "Low spin", "Paramagnetic", "Both high spin and paramagnetic"],
+    "answer_index": 1,
+    "explanation": "CN⁻ causes strong-field splitting; Fe²⁺ (d⁶) becomes low spin (paired), diamagnetic.",
+    "tags": ["Coordination"]
+  },
+  {
+    "id": "CHE-PBLOCK-0048",
+    "subject": "Chemistry",
+    "topic": "p-Block",
+    "difficulty": 3,
+    "question": "Order of oxidizing power among halogens (weak → strong)",
+    "options": ["I₂ < Br₂ < Cl₂ < F₂", "F₂ < Cl₂ < Br₂ < I₂", "Cl₂ < F₂ < Br₂ < I₂", "Br₂ < I₂ < F₂ < Cl₂"],
+    "answer_index": 0,
+    "explanation": "Oxidizing power increases up the group.",
+    "tags": ["p-Block"]
+  },
+  {
+    "id": "CHE-MOLEC-0049",
+    "subject": "Chemistry",
+    "topic": "Mole Concept",
+    "difficulty": 3,
+    "question": "Number of atoms in 1 mole is",
+    "options": ["6.022×10²³", "6.022×10²²", "3.011×10²³", "1.66×10⁻²⁴"],
+    "answer_index": 0,
+    "explanation": "Avogadro’s number NA = 6.022×10²³.",
+    "tags": ["Mole Concept"]
+  },
+  {
+    "id": "CHE-INTERM-0050",
+    "subject": "Chemistry",
+    "topic": "Intermolecular Forces",
+    "difficulty": 3,
+    "question": "The strongest hydrogen bonding is expected in",
+    "options": ["HCl", "HF", "H₂S", "PH₃"],
+    "answer_index": 1,
+    "explanation": "HF forms strong hydrogen bonds due to high electronegativity and small size of F.",
+    "tags": ["Intermolecular Forces"]
+  },
+
+  {
+    "id": "ZOO-CIRCUL-0001",
+    "subject": "Zoology",
+    "topic": "Circulation",
+    "difficulty": 1,
+    "question": "Largest artery in the human body is",
+    "options": ["Pulmonary artery", "Aorta", "Carotid artery", "Femoral artery"],
+    "answer_index": 1,
+    "explanation": "The aorta arises from the left ventricle and is the largest artery.",
+    "tags": ["Circulation"]
+  },
+  {
+    "id": "ZOO-IMMUNO-0002",
+    "subject": "Zoology",
+    "topic": "Immunology",
+    "difficulty": 1,
+    "question": "Cells that secrete antibodies are",
+    "options": ["T-helper cells", "B-lymphocytes (plasma cells)", "Neutrophils", "Basophils"],
+    "answer_index": 1,
+    "explanation": "Activated B cells differentiate into plasma cells which secrete antibodies.",
+    "tags": ["Immunology"]
+  },
+  {
+    "id": "ZOO-EXCRET-0003",
+    "subject": "Zoology",
+    "topic": "Excretion",
+    "difficulty": 1,
+    "question": "Loop of Henle primarily functions to",
+    "options": ["Filter blood", "Concentrate urine via counter-current", "Secrete aldosterone", "Reabsorb glucose via SGLT"],
+    "answer_index": 1,
+    "explanation": "Counter-current multiplication establishes osmotic gradient to concentrate urine.",
+    "tags": ["Excretion"]
+  },
+  {
+    "id": "ZOO-ENDOCR-0004",
+    "subject": "Zoology",
+    "topic": "Endocrine",
+    "difficulty": 1,
+    "question": "Hormone that increases blood glucose by promoting glycogenolysis is",
+    "options": ["Insulin", "Glucagon", "Thyroxine", "Aldosterone"],
+    "answer_index": 1,
+    "explanation": "Glucagon from α-cells stimulates glycogen breakdown and gluconeogenesis.",
+    "tags": ["Endocrine"]
+  },
+  {
+    "id": "ZOO-MUSCLE-0005",
+    "subject": "Zoology",
+    "topic": "Muscle",
+    "difficulty": 1,
+    "question": "Basic contractile unit of skeletal muscle is",
+    "options": ["Myofibril", "Sarcomere", "Myosin", "Actin"],
+    "answer_index": 1,
+    "explanation": "A sarcomere (Z to Z) is the functional contractile unit.",
+    "tags": ["Muscle"]
+  },
+  {
+    "id": "ZOO-NUTRIT-0006",
+    "subject": "Zoology",
+    "topic": "Nutrition",
+    "difficulty": 1,
+    "question": "Vitamin deficiency causing night blindness is",
+    "options": ["Vitamin A", "Vitamin B₁₂", "Vitamin C", "Vitamin K"],
+    "answer_index": 0,
+    "explanation": "Vitamin A is essential for rhodopsin in rods.",
+    "tags": ["Nutrition"]
+  },
+  {
+    "id": "ZOO-IMMUNI-0007",
+    "subject": "Zoology",
+    "topic": "Immunity",
+    "difficulty": 1,
+    "question": "Innate immunity includes all EXCEPT",
+    "options": ["Skin barrier", "Mucus", "Inflammation", "Antibody memory"],
+    "answer_index": 3,
+    "explanation": "Immunological memory is a feature of adaptive immunity.",
+    "tags": ["Immunity"]
+  },
+  {
+    "id": "ZOO-BLOOD-0008",
+    "subject": "Zoology",
+    "topic": "Blood",
+    "difficulty": 1,
+    "question": "ABO blood group antigens are present on",
+    "options": ["Plasma proteins", "RBC membrane", "Leukocyte nuclei", "Platelets"],
+    "answer_index": 1,
+    "explanation": "ABO antigens are glycoconjugates on RBC membrane.",
+    "tags": ["Blood"]
+  },
+  {
+    "id": "ZOO-PARASI-0009",
+    "subject": "Zoology",
+    "topic": "Parasitology",
+    "difficulty": 1,
+    "question": "Vector of malaria in humans is",
+    "options": ["Culex mosquito", "Anopheles mosquito (female)", "Aedes mosquito", "Glossina"],
+    "answer_index": 1,
+    "explanation": "Female Anopheles transmits Plasmodium spp.",
+    "tags": ["Parasitology"]
+  },
+  {
+    "id": "ZOO-REPROD-0010",
+    "subject": "Zoology",
+    "topic": "Reproduction",
+    "difficulty": 1,
+    "question": "Site of fertilization in human females is usually the",
+    "options": ["Ovary", "Uterus", "Ampulla of fallopian tube", "Cervix"],
+    "answer_index": 2,
+    "explanation": "Fertilization commonly occurs in the ampulla of the oviduct.",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "ZOO-NEUROB-0011",
+    "subject": "Zoology",
+    "topic": "Neurobiology",
+    "difficulty": 1,
+    "question": "Neuron that carries impulse from receptor to CNS is",
+    "options": ["Motor neuron", "Sensory neuron", "Relay neuron", "Interneuron only"],
+    "answer_index": 1,
+    "explanation": "Sensory (afferent) neurons carry impulses from receptors to CNS.",
+    "tags": ["Neurobiology"]
+  },
+  {
+    "id": "ZOO-RESPIR-0012",
+    "subject": "Zoology",
+    "topic": "Respiration",
+    "difficulty": 1,
+    "question": "Bohr effect in hemoglobin refers to",
+    "options": ["Increased O₂ affinity at low pH", "Decreased O₂ affinity at low pH", "Unchanged O₂ affinity", "CO₂ binding to heme iron"],
+    "answer_index": 1,
+    "explanation": "At low pH/high CO₂, hemoglobin’s O₂ affinity decreases, favoring O₂ release.",
+    "tags": ["Respiration"]
+  },
+  {
+    "id": "ZOO-CARDAC-0013",
+    "subject": "Zoology",
+    "topic": "Cardiac",
+    "difficulty": 1,
+    "question": "The primary pacemaker of the heart is the",
+    "options": ["AV node", "SA node", "Bundle of His", "Purkinje fibers"],
+    "answer_index": 1,
+    "explanation": "SA node initiates heartbeat, setting the pace.",
+    "tags": ["Cardiac"]
+  },
+  {
+    "id": "ZOO-IMMUNO-0014",
+    "subject": "Zoology",
+    "topic": "Immunology",
+    "difficulty": 1,
+    "question": "Antigen-presenting cells include",
+    "options": ["Neutrophils", "Eosinophils", "Macrophages and dendritic cells", "Basophils"],
+    "answer_index": 2,
+    "explanation": "APCs such as macrophages and dendritic cells present antigens via MHC to T cells.",
+    "tags": ["Immunology"]
+  },
+  {
+    "id": "ZOO-MICROB-0015",
+    "subject": "Zoology",
+    "topic": "Microbiology",
+    "difficulty": 1,
+    "question": "Typhoid fever is caused by",
+    "options": ["Vibrio cholerae", "Salmonella typhi", "Plasmodium vivax", "Mycobacterium tuberculosis"],
+    "answer_index": 1,
+    "explanation": "Typhoid is caused by Salmonella enterica serovar Typhi.",
+    "tags": ["Microbiology"]
+  },
+  {
+    "id": "ZOO-ENDOCR-0016",
+    "subject": "Zoology",
+    "topic": "Endocrine",
+    "difficulty": 1,
+    "question": "During pregnancy, which hormone maintains uterine lining after first trimester?",
+    "options": ["FSH", "LH", "Progesterone from placenta", "Prolactin"],
+    "answer_index": 2,
+    "explanation": "Placenta produces progesterone maintaining endometrium after initial corpus luteum support.",
+    "tags": ["Endocrine", "Reproduction"]
+  },
+  {
+    "id": "ZOO-IMMUNI-0017",
+    "subject": "Zoology",
+    "topic": "Immunity",
+    "difficulty": 1,
+    "question": "Adaptive immunity specificity is due to",
+    "options": ["Pattern recognition receptors", "Clonal selection of lymphocytes", "Phagocytosis only", "Inflammation"],
+    "answer_index": 1,
+    "explanation": "Clonal selection and expansion of specific B/T cells confer specificity and memory.",
+    "tags": ["Immunity"]
+  },
+  {
+    "id": "ZOO-NUTRIT-0018",
+    "subject": "Zoology",
+    "topic": "Nutrition",
+    "difficulty": 1,
+    "question": "Which vitamin is synthesized by gut bacteria?",
+    "options": ["Vitamin C", "Vitamin K", "Vitamin A", "Vitamin D"],
+    "answer_index": 1,
+    "explanation": "Vitamin K is produced by intestinal bacteria contributing to host supply.",
+    "tags": ["Nutrition", "Microbiome"]
+  },
+  {
+    "id": "ZOO-ENDOCR-0019",
+    "subject": "Zoology",
+    "topic": "Endocrine",
+    "difficulty": 1,
+    "question": "Which structure connects hypothalamus and pituitary?",
+    "options": ["Infundibulum", "Pons", "Medulla", "Corpus callosum"],
+    "answer_index": 0,
+    "explanation": "The infundibulum (pituitary stalk) connects hypothalamus to pituitary.",
+    "tags": ["Endocrine", "Neuroanatomy"]
+  },
+  {
+    "id": "ZOO-DIGEST-0020",
+    "subject": "Zoology",
+    "topic": "Digestion",
+    "difficulty": 1,
+    "question": "Primary function of bile salts is to",
+    "options": ["Digest proteins", "Emulsify fats", "Absorb glucose", "Neutralize pepsin"],
+    "answer_index": 1,
+    "explanation": "Bile salts emulsify lipids, increasing surface area for lipase action.",
+    "tags": ["Digestion"]
+  },
+
+  {
+    "id": "ZOO-CIRCUL-0021",
+    "subject": "Zoology",
+    "topic": "Circulation",
+    "difficulty": 2,
+    "question": "Largest artery in the human body is",
+    "options": ["Pulmonary artery", "Aorta", "Carotid artery", "Femoral artery"],
+    "answer_index": 1,
+    "explanation": "The aorta arises from the left ventricle and is the largest artery.",
+    "tags": ["Circulation"]
+  },
+  {
+    "id": "ZOO-IMMUNO-0022",
+    "subject": "Zoology",
+    "topic": "Immunology",
+    "difficulty": 2,
+    "question": "Cells that secrete antibodies are",
+    "options": ["T-helper cells", "B-lymphocytes (plasma cells)", "Neutrophils", "Basophils"],
+    "answer_index": 1,
+    "explanation": "Activated B cells differentiate into plasma cells which secrete antibodies.",
+    "tags": ["Immunology"]
+  },
+  {
+    "id": "ZOO-EXCRET-0023",
+    "subject": "Zoology",
+    "topic": "Excretion",
+    "difficulty": 2,
+    "question": "Loop of Henle primarily functions to",
+    "options": ["Filter blood", "Concentrate urine via counter-current", "Secrete aldosterone", "Reabsorb glucose via SGLT"],
+    "answer_index": 1,
+    "explanation": "Counter-current multiplication establishes osmotic gradient to concentrate urine.",
+    "tags": ["Excretion"]
+  },
+  {
+    "id": "ZOO-ENDOCR-0024",
+    "subject": "Zoology",
+    "topic": "Endocrine",
+    "difficulty": 2,
+    "question": "Hormone that increases blood glucose by promoting glycogenolysis is",
+    "options": ["Insulin", "Glucagon", "Thyroxine", "Aldosterone"],
+    "answer_index": 1,
+    "explanation": "Glucagon from α-cells stimulates glycogen breakdown and gluconeogenesis.",
+    "tags": ["Endocrine"]
+  },
+  {
+    "id": "ZOO-MUSCLE-0025",
+    "subject": "Zoology",
+    "topic": "Muscle",
+    "difficulty": 2,
+    "question": "Basic contractile unit of skeletal muscle is",
+    "options": ["Myofibril", "Sarcomere", "Myosin", "Actin"],
+    "answer_index": 1,
+    "explanation": "A sarcomere (Z to Z) is the functional contractile unit.",
+    "tags": ["Muscle"]
+  },
+  {
+    "id": "ZOO-NUTRIT-0026",
+    "subject": "Zoology",
+    "topic": "Nutrition",
+    "difficulty": 2,
+    "question": "Vitamin deficiency causing night blindness is",
+    "options": ["Vitamin A", "Vitamin B₁₂", "Vitamin C", "Vitamin K"],
+    "answer_index": 0,
+    "explanation": "Vitamin A is essential for rhodopsin in rods.",
+    "tags": ["Nutrition"]
+  },
+  {
+    "id": "ZOO-IMMUNI-0027",
+    "subject": "Zoology",
+    "topic": "Immunity",
+    "difficulty": 2,
+    "question": "Innate immunity includes all EXCEPT",
+    "options": ["Skin barrier", "Mucus", "Inflammation", "Antibody memory"],
+    "answer_index": 3,
+    "explanation": "Immunological memory is a feature of adaptive immunity.",
+    "tags": ["Immunity"]
+  },
+  {
+    "id": "ZOO-BLOOD-0028",
+    "subject": "Zoology",
+    "topic": "Blood",
+    "difficulty": 2,
+    "question": "ABO blood group antigens are present on",
+    "options": ["Plasma proteins", "RBC membrane", "Leukocyte nuclei", "Platelets"],
+    "answer_index": 1,
+    "explanation": "ABO antigens are glycoconjugates on RBC membrane.",
+    "tags": ["Blood"]
+  },
+  {
+    "id": "ZOO-PARASI-0029",
+    "subject": "Zoology",
+    "topic": "Parasitology",
+    "difficulty": 2,
+    "question": "Vector of malaria in humans is",
+    "options": ["Culex mosquito", "Anopheles mosquito (female)", "Aedes mosquito", "Glossina"],
+    "answer_index": 1,
+    "explanation": "Female Anopheles transmits Plasmodium spp.",
+    "tags": ["Parasitology"]
+  },
+  {
+    "id": "ZOO-REPROD-0030",
+    "subject": "Zoology",
+    "topic": "Reproduction",
+    "difficulty": 2,
+    "question": "Site of fertilization in human females is usually the",
+    "options": ["Ovary", "Uterus", "Ampulla of fallopian tube", "Cervix"],
+    "answer_index": 2,
+    "explanation": "Fertilization commonly occurs in the ampulla of the oviduct.",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "ZOO-NEUROB-0031",
+    "subject": "Zoology",
+    "topic": "Neurobiology",
+    "difficulty": 2,
+    "question": "Neuron that carries impulse from receptor to CNS is",
+    "options": ["Motor neuron", "Sensory neuron", "Relay neuron", "Interneuron only"],
+    "answer_index": 1,
+    "explanation": "Sensory (afferent) neurons carry impulses from receptors to CNS.",
+    "tags": ["Neurobiology"]
+  },
+  {
+    "id": "ZOO-RESPIR-0032",
+    "subject": "Zoology",
+    "topic": "Respiration",
+    "difficulty": 2,
+    "question": "Bohr effect in hemoglobin refers to",
+    "options": ["Increased O₂ affinity at low pH", "Decreased O₂ affinity at low pH", "Unchanged O₂ affinity", "CO₂ binding to heme iron"],
+    "answer_index": 1,
+    "explanation": "At low pH/high CO₂, hemoglobin’s O₂ affinity decreases, favoring O₂ release.",
+    "tags": ["Respiration"]
+  },
+  
+  {
+    "id": "ZOO-CARDAC-0033",
+    "subject": "Zoology",
+    "topic": "Cardiac",
+    "difficulty": 2,
+    "question": "The primary pacemaker of the heart is the",
+    "options": ["AV node", "SA node", "Bundle of His", "Purkinje fibers"],
+    "answer_index": 1,
+    "explanation": "SA node initiates heartbeat, setting the pace.",
+    "tags": ["Cardiac"]
+  },
+  {
+    "id": "ZOO-IMMUNO-0034",
+    "subject": "Zoology",
+    "topic": "Immunology",
+    "difficulty": 2,
+    "question": "Antigen-presenting cells include",
+    "options": ["Neutrophils", "Eosinophils", "Macrophages and dendritic cells", "Basophils"],
+    "answer_index": 2,
+    "explanation": "APCs such as macrophages and dendritic cells present antigens via MHC to T cells.",
+    "tags": ["Immunology"]
+  },
+  {
+    "id": "ZOO-MICROB-0035",
+    "subject": "Zoology",
+    "topic": "Microbiology",
+    "difficulty": 2,
+    "question": "Typhoid fever is caused by",
+    "options": ["Vibrio cholerae", "Salmonella typhi", "Plasmodium vivax", "Mycobacterium tuberculosis"],
+    "answer_index": 1,
+    "explanation": "Typhoid is caused by Salmonella enterica serovar Typhi.",
+    "tags": ["Microbiology"]
+  },
+  {
+    "id": "ZOO-ENDOCR-0036",
+    "subject": "Zoology",
+    "topic": "Endocrine",
+    "difficulty": 2,
+    "question": "During pregnancy, which hormone maintains uterine lining after first trimester?",
+    "options": ["FSH", "LH", "Progesterone from placenta", "Prolactin"],
+    "answer_index": 2,
+    "explanation": "Placenta produces progesterone maintaining endometrium after initial corpus luteum support.",
+    "tags": ["Endocrine", "Reproduction"]
+  },
+  {
+    "id": "ZOO-IMMUNI-0037",
+    "subject": "Zoology",
+    "topic": "Immunity",
+    "difficulty": 2,
+    "question": "Adaptive immunity specificity is due to",
+    "options": ["Pattern recognition receptors", "Clonal selection of lymphocytes", "Phagocytosis only", "Inflammation"],
+    "answer_index": 1,
+    "explanation": "Clonal selection and expansion of specific B/T cells confer specificity and memory.",
+    "tags": ["Immunity"]
+  },
+  {
+    "id": "ZOO-NUTRIT-0038",
+    "subject": "Zoology",
+    "topic": "Nutrition",
+    "difficulty": 2,
+    "question": "Which vitamin is synthesized by gut bacteria?",
+    "options": ["Vitamin C", "Vitamin K", "Vitamin A", "Vitamin D"],
+    "answer_index": 1,
+    "explanation": "Vitamin K is produced by intestinal bacteria contributing to host supply.",
+    "tags": ["Nutrition", "Microbiome"]
+  },
+  {
+    "id": "ZOO-ENDOCR-0039",
+    "subject": "Zoology",
+    "topic": "Endocrine",
+    "difficulty": 2,
+    "question": "Which structure connects hypothalamus and pituitary?",
+    "options": ["Infundibulum", "Pons", "Medulla", "Corpus callosum"],
+    "answer_index": 0,
+    "explanation": "The infundibulum (pituitary stalk) connects hypothalamus to pituitary.",
+    "tags": ["Endocrine", "Neuroanatomy"]
+  },
+  {
+    "id": "ZOO-DIGEST-0040",
+    "subject": "Zoology",
+    "topic": "Digestion",
+    "difficulty": 2,
+    "question": "Primary function of bile salts is to",
+    "options": ["Digest proteins", "Emulsify fats", "Absorb glucose", "Neutralize pepsin"],
+    "answer_index": 1,
+    "explanation": "Bile salts emulsify lipids, increasing surface area for lipase action.",
+    "tags": ["Digestion"]
+  },
+  {
+    "id": "ZOO-CIRCUL-0041",
+    "subject": "Zoology",
+    "topic": "Circulation",
+    "difficulty": 3,
+    "question": "Largest artery in the human body is",
+    "options": ["Pulmonary artery", "Aorta", "Carotid artery", "Femoral artery"],
+    "answer_index": 1,
+    "explanation": "The aorta arises from the left ventricle and is the largest artery.",
+    "tags": ["Circulation"]
+  },
+  {
+    "id": "ZOO-IMMUNO-0042",
+    "subject": "Zoology",
+    "topic": "Immunology",
+    "difficulty": 3,
+    "question": "Cells that secrete antibodies are",
+    "options": ["T-helper cells", "B-lymphocytes (plasma cells)", "Neutrophils", "Basophils"],
+    "answer_index": 1,
+    "explanation": "Activated B cells differentiate into plasma cells which secrete antibodies.",
+    "tags": ["Immunology"]
+  },
+  {
+    "id": "ZOO-EXCRET-0043",
+    "subject": "Zoology",
+    "topic": "Excretion",
+    "difficulty": 3,
+    "question": "Loop of Henle primarily functions to",
+    "options": ["Filter blood", "Concentrate urine via counter-current", "Secrete aldosterone", "Reabsorb glucose via SGLT"],
+    "answer_index": 1,
+    "explanation": "Counter-current multiplication establishes osmotic gradient to concentrate urine.",
+    "tags": ["Excretion"]
+  },
+  {
+    "id": "ZOO-ENDOCR-0044",
+    "subject": "Zoology",
+    "topic": "Endocrine",
+    "difficulty": 3,
+    "question": "Hormone that increases blood glucose by promoting glycogenolysis is",
+    "options": ["Insulin", "Glucagon", "Thyroxine", "Aldosterone"],
+    "answer_index": 1,
+    "explanation": "Glucagon from α-cells stimulates glycogen breakdown and gluconeogenesis.",
+    "tags": ["Endocrine"]
+  },
+  {
+    "id": "ZOO-MUSCLE-0045",
+    "subject": "Zoology",
+    "topic": "Muscle",
+    "difficulty": 3,
+    "question": "Basic contractile unit of skeletal muscle is",
+    "options": ["Myofibril", "Sarcomere", "Myosin", "Actin"],
+    "answer_index": 1,
+    "explanation": "A sarcomere (Z to Z) is the functional contractile unit.",
+    "tags": ["Muscle"]
+  },
+  {
+    "id": "ZOO-NUTRIT-0046",
+    "subject": "Zoology",
+    "topic": "Nutrition",
+    "difficulty": 3,
+    "question": "Vitamin deficiency causing night blindness is",
+    "options": ["Vitamin A", "Vitamin B₁₂", "Vitamin C", "Vitamin K"],
+    "answer_index": 0,
+    "explanation": "Vitamin A is essential for rhodopsin in rods.",
+    "tags": ["Nutrition"]
+  },
+  {
+    "id": "ZOO-IMMUNI-0047",
+    "subject": "Zoology",
+    "topic": "Immunity",
+    "difficulty": 3,
+    "question": "Innate immunity includes all EXCEPT",
+    "options": ["Skin barrier", "Mucus", "Inflammation", "Antibody memory"],
+    "answer_index": 3,
+    "explanation": "Immunological memory is a feature of adaptive immunity.",
+    "tags": ["Immunity"]
+  },
+  {
+    "id": "ZOO-BLOOD-0048",
+    "subject": "Zoology",
+    "topic": "Blood",
+    "difficulty": 3,
+    "question": "ABO blood group antigens are present on",
+    "options": ["Plasma proteins", "RBC membrane", "Leukocyte nuclei", "Platelets"],
+    "answer_index": 1,
+    "explanation": "ABO antigens are glycoconjugates on RBC membrane.",
+    "tags": ["Blood"]
+  },
+  {
+    "id": "ZOO-PARASI-0049",
+    "subject": "Zoology",
+    "topic": "Parasitology",
+    "difficulty": 3,
+    "question": "Vector of malaria in humans is",
+    "options": ["Culex mosquito", "Anopheles mosquito (female)", "Aedes mosquito", "Glossina"],
+    "answer_index": 1,
+    "explanation": "Female Anopheles transmits Plasmodium spp.",
+    "tags": ["Parasitology"]
+  },
+  {
+    "id": "ZOO-REPROD-0050",
+    "subject": "Zoology",
+    "topic": "Reproduction",
+    "difficulty": 3,
+    "question": "Site of fertilization in human females is usually the",
+    "options": ["Ovary", "Uterus", "Ampulla of fallopian tube", "Cervix"],
+    "answer_index": 2,
+    "explanation": "Fertilization commonly occurs in the ampulla of the oviduct.",
+    "tags": ["Reproduction"]
+  },
+
+  {
+    "id": "BOT-PHOTOS-0001",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 1,
+    "question": "Pigment directly participating in light reactions is",
+    "options": ["Chlorophyll a", "Chlorophyll b", "Carotene", "Xanthophyll"],
+    "answer_index": 0,
+    "explanation": "Chlorophyll a is the primary pigment in reaction centers.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-PLANTP-0002",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 1,
+    "question": "Stomata open primarily due to",
+    "options": ["Decreased turgor of guard cells", "Increased turgor of guard cells", "ABA accumulation", "High CO₂ in leaf"],
+    "answer_index": 1,
+    "explanation": "Opening occurs when guard cells absorb water and bow apart.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-ANATOM-0003",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 1,
+    "question": "Tissue responsible for secondary growth in dicot stems is",
+    "options": ["Apical meristem", "Cork cambium only", "Vascular cambium", "Intercalary meristem"],
+    "answer_index": 2,
+    "explanation": "Vascular cambium forms secondary xylem and phloem, increasing girth.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-RESPIR-0004",
+    "subject": "Botany",
+    "topic": "Respiration",
+    "difficulty": 1,
+    "question": "End product of glycolysis is",
+    "options": ["Acetyl-CoA", "Pyruvate", "Lactate only", "Ethanol"],
+    "answer_index": 1,
+    "explanation": "Glycolysis converts glucose to two pyruvate molecules.",
+    "tags": ["Respiration"]
+  },
+  {
+    "id": "BOT-REPROD-0005",
+    "subject": "Botany",
+    "topic": "Reproduction",
+    "difficulty": 1,
+    "question": "Double fertilization in angiosperms involves fusion of",
+    "options": ["Egg and sperm only", "Two sperms with egg", "One sperm with egg and another with polar nuclei", "Two eggs with one sperm"],
+    "answer_index": 2,
+    "explanation": "One sperm fuses with egg (zygote), another with polar nuclei (endosperm).",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "BOT-PHOTOS-0006",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 1,
+    "question": "Which is a C₄ plant?",
+    "options": ["Wheat", "Rice", "Maize", "Barley"],
+    "answer_index": 2,
+    "explanation": "Maize uses the C₄ pathway with PEP carboxylase.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-ASSOCI-0007",
+    "subject": "Botany",
+    "topic": "Associations",
+    "difficulty": 1,
+    "question": "Mycorrhiza is a symbiotic association between",
+    "options": ["Alga and fungus", "Root and fungus", "Root and nitrogen-fixing bacteria", "Leaf and bacteria"],
+    "answer_index": 1,
+    "explanation": "Fungal hyphae aid in mineral uptake; plant supplies carbohydrates.",
+    "tags": ["Associations"]
+  },
+  {
+    "id": "BOT-PLANTP-0008",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 1,
+    "question": "Guttation occurs through",
+    "options": ["Lenticels", "Stomata", "Hydathodes", "Trichomes"],
+    "answer_index": 2,
+    "explanation": "Guttation droplets exude through hydathodes at leaf margins.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-AGRICU-0009",
+    "subject": "Botany",
+    "topic": "Agriculture",
+    "difficulty": 1,
+    "question": "Common biofertilizer for paddy fields contains",
+    "options": ["Azotobacter", "Anabaena (blue-green alga)", "Rhizobium", "Nitrobacter"],
+    "answer_index": 1,
+    "explanation": "Anabaena in Azolla symbiosis is used as biofertilizer in paddy.",
+    "tags": ["Agriculture"]
+  },
+  {
+    "id": "BOT-HORMON-0010",
+    "subject": "Botany",
+    "topic": "Hormones",
+    "difficulty": 1,
+    "question": "Plant hormone that delays senescence is",
+    "options": ["Auxin", "Cytokinin", "Abscisic acid", "Ethylene"],
+    "answer_index": 1,
+    "explanation": "Cytokinins delay leaf senescence by promoting nutrient mobilization.",
+    "tags": ["Hormones"]
+  },
+  {
+    "id": "BOT-ANATOM-0011",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 1,
+    "question": "Casparian strip occurs in",
+    "options": ["Epidermis", "Endodermis", "Cortex", "Pericycle"],
+    "answer_index": 1,
+    "explanation": "Casparian strips of suberin are characteristic of endodermal cell walls in roots.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-PLANTP-0012",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 1,
+    "question": "Photoperiodism is the response of plants to",
+    "options": ["Water", "Light duration", "Temperature", "Minerals"],
+    "answer_index": 1,
+    "explanation": "Flowering and other processes respond to length of light and dark periods.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-PHOTOS-0013",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 1,
+    "question": "Primary CO₂ acceptor in Calvin cycle is",
+    "options": ["PEP", "RuBP", "PGA", "OAA"],
+    "answer_index": 1,
+    "explanation": "Ribulose-1,5-bisphosphate (RuBP) accepts CO₂ catalyzed by Rubisco.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-GROWTH-0014",
+    "subject": "Botany",
+    "topic": "Growth",
+    "difficulty": 1,
+    "question": "Etiolation in plants is caused by",
+    "options": ["Excess light", "Darkness", "Excess nutrients", "Low CO₂"],
+    "answer_index": 1,
+    "explanation": "Growth in darkness leads to elongated, pale shoots (etiolation).",
+    "tags": ["Growth"]
+  },
+  {
+    "id": "BOT-WATERT-0015",
+    "subject": "Botany",
+    "topic": "Water Transport",
+    "difficulty": 1,
+    "question": "Transpiration pull is generated mainly by",
+    "options": ["Root pressure", "Capillarity alone", "Cohesion-tension mechanism", "Active transport"],
+    "answer_index": 2,
+    "explanation": "Cohesion of water molecules and tension from evaporation drive xylem ascent.",
+    "tags": ["Water Transport"]
+  },
+  {
+    "id": "BOT-PHOTOS-0016",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 1,
+    "question": "Which is a CAM plant?",
+    "options": ["Opuntia", "Wheat", "Rice", "Maize"],
+    "answer_index": 0,
+    "explanation": "Opuntia fixes CO₂ at night (CAM pathway) reducing water loss.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-NITROG-0017",
+    "subject": "Botany",
+    "topic": "Nitrogen cycle",
+    "difficulty": 1,
+    "question": "Nodulation in legume roots is induced by",
+    "options": ["Azotobacter", "Rhizobium", "Nitrosomonas", "Nitrobacter"],
+    "answer_index": 1,
+    "explanation": "Rhizobium forms nodules where nitrogen is fixed to ammonia.",
+    "tags": ["Nitrogen cycle"]
+  },
+  {
+    "id": "BOT-ANATOM-0018",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 1,
+    "question": "Sieve tube elements are associated with",
+    "options": ["Companion cells", "Tracheids", "Vessels", "Guard cells"],
+    "answer_index": 0,
+    "explanation": "Companion cells aid sieve tubes metabolically in phloem.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-REPROD-0019",
+    "subject": "Botany",
+    "topic": "Reproduction",
+    "difficulty": 1,
+    "question": "Pollen grains in angiosperms are produced in",
+    "options": ["Anther", "Stigma", "Style", "Ovule"],
+    "answer_index": 0,
+    "explanation": "Pollen develops in microsporangia (pollen sacs) of the anther.",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "BOT-PHOTOS-0020",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 2,
+    "question": "Pigment directly participating in light reactions is",
+    "options": ["Chlorophyll a", "Chlorophyll b", "Carotene", "Xanthophyll"],
+    "answer_index": 0,
+    "explanation": "Chlorophyll a is the primary pigment in reaction centers.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-PLANTP-0021",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 2,
+    "question": "Stomata open primarily due to",
+    "options": ["Decreased turgor of guard cells", "Increased turgor of guard cells", "ABA accumulation", "High CO₂ in leaf"],
+    "answer_index": 1,
+    "explanation": "Opening occurs when guard cells absorb water and bow apart.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-ANATOM-0022",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 2,
+    "question": "Tissue responsible for secondary growth in dicot stems is",
+    "options": ["Apical meristem", "Cork cambium only", "Vascular cambium", "Intercalary meristem"],
+    "answer_index": 2,
+    "explanation": "Vascular cambium forms secondary xylem and phloem, increasing girth.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-RESPIR-0023",
+    "subject": "Botany",
+    "topic": "Respiration",
+    "difficulty": 2,
+    "question": "End product of glycolysis is",
+    "options": ["Acetyl-CoA", "Pyruvate", "Lactate only", "Ethanol"],
+    "answer_index": 1,
+    "explanation": "Glycolysis converts glucose to two pyruvate molecules.",
+    "tags": ["Respiration"]
+  },
+  {
+    "id": "BOT-REPROD-0024",
+    "subject": "Botany",
+    "topic": "Reproduction",
+    "difficulty": 2,
+    "question": "Double fertilization in angiosperms involves fusion of",
+    "options": ["Egg and sperm only", "Two sperms with egg", "One sperm with egg and another with polar nuclei", "Two eggs with one sperm"],
+    "answer_index": 2,
+    "explanation": "One sperm fuses with egg (zygote), another with polar nuclei (endosperm).",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "BOT-PHOTOS-0025",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 2,
+    "question": "Which is a C₄ plant?",
+    "options": ["Wheat", "Rice", "Maize", "Barley"],
+    "answer_index": 2,
+    "explanation": "Maize uses the C₄ pathway with PEP carboxylase.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-ASSOCI-0026",
+    "subject": "Botany",
+    "topic": "Associations",
+    "difficulty": 2,
+    "question": "Mycorrhiza is a symbiotic association between",
+    "options": ["Alga and fungus", "Root and fungus", "Root and nitrogen-fixing bacteria", "Leaf and bacteria"],
+    "answer_index": 1,
+    "explanation": "Fungal hyphae aid in mineral uptake; plant supplies carbohydrates.",
+    "tags": ["Associations"]
+  },
+  {
+    "id": "BOT-PLANTP-0027",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 2,
+    "question": "Guttation occurs through",
+    "options": ["Lenticels", "Stomata", "Hydathodes", "Trichomes"],
+    "answer_index": 2,
+    "explanation": "Guttation droplets exude through hydathodes at leaf margins.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-AGRICU-0028",
+    "subject": "Botany",
+    "topic": "Agriculture",
+    "difficulty": 2,
+    "question": "Common biofertilizer for paddy fields contains",
+    "options": ["Azotobacter", "Anabaena (blue-green alga)", "Rhizobium", "Nitrobacter"],
+    "answer_index": 1,
+    "explanation": "Anabaena in Azolla symbiosis is used as biofertilizer in paddy.",
+    "tags": ["Agriculture"]
+  },
+  {
+    "id": "BOT-HORMON-0029",
+    "subject": "Botany",
+    "topic": "Hormones",
+    "difficulty": 2,
+    "question": "Plant hormone that delays senescence is",
+    "options": ["Auxin", "Cytokinin", "Abscisic acid", "Ethylene"],
+    "answer_index": 1,
+    "explanation": "Cytokinins delay leaf senescence by promoting nutrient mobilization.",
+    "tags": ["Hormones"]
+  },
+  {
+    "id": "BOT-ANATOM-0030",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 2,
+    "question": "Casparian strip occurs in",
+    "options": ["Epidermis", "Endodermis", "Cortex", "Pericycle"],
+    "answer_index": 1,
+    "explanation": "Casparian strips of suberin are characteristic of endodermal cell walls in roots.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-PLANTP-0031",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 2,
+    "question": "Photoperiodism is the response of plants to",
+    "options": ["Water", "Light duration", "Temperature", "Minerals"],
+    "answer_index": 1,
+    "explanation": "Flowering and other processes respond to length of light and dark periods.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-PHOTOS-0032",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 2,
+    "question": "Primary CO₂ acceptor in Calvin cycle is",
+    "options": ["PEP", "RuBP", "PGA", "OAA"],
+    "answer_index": 1,
+    "explanation": "Ribulose-1,5-bisphosphate (RuBP) accepts CO₂ catalyzed by Rubisco.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-GROWTH-0033",
+    "subject": "Botany",
+    "topic": "Growth",
+    "difficulty": 2,
+    "question": "Etiolation in plants is caused by",
+    "options": ["Excess light", "Darkness", "Excess nutrients", "Low CO₂"],
+    "answer_index": 1,
+    "explanation": "Growth in darkness leads to elongated, pale shoots (etiolation).",
+    "tags": ["Growth"]
+  },
+  {
+    "id": "BOT-WATERT-0034",
+    "subject": "Botany",
+    "topic": "Water Transport",
+    "difficulty": 2,
+    "question": "Transpiration pull is generated mainly by",
+    "options": ["Root pressure", "Capillarity alone", "Cohesion-tension mechanism", "Active transport"],
+    "answer_index": 2,
+    "explanation": "Cohesion of water molecules and tension from evaporation drive xylem ascent.",
+    "tags": ["Water Transport"]
+  },
+  {
+    "id": "BOT-PHOTOS-0035",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 2,
+    "question": "Which is a CAM plant?",
+    "options": ["Opuntia", "Wheat", "Rice", "Maize"],
+    "answer_index": 0,
+    "explanation": "Opuntia fixes CO₂ at night (CAM pathway) reducing water loss.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-NITROG-0036",
+    "subject": "Botany",
+    "topic": "Nitrogen cycle",
+    "difficulty": 2,
+    "question": "Nodulation in legume roots is induced by",
+    "options": ["Azotobacter", "Rhizobium", "Nitrosomonas", "Nitrobacter"],
+    "answer_index": 1,
+    "explanation": "Rhizobium forms nodules where nitrogen is fixed to ammonia.",
+    "tags": ["Nitrogen cycle"]
+  },
+  {
+    "id": "BOT-ANATOM-0037",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 2,
+    "question": "Sieve tube elements are associated with",
+    "options": ["Companion cells", "Tracheids", "Vessels", "Guard cells"],
+    "answer_index": 0,
+    "explanation": "Companion cells aid sieve tubes metabolically in phloem.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-REPROD-0038",
+    "subject": "Botany",
+    "topic": "Reproduction",
+    "difficulty": 2,
+    "question": "Pollen grains in angiosperms are produced in",
+    "options": ["Anther", "Stigma", "Style", "Ovule"],
+    "answer_index": 0,
+    "explanation": "Pollen develops in microsporangia (pollen sacs) of the anther.",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "BOT-PHOTOS-0039",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 3,
+    "question": "Pigment directly participating in light reactions is",
+    "options": ["Chlorophyll a", "Chlorophyll b", "Carotene", "Xanthophyll"],
+    "answer_index": 0,
+    "explanation": "Chlorophyll a is the primary pigment in reaction centers.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-PLANTP-0040",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 3,
+    "question": "Stomata open primarily due to",
+    "options": ["Decreased turgor of guard cells", "Increased turgor of guard cells", "ABA accumulation", "High CO₂ in leaf"],
+    "answer_index": 1,
+    "explanation": "Opening occurs when guard cells absorb water and bow apart.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-ANATOM-0041",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 3,
+    "question": "Tissue responsible for secondary growth in dicot stems is",
+    "options": ["Apical meristem", "Cork cambium only", "Vascular cambium", "Intercalary meristem"],
+    "answer_index": 2,
+    "explanation": "Vascular cambium forms secondary xylem and phloem, increasing girth.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-RESPIR-0042",
+    "subject": "Botany",
+    "topic": "Respiration",
+    "difficulty": 3,
+    "question": "End product of glycolysis is",
+    "options": ["Acetyl-CoA", "Pyruvate", "Lactate only", "Ethanol"],
+    "answer_index": 1,
+    "explanation": "Glycolysis converts glucose to two pyruvate molecules.",
+    "tags": ["Respiration"]
+  },
+  {
+    "id": "BOT-REPROD-0043",
+    "subject": "Botany",
+    "topic": "Reproduction",
+    "difficulty": 3,
+    "question": "Double fertilization in angiosperms involves fusion of",
+    "options": ["Egg and sperm only", "Two sperms with egg", "One sperm with egg and another with polar nuclei", "Two eggs with one sperm"],
+    "answer_index": 2,
+    "explanation": "One sperm fuses with egg (zygote), another with polar nuclei (endosperm).",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "BOT-PHOTOS-0044",
+    "subject": "Botany",
+    "topic": "Photosynthesis",
+    "difficulty": 3,
+    "question": "Which is a C₄ plant?",
+    "options": ["Wheat", "Rice", "Maize", "Barley"],
+    "answer_index": 2,
+    "explanation": "Maize uses the C₄ pathway with PEP carboxylase.",
+    "tags": ["Photosynthesis"]
+  },
+  {
+    "id": "BOT-ASSOCI-0045",
+    "subject": "Botany",
+    "topic": "Associations",
+    "difficulty": 3,
+    "question": "Mycorrhiza is a symbiotic association between",
+    "options": ["Alga and fungus", "Root and fungus", "Root and nitrogen-fixing bacteria", "Leaf and bacteria"],
+    "answer_index": 1,
+    "explanation": "Fungal hyphae aid in mineral uptake; plant supplies carbohydrates.",
+    "tags": ["Associations"]
+  },
+  {
+    "id": "BOT-PLANTP-0046",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 3,
+    "question": "Guttation occurs through",
+    "options": ["Lenticels", "Stomata", "Hydathodes", "Trichomes"],
+    "answer_index": 2,
+    "explanation": "Guttation droplets exude through hydathodes at leaf margins.",
+    "tags": ["Plant Physiology"]
+  },
+  {
+    "id": "BOT-AGRICU-0047",
+    "subject": "Botany",
+    "topic": "Agriculture",
+    "difficulty": 3,
+    "question": "Common biofertilizer for paddy fields contains",
+    "options": ["Azotobacter", "Anabaena (blue-green alga)", "Rhizobium", "Nitrobacter"],
+    "answer_index": 1,
+    "explanation": "Anabaena in Azolla symbiosis is used as biofertilizer in paddy.",
+    "tags": ["Agriculture"]
+  },
+  {
+    "id": "BOT-HORMON-0048",
+    "subject": "Botany",
+    "topic": "Hormones",
+    "difficulty": 3,
+    "question": "Plant hormone that delays senescence is",
+    "options": ["Auxin", "Cytokinin", "Abscisic acid", "Ethylene"],
+    "answer_index": 1,
+    "explanation": "Cytokinins delay leaf senescence by promoting nutrient mobilization.",
+    "tags": ["Hormones"]
+  },
+  {
+    "id": "BOT-ANATOM-0049",
+    "subject": "Botany",
+    "topic": "Anatomy",
+    "difficulty": 3,
+    "question": "Casparian strip occurs in",
+    "options": ["Epidermis", "Endodermis", "Cortex", "Pericycle"],
+    "answer_index": 1,
+    "explanation": "Casparian strips of suberin are characteristic of endodermal cell walls in roots.",
+    "tags": ["Anatomy"]
+  },
+  {
+    "id": "BOT-PLANTP-0050",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 3,
+    "question": "Photoperiodism is the response of plants to",
+    "options": ["Water", "Light duration", "Temperature", "Minerals"],
+    "answer_index": 1,
+    "explanation": "Flowering and other processes respond to length of light and dark periods.",
+    "tags": ["Plant Physiology"]
+  }
+]
+   
