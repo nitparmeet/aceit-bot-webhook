@@ -3115,7 +3115,7 @@ async def show_menu(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     text: str = "Choose an option:",
-):
+) -> None:
     explanation = (
         "📋 *Menu Options*\n\n"
         "🏫 *NEET College Predictor* – Uses your AIR & category and predict list of 10 colleges that you might get at your NEET rank based on the last year's cutoffs. It will also give AI based suggestion for those colleges\n\n"
@@ -3184,6 +3184,11 @@ async def quiz_menu_router(update, context):
         await q.message.reply_text("Leaderboard coming soon.")
         return
 
+    if data == "menu:back":
+    await show_menu(update, context)
+    return
+    
+
 async def menu_back(update, context):
     q = update.callback_query
     await q.answer()
@@ -3201,47 +3206,30 @@ PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROF
 
 
 # ========================= /start & /reset =========================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     unlock_flow(context)
-
-    # --- clear legacy quiz keys (old conversation-based quiz) ---
+    # clear user_data keys you used before
     for k in (
         "quiz_subject", "quiz_difficulty", "quiz_size", "quiz_questions", "quiz_idx",
-        "quiz_correct", "quiz_wrong", "quiz_deadline", "quiz_started_at",
-        "quiz_limit_secs", "quiz_wrongs_buffer", "predicted_air"
+        "quiz_correct", "quiz_wrong", "quiz_deadline", "quiz_started_at", "quiz_limit_secs",
+        "predicted_air", "ask_subject", "ask_last_question", "quiz_wrongs_buffer"
     ):
         context.user_data.pop(k, None)
-
-    # keep Ask cleanup as you had
-    for k in ("ask_subject", "ask_last_question"):
-        context.user_data.pop(k, None)
-
-    # --- clear new quiz session (button-based quiz) ---
-    try:
-        from bot import QUIZ_SESSIONS  # if this is the same file, remove this import line
-        QUIZ_SESSIONS.pop(update.effective_user.id, None)
-    except Exception:
-        pass
 
     tgt = _target(update)
     if tgt:
         await tgt.reply_text("Welcome!", reply_markup=ReplyKeyboardRemove())
-    await show_menu(update)
+
+    # IMPORTANT: pass context here
+    await show_menu(update, context)
 
 
-async def reset_lock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # wipe all per-user scratch
+async def reset_lock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     for k in list(context.user_data.keys()):
         context.user_data.pop(k, None)
-
-    # also clear new quiz session
-    try:
-        from bot import QUIZ_SESSIONS  # if this is the same file, remove this import line
-        QUIZ_SESSIONS.pop(update.effective_user.id, None)
-    except Exception:
-        pass
-
     await update.message.reply_text("✅ State cleared. You can start fresh with /menu.")
+    # optional: return to menu
+    await show_menu(update, context)
 
 # ========================= Profile =========================
 def _canonical_category_ui(text: str) -> Optional[str]:
@@ -3478,22 +3466,33 @@ async def quiz_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 
-async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer()
-    data = (q.data or "")
-    if data == "menu_quiz":
-        # open the quiz picker (Mini 5 / Mini 10 + subject)
-        await show_quiz_menu(update, context)
-    elif data == "menu_predict":
-        await predict_start(update, context)          # your existing entry
-    elif data == "menu_mock_predict":
-        await mock_predict_start(update, context)     # your existing entry
-    elif data == "menu_ask":
-        await ask_start(update, context)              # your existing entry
-    elif data == "menu_profile":
-        await profile_start(update, context)          # your existing entry
+    data = (q.data or "").strip()
 
+    if data == "menu_quiz":
+        await menu_quiz_handler(update, context)
+        return
+
+    if data == "menu_predict":
+        await q.message.reply_text("Predictor coming right up. Use /predict to start.")
+        return
+
+    if data == "menu_mock_predict":
+        await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
+        return
+
+    if data == "menu_ask":
+        await q.message.reply_text("Ask your NEET doubt with /ask.")
+        return
+
+    if data == "menu_profile":
+        await q.message.reply_text("Open profile with /profile.")
+        return
+
+    # fallback
+    await q.message.reply_text("Unknown menu item.")
     
 #----------------------------New Quiz end
     # ---------------- small helpers ----------------
@@ -6487,46 +6486,35 @@ def _has_all(*names: str) -> bool:
 from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
 
 def register_handlers(app: Application) -> None:
-    """
-    Wire up all handlers safely. Uses _has/_has_all gates if present;
-    otherwise treats symbols as present.
-    """
-
-    # --- local helper to keep calls tidy ---
+    """Attach all handlers once. Keep this function defined only once."""
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
 
-    # --- guard helpers (fallbacks if you don't already have them) ---
-    try:
-        _has        # type: ignore[name-defined]
-    except NameError:
-        def _has(*names: str) -> bool:  # fallback: assume things exist
-            return True
-    try:
-        _has_all    # type: ignore[name-defined]
-    except NameError:
-        def _has_all(*names: str) -> bool:  # fallback: assume things exist
-            return True
+    # --- Basic commands ---
+    _add(CommandHandler("start", start), group=0)
+    # IMPORTANT: /menu should open the menu screen
+    _add(CommandHandler("menu", show_menu), group=0)
 
-    # ===================== Error handler =====================
-    if _has("on_error"):
-        app.add_error_handler(on_error)
+    # --- Quick quiz commands (optional shortcuts) ---
+    _add(CommandHandler("quiz5",         quiz5), group=0)
+    _add(CommandHandler("quiz10",        quiz10), group=0)
+    _add(CommandHandler("quiz10physics", quiz10physics), group=0)
+    _add(CommandHandler("quiz5medium",   quiz5medium), group=0)
 
-    # ===================== Basic commands =====================
-    if _has("start"):
-        _add(CommandHandler("start", start), group=0)
-        # Prefer /menu → show_menu (not alias to start)
-        if _has("show_menu"):
-            _add(CommandHandler("menu", show_menu), group=0)
-        else:
-            _add(CommandHandler("menu", start), group=0)
+    # --- Quiz menu + router + answers ---
+    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+    _add(CallbackQueryHandler(
+        quiz_menu_router,
+        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
+    ), group=0)
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
-    if _has("reset_lock"):
-        _add(CommandHandler("reset", reset_lock), group=0)
+    # --- Top-level menu router for other sections ---
+    _add(CallbackQueryHandler(
+        menu_router,
+        pattern=r"^menu_(predict|mock_predict|ask|profile)$"
+    ), group=0)
 
-    # Diagnostics (optional)
-    if _has("quizdiag"):
-        _add(CommandHandler("quizdiag", quizdiag), group=0)
 
     # ===================== QUIZ shortcuts =====================
     if _has("quiz5"):         _add(CommandHandler("quiz5", quiz5), group=0)
