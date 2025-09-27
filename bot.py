@@ -3085,7 +3085,7 @@ async def show_menu(update: Update, text: str = "Choose an option:"):
         "📋 *Menu Options*\n\n"
         "🏫 *NEET College Predictor* – Uses your AIR & category and predict list of 10 colleges that you might get at your NEET rank based on the last year's cutoffs. It will also give AI based suggestion for those colleges\n\n" 
         "🏫 *PREDICT FROM MOCK RANK* – Uses your All India Mock Test Rank, Quota & category and predict list of colleges that you might get at your rank based on the last year's cutoffs.\n\n"
-        "📝 *Daily Quiz (Exam Mode)* – Take timed quiz/test, get scores, translate your score to NEET Style Ranks and Predict List of College at that rank.\n\n"
+        "📝 *Daily Quiz (Exam Mode)* – Take timed quiz/test and get scores.\n\n"
         "💬 *Clear your NEET Doubts* – Send text or photo and get structured solution + follow-ups for NEET Subject Queries or Conunselling based queries.\n\n"
         "⚙️ *Setup your profile* – Save Name, Contact, Email, Category, Domicile."
     )
@@ -3102,6 +3102,8 @@ ASK_WAIT = 100
 ASK_AIR, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF = range(300, 307)
 
 PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROFILE_SET_EMAIL, PROFILE_SET_MOBILE, PROFILE_SET_PRIMARY = range(120, 127)
+
+
 
 # ========================= /start & /reset =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3298,6 +3300,13 @@ async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     count = int(count_s)
     # start the new quiz with defaults (no subject/difficulty filter)
     await _start_quiz(update, context, count=count)
+
+async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query:
+        await update.callback_query.answer()
+        with contextlib.suppress(Exception):
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+    await _start_quiz(update, context, count=5)
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import math, os
@@ -6310,6 +6319,7 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)   # optional
     app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)       # optional
     app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+    app.add_handler(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
     
     
     # Single ask_more handler
