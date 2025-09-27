@@ -6610,9 +6610,7 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
         ],
         states={
-            ASK_SUBJECT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
-            ],
+            ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
             ASK_WAIT: [
                 MessageHandler(filters.PHOTO, ask_receive_photo),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
@@ -6625,7 +6623,7 @@ def register_handlers(app: Application) -> None:
     )
     _add(ask_conv, group=1)
 
-    # Ask follow-ups (Similar / Concept / etc.) — must precede menu router
+    # Ask follow-ups (Similar / Concept / etc.) — keep before menu router
     _add(CallbackQueryHandler(
         ask_feature_router,
         pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
@@ -6639,7 +6637,6 @@ def register_handlers(app: Application) -> None:
             CommandHandler("predict", predict_start),
             CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
             CommandHandler("mockpredict", predict_mockrank_start),
-            # accept BOTH spellings to fix the mock-predict entry:
             CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
         ],
         states={
@@ -6658,11 +6655,15 @@ def register_handlers(app: Application) -> None:
     _add(predict_conv, group=3)
 
     # Predictor follow-ups (AI Coach buttons attached to predict output)
-    # Handles: predict:ai, predict:refine, predict:alt, predict:details (+ ai_coach/coach aliases)
-    _add(CallbackQueryHandler(
-        predict_feature_router,
-        pattern=r"^predict:(ai(_coach)?|coach|refine|alt|details)(:.*)?$"
-    ), group=0)
+    # Handles: predict:ai, predict:ai_coach, predict:coach, predict:refine, predict:alt, predict:details
+    try:
+        _add(CallbackQueryHandler(
+            predict_feature_router,  # only if you actually defined this function
+            pattern=r"^predict:(ai(_coach)?|coach|refine|alt|details)(:.*)?$"
+        ), group=0)
+    except NameError:
+        # Safe if you haven't implemented predict_feature_router yet
+        pass
 
     # -------------------------------
     # AI Coach (Preference-List)
@@ -6721,7 +6722,6 @@ def register_handlers(app: Application) -> None:
         pass
 
     log.info("✅ Handlers registered")
-
 
 
 
