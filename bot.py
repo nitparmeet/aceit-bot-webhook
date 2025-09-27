@@ -4262,6 +4262,64 @@ async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, wan
         return False
     return True
 
+async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes Ask follow-up buttons like ask:similar, ask:concept, etc."""
+    q = update.callback_query
+    data = (q.data or "").strip()
+    await q.answer()
+
+    # expected formats: ask:similar, ask:concept, ask:steps, ask:explain, ask:prev, ask:next
+    action = data.split(":", 1)[1] if ":" in data else ""
+    # Map actions -> function names you may already have
+    # Edit these names to match your codebase if different.
+    mapping = {
+        "similar": "ask_similar_cb",
+        "concept": "ask_concept_cb",
+        "steps":   "ask_steps_cb",
+        "explain": "ask_explain_cb",
+        "prev":    "ask_prev_cb",
+        "next":    "ask_next_cb",
+    }
+
+    fn_name = mapping.get(action)
+    fn = globals().get(fn_name)
+    if callable(fn):
+        await fn(update, context)
+        return
+
+    # Fallback: tell user and log
+    await q.message.reply_text("That Ask feature isn’t wired yet. Please try again later.")
+    log.warning("Ask feature router: no handler for action=%r (expected %r)", action, mapping)
+
+
+async def coach_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes AI Coach buttons used from Predict results."""
+    q = update.callback_query
+    data = (q.data or "").strip()
+    await q.answer()
+
+    # examples we accept: menu_coach, coach:start, coach:adjust, coach:save
+    if data in ("menu_coach", "coach:start"):
+        fn = globals().get("coach_start")
+        if callable(fn):
+            await fn(update, context)
+            return
+
+    if data.startswith("coach:adjust"):
+        fn = globals().get("coach_adjust_cb")
+        if callable(fn):
+            await fn(update, context)
+            return
+
+    if data.startswith("coach:save"):
+        fn = globals().get("coach_save_cb")
+        if callable(fn):
+            await fn(update, context)
+            return
+
+    await q.message.reply_text("Coach action isn’t available right now.")
+    log.warning("Coach router: unhandled data=%r", data)
+
 
 def tri_inline(prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -6503,9 +6561,9 @@ def register_handlers(app: Application) -> None:
 
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
-    _add(CommandHandler("menu", show_menu), group=0)  # /menu must show menu
+    _add(CommandHandler("menu", show_menu), group=0)
 
-    # --- Quick quiz commands (optional shortcuts) ---
+    # --- Quick quiz commands ---
     _add(CommandHandler("quiz5",         quiz5), group=0)
     _add(CommandHandler("quiz10",        quiz10), group=0)
     _add(CommandHandler("quiz10physics", quiz10physics), group=0)
@@ -6535,13 +6593,19 @@ def register_handlers(app: Application) -> None:
                 MessageHandler(filters.PHOTO, ask_receive_photo),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
             ],
-        },  # <-- dict closes with }
+        },
         fallbacks=[CommandHandler("cancel", cancel)],
         name="ask_conv",
         persistent=False,
         per_message=False,
     )
     _add(ask_conv, group=1)
+
+    # Ask follow-ups (Similar / Concept / etc.)
+    _add(CallbackQueryHandler(
+        ask_feature_router,
+        pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
+    ), group=1)
 
     # -------------------------------
     # Predictor conversation
@@ -6551,7 +6615,8 @@ def register_handlers(app: Application) -> None:
             CommandHandler("predict", predict_start),
             CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
             CommandHandler("mockpredict", predict_mockrank_start),
-            CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
+            # accept BOTH spellings to fix the mock-predict entry:
+            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
         ],
         states={
             ASK_AIR: [
@@ -6572,13 +6637,30 @@ def register_handlers(app: Application) -> None:
             ASK_DOMICILE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile),
             ],
-        },  # <-- dict closes with }
+        },
         fallbacks=[CommandHandler("cancel", cancel_predict)],
         name="predict_conv",
         persistent=False,
         per_message=False,
     )
     _add(predict_conv, group=3)
+
+    # -------------------------------
+    # AI Coach (Preference-List)
+    # -------------------------------
+    # Start from menu or coach:start
+    _add(CallbackQueryHandler(coach_router, pattern=r"^(menu_coach|coach:start)$"), group=0)
+    # Adjust / Save buttons that often appear under predict results
+    _add(CallbackQueryHandler(coach_router, pattern=r"^coach:(adjust|save)(:.*)?$"), group=0)
+    # Legacy/explicit callbacks if you already have them
+    try:
+        _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
+    except NameError:
+        pass
+    try:
+        _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)
+    except NameError:
+        pass
 
     # -------------------------------
     # Profile conversation
@@ -6611,23 +6693,12 @@ def register_handlers(app: Application) -> None:
             PROFILE_SET_PRIMARY: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary),
             ],
-        },  # <-- dict closes with }
+        },
         fallbacks=[CommandHandler("cancel", cancel)],
         name="profile_conv",
         persistent=False,
     )
     _add(profile_conv, group=4)
-
-    # -------------------------------
-    # (Optional) AI Coach
-    # -------------------------------
-    try:
-        _add(CommandHandler("coach", coach_start), group=0)
-        _add(CallbackQueryHandler(coach_start, pattern=r"^menu_coach$"), group=0)
-        _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
-        _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)
-    except NameError:
-        pass
 
     # -------------------------------
     # Error handler (optional)
@@ -6637,6 +6708,7 @@ def register_handlers(app: Application) -> None:
     except NameError:
         pass
 
+    log.info("✅ Handlers registered")
 
 
 
