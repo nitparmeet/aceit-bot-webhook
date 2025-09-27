@@ -3111,16 +3111,22 @@ def main_menu_markup() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⚙️ Setup your profile", callback_data="menu_profile")],
     ])
 
-async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Choose an option:"):
+async def show_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str = "Choose an option:",
+):
     explanation = (
         "📋 *Menu Options*\n\n"
-        "🏫 *NEET College Predictor* – Uses your AIR & category and predict list of 10 colleges that you might get at your NEET rank based on last year's cutoffs. It will also give AI-based suggestions.\n\n"
-        "🏫 *Predict from Mock Rank* – Uses your All India Mock Test Rank, Quota & Category to predict colleges based on last year's cutoffs.\n\n"
-        "📝 *Daily Quiz (Exam Mode)* – Take timed quizzes and get scores.\n\n"
-        "💬 *Clear your NEET Doubts* – Send text or photo to get structured solutions and follow-ups.\n\n"
+        "🏫 *NEET College Predictor* – Uses your AIR & category and predict list of 10 colleges that you might get at your NEET rank based on the last year's cutoffs. It will also give AI based suggestion for those colleges\n\n"
+        "🏫 *PREDICT FROM MOCK RANK* – Uses your All India Mock Test Rank, Quota & category and predict list of colleges that you might get at your rank based on the last year's cutoffs.\n\n"
+        "📝 *Daily Quiz (Exam Mode)* – Take timed quiz/test and get scores.\n\n"
+        "💬 *Clear your NEET Doubts* – Send text or photo and get structured solution + follow-ups for NEET Subject Queries or Conunselling based queries.\n\n"
         "⚙️ *Setup your profile* – Save Name, Contact, Email, Category, Domicile."
     )
-    tgt = update.callback_query.message if update.callback_query else update.effective_message
+    tgt = _target(update)
+    if not tgt:
+        return
     await tgt.reply_text(explanation, parse_mode="Markdown")
     await tgt.reply_text(text, reply_markup=main_menu_markup())
 
