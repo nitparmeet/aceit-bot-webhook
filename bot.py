@@ -1700,6 +1700,8 @@ def _read_array_or_questions_node(data) -> list[dict]:
     return out
 
 #----------New Quiz-------
+
+
 def _stable_qid(subject: str, question: str, idx_hint: int = 0) -> str:
     """Create a stable, short id from subject + question text."""
     h = hashlib.md5(f"{subject}|{question}".encode("utf-8")).hexdigest()[:10]
@@ -2004,6 +2006,13 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Next question or results
     await _send_next(update, context)
 
+async def quizdiag(update, context):
+    from pathlib import Path
+    await update.message.reply_text(
+        f"QUIZ_POOL subjects: {list(QUIZ_POOL.keys())[:4]} ...\n"
+        f"Total Qs: {sum(len(v) for v in QUIZ_POOL.values())}\n"
+        f"Path: {QUIZ_JSON_PATH}\n"
+    )
 
 # ===== END NEW QUIZ INTEGRATION =====
 
@@ -6434,6 +6443,7 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)  # optional
     app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)      # optional
     app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+    
     
     # Single ask_more handler
     if _has("ask_followup_handler"):
