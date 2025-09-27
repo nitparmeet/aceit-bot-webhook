@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 
+
 from fastapi import FastAPI, Request, HTTPException
 
 from telegram.ext import Application
@@ -49,9 +50,11 @@ from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, Con
 
 
 
+
+
 log = logging.getLogger("aceit-bot")
 TOKEN = os.getenv("TELEGRAM_TOKEN", "")
-
+QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}
 from dataclasses import dataclass
 
 from dataclasses import dataclass
@@ -1692,91 +1695,148 @@ def _read_array_or_questions_node(data) -> list[dict]:
             out.append(item)
     return out
 
-def load_quiz_data() -> bool:
-    """
-    Populate global `quiz_data` from quiz.json.
-    Looks in: env → same dir as bot.py → src/data → parent of src → CWD.
-    """
-    global quiz_data, QUIZ_JSON
+#----------New Quiz-------
+def _format_question(q: Dict[str, Any], index: int, total: int) -> str:
+    header = f"Q {index+1}/{total} · {q.get('subject','')} · {q.get('topic','')}".strip()
+    body = q["question"]
+    return f"{header}\n\n{body}"
 
-    here = Path(__file__).parent              # /opt/render/project/src
-    parent = here.parent                      # /opt/render/project
-    cwd = Path.cwd()                          # usually /opt/render/project/src
+def _keyboard_for(q: Dict[str, Any]) -> InlineKeyboardMarkup:
+    rows = []
+    for i, opt in enumerate(q["options"]):
+        rows.append([InlineKeyboardButton(text=opt, callback_data=f"ans:{q['id']}:{i}")])
+    return InlineKeyboardMarkup(rows)
 
-    candidates = []
-    if QUIZ_JSON:
-        candidates.append(QUIZ_JSON)
-    candidates += [
-        str(here / "quiz.json"),
-        str(here / "data" / "quiz.json"),
-        str(parent / "quiz.json"),
-        str(cwd / "quiz.json"),
-    ]
+async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send the next question or show results if done."""
+    user_id = update.effective_user.id
+    sess = QUIZ_SESSIONS.get(user_id)
+    if not sess:
+        await update.effective_message.reply_text("No active quiz. Use /quiz5 or /quiz10 to start.")
+        return
 
-    for path in candidates:
-        try:
-            if not os.path.exists(path):
-                continue
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if not isinstance(data, dict) or not data:
-                log.warning("quiz: file found but empty/invalid dict: %s", path)
-                continue
+    i = sess["index"]
+    qs: List[Dict[str, Any]] = sess["questions"]
+    total = len(qs)
 
-            # Keep only list-valued subjects
-            cleaned = {str(k).strip(): v for k, v in data.items() if isinstance(v, list)}
+    if i >= total:
+        # finished — compute score
+        answers: Dict[str, int] = sess["answers"]  # question_id -> user answer_index
+        score = 0
+        lines = []
+        for q in qs:
+            qid = q["id"]
+            ua = answers.get(qid, -1)
+            ca = q["answer_index"]
+            ok = (ua == ca)
+            if ok:
+                score += 1
+            user_txt = q["options"][ua] if 0 <= ua < len(q["options"]) else "—"
+            cor_txt = q["options"][ca]
+            expl = q.get("explanation")
+            part = f"• {q['question']}\n   Your: {user_txt}\n   Correct: {cor_txt}"
+            if expl:
+                part += f"\n   Why: {expl}"
+            lines.append(part)
+        text = f"✅ Quiz complete!\nScore: {score}/{total}\n\n" + "\n\n".join(lines)
+        await update.effective_message.reply_text(text)
+        QUIZ_SESSIONS.pop(user_id, None)
+        return
 
-            def _ok_item(it):
-                return isinstance(it, dict) and "question" in it and "options" in it and "answer" in it
+    # send current question
+    q = qs[i]
+    text = _format_question(q, i, total)
+    await update.effective_message.reply_text(text, reply_markup=_keyboard_for(q))
 
-            valid_subjects = [s for s, arr in cleaned.items() if any(_ok_item(x) for x in arr)]
-            if not valid_subjects:
-                log.warning("quiz: no valid subjects with Qs: %s", path)
-                continue
+async def _start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, *, count: int, subject: Optional[str]=None, difficulty: Optional[int]=None, tags_any: Optional[List[str]]=None) -> None:
+    """Initialize a quiz session and send the first question."""
+    ensure_quiz_loaded()
+    pool = QUIZ_POOL
+    qs = pick_qs(pool, subject=subject, difficulty=difficulty, tags_any=tags_any, count=count, shuffle=True)
+    if not qs:
+        await update.message.reply_text("No questions match your filters. Try different subject/difficulty.")
+        return
+    # Store full questions (with answer_index) server-side; we never expose answer_index in button data.
+    QUIZ_SESSIONS[update.effective_user.id] = {
+        "questions": qs,
+        "answers": {},   # qid -> user answer_index
+        "index": 0,
+    }
+    await _send_next(update, context)
 
-            quiz_data = cleaned
-            QUIZ_JSON = path
-            log.info("Loaded quiz subjects: %s (from %s)", valid_subjects, path)
-            return True
-        except Exception:
-            log.exception("quiz: error while reading %s", path)
+# ---- Public commands ----
+async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=5)
 
-    quiz_data = {}
+async def quiz10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=10)
+
+# Optional filtered commands. Example: /quiz10physics or /quiz5medium etc.
+async def quiz10physics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=10, subject="Physics")
+
+async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=5, difficulty=2)
+
+# ---- Button click handler ----
+async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles callback_data like 'ans:<qid>:<idx>'."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data or ""
+    if not data.startswith("ans:"):
+        return
+
     try:
-        src_list = ", ".join(sorted(os.listdir(here))) if here.exists() else "?"
+        _, qid, idx_str = data.split(":")
+        chosen = int(idx_str)
     except Exception:
-        src_list = "?"
-    log.warning(
-        "quiz: quiz.json not found/usable. Checked=%s | cwd=%s | src contents=[%s]",
-        candidates, str(cwd), src_list
-    )
-    return False
+        await query.edit_message_text("Invalid answer payload.")
+        return
 
-# Call at import
-try:
-    load_quiz_data()
-except Exception:
-    log.exception("quiz: failed to load question bank")
+    user_id = update.effective_user.id
+    sess = QUIZ_SESSIONS.get(user_id)
+    if not sess:
+        await query.edit_message_text("Session expired. Use /quiz5 or /quiz10 to start again.")
+        return
 
-async def quizdiag(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    qs: List[Dict[str, Any]] = sess["questions"]
+    i = sess["index"]
+    if i >= len(qs):
+        await query.edit_message_text("Already finished. Use /quiz5 or /quiz10 to start again.")
+        return
+
+    q = qs[i]
+    # Record answer safely
+    if q["id"] != qid:
+        # user clicked a stale button; ignore gracefully
+        await query.answer("That question has moved on.", show_alert=False)
+        return
+
+    sess["answers"][qid] = chosen
+    sess["index"] = i + 1
+
+    # Give immediate feedback (optional). Comment out if you prefer to show only at the end.
+    correct_ai = q["answer_index"]
+    correct_txt = q["options"][correct_ai]
+    user_txt = q["options"][chosen]
+    ok = (chosen == correct_ai)
+    fb = "✅ Correct!" if ok else f"❌ Incorrect. Correct: {correct_txt}"
+    # Replace the previous message text with feedback (keeps chat tidy)
     try:
-        subs = list(quiz_data.keys())
-        counts = {s: len(quiz_data.get(s, [])) for s in subs}
-        path = QUIZ_JSON or "(auto-located)"
-        lines = [
-            "🧪 Quiz diagnostics",
-            f"Path: {path}",
-            f"Subjects: {', '.join(subs) if subs else '(none)'}",
-            "Counts per subject:",
-        ]
-        if counts:
-            for s in sorted(counts):
-                lines.append(f"  • {s}: {counts[s]}")
-        else:
-            lines.append("  • (no data loaded)")
-        await update.effective_chat.send_message("\n".join(lines))
-    except Exception as e:
-        await update.effective_chat.send_message(f"Diag error: {e}")
+        await query.edit_message_text(
+            f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
+        )
+    except Exception:
+        # if edit fails (time, perms), just send a new message
+        await query.message.reply_text(fb)
+
+    # Send next
+    await _send_next(update, context)
+
+# ===== END NEW QUIZ INTEGRATION =====
+
         
 _CODE_COL_CANDIDATES = ["college_code", "College Code", "code", "COLLEGE_CODE"]
 
@@ -2590,137 +2650,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Choose an option:",
         reply_markup=main_menu_keyboard()
     )
-# ========================= Quiz & Rank curve =========================
-# ========================= Quiz & Rank curve =========================
-quiz_data: dict[str, list[dict]] = {}
-_QDIR = Path(__file__).parent / "quiz_data"
-_SINGLE_FILE_CANDIDATES = [
-    Path(__file__).parent / "quiz.json",
-    Path(__file__).parent / "quiz_data.json",
-    _QDIR / "quiz.json",
-]
-def _norm_subject(s: str) -> str:
-    return (s or "").strip().title()
-
-
-def _answer_to_1_based_str(ans, options: list[str]) -> str | None:
-    """
-    Convert various encodings to a 1-based string index ("1".."4").
-    Accepts: 0/1/2/3 or 1..4, 'A'..'D', numeric strings, or exact option text.
-    """
-    if ans is None:
-        return None
-
-    # ints first
-    if isinstance(ans, int):
-        if 0 <= ans < len(options):
-            return str(ans + 1)       # 0-based -> 1-based
-        if 1 <= ans <= len(options):
-            return str(ans)           # already 1-based
-        return None
-
-    # strings
-    s = str(ans).strip()
-    if not s:
-        return None
-    u = s.upper()
-
-    # A..D
-    if u in ("A", "B", "C", "D"):
-        return str("ABCD".index(u) + 1)
-
-    # numeric string
-    if u.isdigit():
-        n = int(u)
-        if 1 <= n <= len(options):
-            return str(n)
-        if 0 <= n < len(options):
-            return str(n + 1)
-        return None
-
-    # exact text match (case-insensitive)
-    for i, opt in enumerate(options):
-        if s.lower() == str(opt).strip().lower():
-            return str(i + 1)
-
-    return None
-
-def _coerce_item(raw: dict) -> dict | None:
-    """
-    Coerce a raw dict into your existing shape:
-      {
-        "question": str, "options": [str,str,str,str],
-        "answer": "1".."4", "difficulty": str, "tags": [..], "explanation": str
-      }
-    Return None if invalid.
-    """
-    if not isinstance(raw, dict):
-        return None
-
-    q = (raw.get("question") or raw.get("q") or "").strip()
-    if not q:
-        return None
-
-    opts = raw.get("options") or raw.get("choices") or raw.get("opts") or []
-    if not isinstance(opts, list) or len(opts) < 2:
-        return None
-    opts = [str(x).strip() for x in opts][:4]
-    while len(opts) < 4:
-        opts.append("—")
-
-    ans_raw = (
-        raw.get("answer", raw.get("ans", raw.get("correct", raw.get("correct_index", raw.get("correct_option")))))
-    )
-    ans_1b = _answer_to_1_based_str(ans_raw, opts)
-    if ans_1b is None:
-        return None
-
-    diff = (raw.get("difficulty") or raw.get("level") or "any").strip().lower()
-    tags = raw.get("tags") if isinstance(raw.get("tags"), list) else []
-    exp  = (raw.get("explanation") or raw.get("exp") or raw.get("why") or "").strip()
-
-    return {
-        "question": q,
-        "options": opts,
-        "answer": ans_1b,         # 1-based string for your existing checker
-        "difficulty": diff,
-        "tags": tags,
-        "explanation": exp,
-    }
-
-    
-
-MARK2RANK = _load_json("neet_mark_to_rank.json", None)
-log.info("Loaded quiz subjects: %s", list(quiz_data.keys()))
-
-def _interp_rank_from_marks(marks: float, category: str = "General") -> Optional[int]:
-    """Linear interpolation between (marks, rank) points for the given category."""
-    try:
-        if not MARK2RANK:
-            return None
-        curves = MARK2RANK.get("curves") or []
-        cat = (category or "General").strip().title()
-        pts = None
-        for c in curves:
-            if (c.get("category") or "").strip().title() == cat:
-                pts = c.get("points")
-                break
-        if not pts:
-            return None
-        pts = sorted(pts, key=lambda p: p[0], reverse=True)
-        if marks >= pts[0][0]:
-            return int(pts[0][1])
-        if marks <= pts[-1][0]:
-            return int(pts[-1][1])
-        for i in range(len(pts) - 1):
-            m1, r1 = pts[i]; m2, r2 = pts[i + 1]
-            if m1 >= marks >= m2:
-                t = 0.0 if m1 == m2 else (marks - m2) / (m1 - m2)
-                return max(1, int(round(r2 + t * (r1 - r2))))
-        return None
-    except Exception:
-        log.exception("AIR interpolation failed")
-        return None
 
 # ========================= Excel helpers & loaders =========================
 def _norm_hdr(s: str) -> str:
@@ -3280,11 +3209,28 @@ def _pick(d: dict, *keys):
                 return v
     return None
 
+#New Quiz----------
+async def menu_quiz_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    await q.answer()
+    # Offer a quick choice between 5 or 10
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("5 Questions",  callback_data="start_quiz:5")],
+        [InlineKeyboardButton("10 Questions", callback_data="start_quiz:10")],
+    ])
+    await q.edit_message_text("Choose a quiz size:", reply_markup=kb)
 
+async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    await q.answer()
+    _, count_s = q.data.split(":")
+    count = int(count_s)
+    # start the new quiz with defaults (no subject/difficulty filter)
+    await _start_quiz(update, context, count=count)
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import math, os
-
+#----------------------------New Quiz end
     # ---------------- small helpers ----------------
     NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
 
@@ -4517,598 +4463,6 @@ async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_
             reply_to_message_id=q.message.message_id,
         )
 
-# ========================= Quiz (with review/predict prompts) =========================
-QUIZ_DIFFICULTY_KB = [["Low", "Medium", "High"], ["Any"], ["Cancel"]]
-QUIZ_SIZES_KB = [["10", "30", "45"], ["Cancel"]]
-QUIZ_TIME_LIMITS = {10: 15, 30: 30, 45: 45}  # minutes
-
-def _norm_diff(s: str) -> str:
-    s = (s or "").strip().lower()
-    if s in {"low", "easy"}: return "low"
-    if s in {"medium", "mid", "med"}: return "medium"
-    if s in {"high", "hard"}: return "high"
-    return "any"
-
-def _filter_and_sample_questions(topic: str, difficulty: str, n: int) -> List[Dict[str, Any]]:
-    items = quiz_data.get(topic, [])[:]
-    if not items:
-        return []
-    d = _norm_diff(difficulty)
-    if d != "any":
-        filtered = [q for q in items if (q.get("difficulty", "").strip().lower() == d)]
-        if filtered:
-            items = filtered
-    random.shuffle(items)
-    return items[:min(n, len(items))]
-
-def _quiz_keyboard(options: List[str], last: bool = False) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text, callback_data=f"QUIZ:{i+1}")]
-            for i, text in enumerate(options)]
-    if last:
-        rows.append([InlineKeyboardButton("✅ Submit test", callback_data="QUIZ:SUBMIT")])
-    return InlineKeyboardMarkup(rows)
-
-def _quiz_set_followup_context(context, q: dict, subject: str | None):
-    """
-    Save the current question so 'Similar Q' / 'Explain concept' can use it.
-    Safe to call for every shown question.
-    """
-    try:
-        opts = list(q.get("options") or [])
-        ans  = str(q.get("answer") or "").strip()
-        ans_text = None
-        if ans.isdigit():
-            i = int(ans) - 1
-            if 0 <= i < len(opts):
-                ans_text = opts[i]
-
-        context.user_data["ask_more_ctx"] = {
-            "source": "quiz",
-            "subject": subject or "General",
-            "question": str(q.get("question") or ""),
-            "options": opts,
-            "answer": ans,
-            "answer_text": ans_text,
-            "explanation": q.get("explanation") or None,
-        }
-    except Exception:
-        # Don't break the quiz if anything here fails
-        pass
-
-def _time_up(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    deadline = context.user_data.get("quiz_deadline")
-    return bool(deadline and time.time() >= deadline)
-
-
-def _format_mcq_block(item: dict, title="Similar practice") -> str:
-    q = str(item.get("question") or "").strip()
-    opts = item.get("options") or []
-    bullets = "\n".join([f"• {chr(65+i)}) {o}" for i, o in enumerate(opts)])
-    return f"{title}\n\nQ: {q}\n\n{bullets}".strip()
-
-def _pick_similar(item: dict, subject: str | None) -> dict | None:
-    pool = (quiz_data.get(subject) or []) if subject else []
-    if not pool:
-        return None
-
-    # Prefer same topic/chapter if provided
-    topic = (item.get("topic") or "").strip().lower()
-    if topic:
-        cands = [x for x in pool if (x.get("topic") or x.get("chapter") or "").strip().lower() == topic]
-        cands = [x for x in cands if (x.get("question") or "") != (item.get("question") or "")]
-        if cands:
-            return random.choice(cands)
-
-    # Else: fuzzy on question text to avoid the same one
-    base = (item.get("question") or "")
-    scored = []
-    for x in pool:
-        q2 = x.get("question") or ""
-        if q2.strip() == base.strip():
-            continue
-        score = difflib.SequenceMatcher(None, base, q2).ratio()
-        scored.append((score, x))
-    scored.sort(reverse=True)
-    return (scored[0][1] if scored else random.choice(pool))
-
-def _format_concept_note(item: dict) -> str:
-    q = (item.get("question") or "").strip()
-    exp = (item.get("explanation") or "").strip()
-    if not exp:
-        exp = "No detailed explanation saved for this question yet."
-
-    lines = [
-        "Concept explainer",
-        "",
-        f"Prompt question: {q}",
-        "",
-        "Key points:",
-        "• What’s being tested: identify the principle/definition implied in the prompt.",
-        "• Typical approach: read the stem, map it to the rule/formula, then eliminate distractors.",
-    ]
-    # include saved explanation last
-    if exp:
-        lines += ["", "Worked reasoning:", exp]
-    return "\n".join(lines).strip()
-
-async def quiz_more_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    await _safe_clear_markup(q)
-
-    action = (q.data or "").split(":")[-1]
-    item = context.user_data.get("last_quiz_item") or {}
-    subject = item.get("subject") or context.user_data.get("quiz_subject")
-
-    if action == "similar":
-        sim = _pick_similar(item, subject)
-        if not sim:
-            await send_ai_notes(context.bot, q.message.chat.id, "No similar question found.")
-            return QUIZ_RUNNING
-        text = _format_mcq_block(sim, title="Similar practice")
-        await send_ai_notes(context.bot, q.message.chat.id, text)
-        return QUIZ_RUNNING
-
-    if action == "explain":
-        note = _format_concept_note(item)
-        await send_ai_notes(context.bot, q.message.chat.id, note)
-        return QUIZ_RUNNING
-
-    return QUIZ_RUNNING
-
-async def _quiz_show_question(msg_target, context: ContextTypes.DEFAULT_TYPE):
-    idx = context.user_data.get("quiz_idx", 0)
-    qs  = context.user_data.get("quiz_questions", [])
-    if idx >= len(qs):
-        return
-
-    q     = qs[idx]
-    opts  = q.get("options", []) or []
-    last  = (idx == len(qs) - 1)
-
-    # Save context for follow-up actions
-    _quiz_set_followup_context(context, q, context.user_data.get("quiz_subject"))
-
-    # Build markup: main options + follow-up row
-    main_kb = _quiz_keyboard(opts, last=last) if opts else None
-    more_kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Similar Q",       callback_data="ask_more:similar"),
-         InlineKeyboardButton("Explain concept", callback_data="ask_more:explain")]
-    ])
-    markup = _stack_keyboards(main_kb, more_kb)
-
-    await msg_target.reply_text(
-        f"Q{idx+1}/{len(qs)}: {q.get('question')}",
-        reply_markup=markup
-    )
-
-# ===================== QUIZ DATA (loader using your _load_json/_save_json) =====================
-import os, json, random
-
-# Global used by your quiz_* functions
-quiz_data = {}
-QUIZ_JSON_PATH = None  # resolved at load time
-
-def _quiz_norm_subject(s: str) -> str:
-    return (s or "").strip().title()
-
-
-
-
-def _quiz_answer_to_1_based_str(ans, options) -> str | None:
-    """
-    Convert various encodings to '1'..'4'.
-    Accepts 0/1/2/3 or 1..4, 'A'..'D', numeric strings, or exact option text.
-    """
-    if ans is None:
-        return None
-
-    # ints
-    if isinstance(ans, int):
-        if 0 <= ans < len(options):
-            return str(ans + 1)         # 0-based -> 1-based
-        if 1 <= ans <= len(options):
-            return str(ans)             # already 1-based
-        return None
-
-    s = str(ans).strip()
-    if not s:
-        return None
-    u = s.upper()
-
-    # A..D
-    if u in ("A", "B", "C", "D"):
-        return str("ABCD".index(u) + 1)
-
-    # numeric string
-    if u.isdigit():
-        n = int(u)
-        if 1 <= n <= len(options):
-            return str(n)
-        if 0 <= n < len(options):
-            return str(n + 1)
-        return None
-
-    # exact option text (case-insensitive)
-    for i, opt in enumerate(options):
-        if s.lower() == str(opt).strip().lower():
-            return str(i + 1)
-
-    return None
-
-def _quiz_coerce_item(raw: dict) -> dict | None:
-    """
-    Coerce a raw dict into your shape:
-      {
-        "question": str, "options": [str,str,str,str],
-        "answer": "1".."4", "difficulty": str, "tags": [..], "explanation": str
-      }
-    Return None if invalid.
-    """
-    if not isinstance(raw, dict):
-        return None
-
-    q = (raw.get("question") or raw.get("q") or "").strip()
-    if not q:
-        return None
-
-    opts = raw.get("options") or raw.get("choices") or raw.get("opts") or []
-    if not isinstance(opts, list) or len(opts) < 2:
-        return None
-    opts = [str(x).strip() for x in opts][:4]
-    while len(opts) < 4:
-        opts.append("—")
-
-    ans_1b = _quiz_answer_to_1_based_str(
-        raw.get("answer", raw.get("ans", raw.get("correct", raw.get("correct_index", raw.get("correct_option"))))),
-        opts
-    )
-    if ans_1b is None:
-        return None
-
-    diff = (raw.get("difficulty") or raw.get("level") or "any").strip().lower()
-    tags = raw.get("tags") if isinstance(raw.get("tags"), list) else []
-    exp  = (raw.get("explanation") or raw.get("exp") or raw.get("why") or "").strip()
-
-    return {
-        "question": q,
-        "options": opts,
-        "answer": ans_1b,         # 1-based string for your existing checker
-        "difficulty": diff,
-        "tags": tags,
-        "explanation": exp,
-    }
-def _quiz_read_array_or_questions_node(data) -> list[dict]:
-    """Accept list[...] or {'questions': [...]}."""
-    arr = data.get("questions") if isinstance(data, dict) else data
-    if not isinstance(arr, list):
-        return []
-    out = []
-    for raw in arr:
-        item = _quiz_coerce_item(raw)
-        if item:
-            out.append(item)
-    return out
-
-
-async def quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ok = _ensure_flow_or_bounce(update, context, "quiz")
-    if not ok:
-        return ConversationHandler.END
-    log.info("quiz_start()")
-
-    if not quiz_data:
-        tgt = _target(update)
-        await tgt.reply_text("No quiz data available.")
-        unlock_flow(context)
-        return ConversationHandler.END
-
-    for k in ("quiz_subject", "quiz_difficulty", "quiz_size", "quiz_questions", "quiz_idx",
-              "quiz_correct", "quiz_wrong", "quiz_deadline", "quiz_started_at", "quiz_limit_secs",
-              "quiz_wrongs_buffer"):
-        context.user_data.pop(k, None)
-
-    available_subjects = [s for s in ["Physics", "Chemistry", "Zoology", "Botany"] if s in quiz_data]
-    if not available_subjects:
-        tgt = _target(update)
-        await tgt.reply_text("No subjects found in quiz.json.")
-        unlock_flow(context)
-        return ConversationHandler.END
-
-    kb_rows = [available_subjects[i:i + 2] for i in range(0, len(available_subjects), 2)]
-    kb_rows.append(["Cancel"])
-    tgt = _target(update)
-    await tgt.reply_text(
-        "Choose a subject:",
-        reply_markup=ReplyKeyboardMarkup(kb_rows, one_time_keyboard=True, resize_keyboard=True),
-    )
-    return QUIZ_SUBJECT
-
-async def quiz_subject(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    subject = (update.message.text or "").strip()
-    if subject.lower() == "cancel":
-        unlock_flow(context)
-        await update.message.reply_text("Quiz cancelled.", reply_markup=ReplyKeyboardRemove())
-        await show_menu(update)
-        return ConversationHandler.END
-
-    subjects = {k.lower(): k for k in ["Physics", "Chemistry", "Zoology", "Botany"] if k in quiz_data}
-    if subject.lower() not in subjects:
-        await update.message.reply_text("Please pick a subject from the buttons.")
-        return QUIZ_SUBJECT
-
-    context.user_data["quiz_subject"] = subjects[subject.lower()]
-    await update.message.reply_text(
-        "Pick difficulty:",
-        reply_markup=ReplyKeyboardMarkup(QUIZ_DIFFICULTY_KB, one_time_keyboard=True, resize_keyboard=True),
-    )
-    return QUIZ_DIFFICULTY
-
-async def quiz_difficulty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    diff_text = (update.message.text or "").strip()
-    if diff_text.lower() == "cancel":
-        unlock_flow(context)
-        await update.message.reply_text("Quiz cancelled.", reply_markup=ReplyKeyboardRemove())
-        await show_menu(update)
-        return ConversationHandler.END
-
-    diff = _norm_diff(diff_text)
-    if diff not in {"low", "medium", "high", "any"}:
-        await update.message.reply_text("Choose difficulty from the buttons.")
-        return QUIZ_DIFFICULTY
-
-    context.user_data["quiz_difficulty"] = diff
-    await update.message.reply_text(
-        "How many questions?",
-        reply_markup=ReplyKeyboardMarkup(QUIZ_SIZES_KB, one_time_keyboard=True, resize_keyboard=True),
-    )
-    return QUIZ_SIZE
-
-async def quiz_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = (update.message.text or "").strip()
-    if txt.lower() == "cancel":
-        unlock_flow(context)
-        await update.message.reply_text("Quiz cancelled.", reply_markup=ReplyKeyboardRemove())
-        await show_menu(update)
-        return ConversationHandler.END
-
-    if txt not in {"10", "30", "45"}:
-        await update.message.reply_text("Pick 10, 30, or 45.")
-        return QUIZ_SIZE
-
-    n = int(txt)
-    subject = context.user_data.get("quiz_subject")
-    diff = context.user_data.get("quiz_difficulty", "any")
-
-    qs = _filter_and_sample_questions(subject, diff, n)
-    if len(qs) < n:
-        await update.message.reply_text(f"Only {len(qs)} questions available. Proceeding with {len(qs)}.")
-    if not qs:
-        unlock_flow(context)
-        await update.message.reply_text("No questions available. Try a different difficulty or subject.",
-                                        reply_markup=ReplyKeyboardRemove())
-        await show_menu(update)
-        return ConversationHandler.END
-
-    minutes = QUIZ_TIME_LIMITS[n]
-    now = time.time()
-    deadline = now + minutes * 60
-
-    context.user_data.update({
-        "quiz_questions": qs,
-        "quiz_idx": 0,
-        "quiz_correct": 0,
-        "quiz_wrong": [],
-        "quiz_started_at": now,
-        "quiz_deadline": deadline,
-        "quiz_limit_secs": minutes * 60,
-        "quiz_size": len(qs),
-    })
-
-    tgt = _target(update)
-    await tgt.reply_text(f"⏱ Total time: {minutes} min. Test auto-submits on timeout.")
-    await _quiz_show_question(tgt, context)
-    return QUIZ_RUNNING
-
-
-
-async def quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    if (query.data or "") == "QUIZ:SUBMIT" or _time_up(context):
-        await _safe_clear_markup(query)
-        await _quiz_finish(update, context)
-        unlock_flow(context)
-        return ConversationHandler.END
-
-    data = (query.data or "")
-    if not data.startswith("QUIZ:"):
-        return QUIZ_RUNNING
-
-    try:
-        chosen = int(data.split(":")[1])  # 1..4
-    except Exception:
-        return QUIZ_RUNNING
-
-    idx = context.user_data.get("quiz_idx", 0)
-    qs  = context.user_data.get("quiz_questions", []) or []
-    if idx >= len(qs):
-        await _safe_clear_markup(query)
-        await _quiz_finish(update, context)
-        unlock_flow(context)
-        return ConversationHandler.END
-
-    q = qs[idx]
-    options        = q.get("options", []) or []
-    correct_answer = str(q.get("answer", "")).strip()
-
-    got_it = (str(chosen) == correct_answer)
-    if got_it:
-        context.user_data["quiz_correct"] = int(context.user_data.get("quiz_correct", 0)) + 1
-    else:
-        explanation = q.get("explanation")
-        wrongs = context.user_data.setdefault("quiz_wrong", [])
-        wrongs.append({
-            "q": q.get("question"),
-            "your": options[chosen - 1] if 1 <= chosen <= len(options) else f"option {chosen}",
-            "correct": (options[int(correct_answer) - 1] if correct_answer.isdigit()
-                        and 1 <= int(correct_answer) <= len(options) else f"option {correct_answer}"),
-            "explanation": explanation
-        })
-
-    context.user_data["quiz_idx"] = idx + 1
-    await _safe_clear_markup(query)
-
-    if context.user_data["quiz_idx"] >= len(qs) or _time_up(context):
-        await _quiz_finish(update, context)
-        unlock_flow(context)
-        return ConversationHandler.END
-
-    await _quiz_show_question(query.message, context)
-    return QUIZ_RUNNING
-    
-    def _calc_estimated_air(scaled_marks: float, category_hint: str | None) -> int | None:
-        """
-        Turn scaled marks (0..720) into an AIR (int). Returns None if not computable.
-        Uses your _interp_rank_from_marks, falling back to a coarse curve.
-        """
-        try:
-            cat = canonical_category(category_hint or "General")
-        except Exception:
-            cat = "General"
-
-    # primary: your curve
-        try:
-            est = _interp_rank_from_marks(float(scaled_marks), cat)
-            if est is not None:
-                val = float(est)
-                if math.isfinite(val) and val > 0:
-                    return int(round(val))
-        except Exception:
-            log.exception("_interp_rank_from_marks failed")
-
-        # coarse fallback curve (kept very simple, monotonic)
-        try:
-            m = float(scaled_marks)
-            if m <= 0:      return None
-            if m >= 700:    return 50
-            if m >= 650:    return 300
-            if m >= 600:    return 1200
-            if m >= 550:    return 3500
-            if m >= 500:    return 9000
-            if m >= 450:    return 20000
-            if m >= 400:    return 38000
-            if m >= 350:    return 65000
-            if m >= 300:    return 100000
-            return 200000
-        except Exception:
-            return None
-        
-
-async def _quiz_finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        chat_id = update.effective_chat.id
-    except Exception:
-        return
-
-    total   = len(context.user_data.get("quiz_questions", []))
-    correct = int(context.user_data.get("quiz_correct", 0))
-    wrongs  = context.user_data.get("quiz_wrong", []) or []
-    spent   = int(time.time() - context.user_data.get("quiz_started_at", time.time()))
-    limit   = int(context.user_data.get("quiz_limit_secs", 0))
-
-    wrong_count = len(wrongs)
-    attempted   = int(context.user_data.get("quiz_idx", 0))
-    unattempted = max(0, total - attempted)
-
-    mock_marks = 4 * correct - 1 * wrong_count
-    scaled_neet_marks = (4 * correct - 1 * wrong_count) * (180 / total) if total > 0 else 0.0
-
-    prof    = get_user_profile(update)
-    est_air = _interp_rank_from_marks(scaled_neet_marks, prof.get("category", "General"))
-    if est_air is not None:
-        context.user_data["predicted_air"] = int(est_air)
-        update_user_profile(update, latest_predicted_air=int(est_air))
-
-    mins = spent // 60
-    secs = spent % 60
-
-    header = (
-        "🎉 *Test submitted!*\n"
-        f"Questions: {total}  |  Attempted: {attempted}  |  Unattempted: {unattempted}\n"
-        f"Correct: {correct}  |  Wrong: {wrong_count}\n"
-        f"NEET-style marks (this test): *{mock_marks}* / {4*total}\n"
-        f"Scaled NEET-equivalent marks (out of 720): *{round(scaled_neet_marks,1)}*\n"
-        f"Time used: {mins}m {secs}s" + (f" / Limit: {limit//60}m" if limit else "")
-    )
-    if est_air is not None:
-        header += f"\n🧮 *Estimated AIR*: ~*{est_air}*  _(from marks→rank curve)_"
-
-    await send_long_message(context.bot, chat_id, header, parse_mode="Markdown")
-
-    # store wrongs for review step
-    context.user_data["quiz_wrongs_buffer"] = wrongs
-    ask_review = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Show answers & explanations", callback_data="QUIZ_REVIEW:yes")],
-        [InlineKeyboardButton("Skip", callback_data="QUIZ_REVIEW:no")]
-    ])
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text="Do you want to review answers & explanations now?",
-        reply_markup=ask_review
-    )
-
-# Back-compat shim (in case anything still calls _finish_quiz)
-async def _finish_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await _quiz_finish(update, context)
-    
-async def quiz_review_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    await _safe_clear_markup(q)
-
-    choice = (q.data or "QUIZ_REVIEW:no").split(":")[-1]
-    if choice == "yes":
-        wrongs = context.user_data.get("quiz_wrongs_buffer", []) or []
-        if wrongs:
-            blocks = ["📝 Review sheet (wrong answers):"]
-            for i, row in enumerate(wrongs, start=1):
-                b = [
-                    f"{i}) {row.get('q')}",
-                    f"   Your answer: {row.get('your')}",
-                    f"   Correct: {row.get('correct')}",
-                ]
-                if row.get("explanation"):
-                    b.append(f"   Why: {row['explanation']}")
-                blocks.append("\n".join(b))
-            await send_long_message(context.bot, q.message.chat.id, "\n".join(blocks))
-        else:
-            await q.message.reply_text("Perfect score—no wrong answers to review 🎯")
-
-    est = context.user_data.get("predicted_air")
-    if est:
-        ask_predict = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Predict colleges using ~{est}", callback_data="predict_from_quiz")],
-            [InlineKeyboardButton("No thanks", callback_data="QUIZ_PREDICT:no")]
-        ])
-        await q.message.reply_text(
-            "Do you want to run the college predictor with this estimated AIR?",
-            reply_markup=ask_predict
-        )
-    else:
-        await q.message.reply_text("No estimated AIR available. You can still /predict manually.")
-            
-async def quiz_predict_choice_noop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    await _safe_clear_markup(q)
-    await q.message.reply_text("Okay! You can run /predict anytime from the menu.")
-    for k in ("quiz_subject","quiz_difficulty","quiz_size","quiz_questions","quiz_idx",
-              "quiz_correct","quiz_wrong","quiz_deadline","quiz_started_at","quiz_limit_secs",
-              "quiz_wrongs_buffer"):
-        context.user_data.pop(k, None)
-    await show_menu(update)
 
 # ========================= Predictor =========================
 CATEGORY_OPTIONS = [["General", "OBC", "EWS", "SC", "ST"]]
@@ -5637,46 +4991,6 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          reply_markup=ReplyKeyboardRemove())
     return ASK_AIR
 
-def _quiz_in_progress(context) -> bool:
-    """Return True if a quiz is currently running and time isn't up yet."""
-    qs = context.user_data.get("quiz_questions") or []
-    if not qs:
-        return False
-    idx = int(context.user_data.get("quiz_idx", 0))
-    # _time_up(context) already exists in your quiz code
-    return (idx < len(qs)) and (not _time_up(context))
-
-async def predict_from_quiz_entry(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-    """
-    Conversation entry-point for 'predict_from_quiz' button.
-    Uses predicted AIR (if any), jumps straight to asking Quota.
-    Returns ASK_QUOTA state of your predictor conversation.
-    """
-    q = update.callback_query
-    await q.answer()
-    with contextlib.suppress(Exception):
-        await q.edit_message_reply_markup(None)
-
-    est = context.user_data.get("predicted_air")
-    if not est:
-        # fallback to profile if you store latest there
-        prof = get_user_profile(update)
-        est = prof.get("latest_predicted_air")
-
-    if not est:
-        with contextlib.suppress(Exception):
-            await q.message.reply_text("Couldn't find an estimated AIR. Please use /predict.")
-        return ConversationHandler.END
-
-    # seed predictor context and jump to quota question
-    context.user_data["rank_air"] = int(est)
-    with contextlib.suppress(Exception):
-        await q.message.reply_text(
-            f"Using estimated AIR: *{est}*\nChoose your quota:",
-            parse_mode="Markdown",
-            reply_markup=quota_keyboard()
-        )
-    return ASK_QUOTA
     
 # ========== DEBUG: show loaded cutoff record for a college ==========
 async def debug_loaded_record(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -5759,39 +5073,7 @@ async def debug_loaded_record(update: Update, context: ContextTypes.DEFAULT_TYPE
         log.exception("debug_loaded_record failed")
         await update.message.reply_text(f"Error: {e}")
 
-async def predict_from_quiz_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.callback_query:
-        return ConversationHandler.END
-    await update.callback_query.answer()
 
-    est = context.user_data.get("predicted_air")
-    if not est:
-        await update.callback_query.message.reply_text(
-            "Couldn't find your recent predicted AIR. Start with /predict.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return ConversationHandler.END
-
-    blocked = _start_flow(context, "predict")
-    if blocked and blocked != "predict":
-        await update.callback_query.message.reply_text(
-            f"You're currently in *{blocked}* flow. Send /cancel to exit it first.",
-            parse_mode="Markdown"
-        )
-        return ConversationHandler.END
-
-    context.user_data["rank_air"] = int(est)
-
-    kb = ReplyKeyboardMarkup(
-        [["AIQ", "Deemed", "Central"]],
-        one_time_keyboard=True, resize_keyboard=True
-    )
-    await update.callback_query.message.reply_text(
-        f"Using estimated AIR: *{est}*\nSelect your *Quota*:",
-        parse_mode="Markdown",
-        reply_markup=kb,
-    )
-    return ASK_QUOTA
 
 async def cutoff_probe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = " ".join(context.args or [])
@@ -6708,14 +5990,13 @@ def _resolve_excel_path() -> str:
             _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
 
     # --- Predictor conversation ---
-    if _has("predict_start", "predict_from_quiz_entry", "on_air", "on_quota", "on_category",
+    if _has("predict_start", "on_air", "on_quota", "on_category",
             "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
             "on_pref", "cancel_predict"):
         predict_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("predict", predict_start),
                 CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
-                CallbackQueryHandler(predict_from_quiz_entry, pattern=r"^predict_from_quiz$"),
                 CommandHandler("mockpredict", predict_mockrank_start),
                 CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
             ],
@@ -6970,11 +6251,14 @@ def _has_all(*names: str) -> bool:
 
 # ---------- 2) WIRING: attach handlers to existing Application ----------
 def register_handlers(app: Application):
+    from telegram.ext import CommandHandler, CallbackQueryHandler
+    
     """
     Attach ALL handlers here. This replaces your old Dispatcher/Updater wiring.
     """
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
+        
 
     # Single ask_more handler
     if _has("ask_followup_handler"):
@@ -7029,35 +6313,9 @@ def register_handlers(app: Application):
         )
         _add(ask_conv, group=1)
 
-    # Quiz conversation
-    if _has("quiz_start", "quiz_subject", "quiz_difficulty", "quiz_size", "cancel") and \
-       _has_all("QUIZ_SUBJECT", "QUIZ_DIFFICULTY", "QUIZ_SIZE", "QUIZ_RUNNING"):
-        quiz_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("quiz", quiz_start),
-                CallbackQueryHandler(quiz_start, pattern=r"^menu_quiz$"),
-            ],
-            states={
-                QUIZ_SUBJECT:    [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_subject)],
-                QUIZ_DIFFICULTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_difficulty)],
-                QUIZ_SIZE:       [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_size)],
-                QUIZ_RUNNING:    [CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:")],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-            name="quiz_conv",
-            persistent=False,
-            per_message=False,
-        )
-        _add(quiz_conv, group=2)
-        if _has("quiz_answer"):
-            _add(CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:"), group=2)
-        if _has("quiz_review_choice"):
-            _add(CallbackQueryHandler(quiz_review_choice, pattern=r"^QUIZ_REVIEW:(yes|no)$"), group=2)
-        if _has("quiz_predict_choice_noop"):
-            _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
-
+    
     # Predictor conversation
-    if _has("predict_start", "predict_from_quiz_entry", "on_air", "on_quota", "on_category",
+    if _has("predict_start", "on_air", "on_quota", "on_category",
             "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
             "on_pref", "cancel_predict") and \
        _has_all("ASK_AIR", "ASK_MOCK_RANK", "ASK_MOCK_SIZE", "ASK_QUOTA", "ASK_CATEGORY", "ASK_DOMICILE"):
@@ -7065,7 +6323,6 @@ def register_handlers(app: Application):
             entry_points=[
                 CommandHandler("predict", predict_start),
                 CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
-                CallbackQueryHandler(predict_from_quiz_entry, pattern=r"^predict_from_quiz$"),
                 CommandHandler("mockpredict", predict_mockrank_start),
                 CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
             ],
