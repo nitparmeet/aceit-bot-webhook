@@ -6353,19 +6353,18 @@ def _has_all(*names: str) -> bool:
 
 
 # ---------- 2) WIRING: attach handlers to existing Application ----------
+
+from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
+
 def register_handlers(app: Application):
-    from telegram.ext import CommandHandler, CallbackQueryHandler
-    
-    """
-    Attach ALL handlers here. This replaces your old Dispatcher/Updater wiring.
-    """
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
-        
+
+    # --- NEW QUIZ HANDLERS (keep these OUTSIDE _add) ---
     app.add_handler(CommandHandler("quiz5", quiz5), group=0)
     app.add_handler(CommandHandler("quiz10", quiz10), group=0)
-    app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)  # optional
-    app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)      # optional
+    app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)   # optional
+    app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)       # optional
     app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
     
     
