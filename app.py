@@ -1,6 +1,15 @@
+# app.py
 import os
+import json
+import random
 import logging
-from fastapi import FastAPI, Request, HTTPException, Header
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, Request, HTTPException, Header, Query
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+
 from telegram import Update
 from telegram.ext import Application
 
@@ -8,6 +17,11 @@ from telegram.ext import Application
 # Required: set these in Render → Environment
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]          # your bot token
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")       # optional; leave blank if not using
+
+# Optional quiz config
+BASE_DIR = Path(__file__).parent
+QUIZ_FILE = Path(os.environ.get("QUIZ_FILE", BASE_DIR / "quiz.json"))  # you saved new data here
+RANDOM_SEED = os.environ.get("QUIZ_RANDOM_SEED")  # set for deterministic shuffles in tests
 
 # Basic logging (Render shows stdout)
 logging.basicConfig(
@@ -17,8 +31,18 @@ logging.basicConfig(
 log = logging.getLogger("aceit-bot")
 
 # ----------------- FastAPI app -----------------
-app = FastAPI()
+app = FastAPI(title="aceit-bot-webhook")
 
+# CORS (optional, safe defaults)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # tighten if you have a frontend origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ----------------- Telegram (PTB) -----------------
 # Create Telegram Application ONCE (we feed it updates manually)
 tg = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
 
@@ -33,6 +57,93 @@ try:
 except Exception:
     bot_on_startup = None
 
+# ----------------- Quiz data (new schema) -----------------
+_POOL: List[Dict[str, Any]] = []
+_INDEX: Dict[str, Dict[str, Any]] = {}  # id -> question
+
+def _validate_question(q: Dict[str, Any], i: int) -> Optional[str]:
+    if "id" not in q or not q["id"]:
+        return f"[{i}] missing id"
+    if "options" not in q or not isinstance(q["options"], list) or len(q["options"]) < 2:
+        return f"[{q.get('id')}] options must be a list with >= 2 items"
+    ai = q.get("answer_index")
+    if not isinstance(ai, int) or ai < 0 or ai >= len(q["options"]):
+        return f"[{q.get('id')}] invalid answer_index"
+    if q.get("difficulty") not in (1, 2, 3):
+        return f"[{q.get('id')}] difficulty must be 1|2|3"
+    if "subject" not in q or not q["subject"]:
+        return f"[{q.get('id')}] subject required"
+    return None
+
+def _load_pool() -> None:
+    global _POOL, _INDEX
+    if not QUIZ_FILE.exists():
+        raise FileNotFoundError(f"quiz file not found at: {QUIZ_FILE}")
+    with open(QUIZ_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("quiz.json must be a flat JSON array of question objects")
+
+    seen_ids = set()
+    errors = []
+    for i, q in enumerate(data):
+        err = _validate_question(q, i)
+        if err:
+            errors.append(err)
+            continue
+        if q["id"] in seen_ids:
+            errors.append(f"duplicate id: {q['id']}")
+            continue
+        seen_ids.add(q["id"])
+    if errors:
+        raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errors))
+
+    _POOL = data
+    _INDEX = {q["id"]: q for q in _POOL}
+    log.info(f"✅ Loaded {len(_POOL)} quiz questions from {QUIZ_FILE}")
+
+def _ensure_loaded():
+    if not _POOL:
+        if RANDOM_SEED:
+            random.seed(RANDOM_SEED)
+        _load_pool()
+
+def _pick_questions(
+    pool: List[Dict[str, Any]],
+    *,
+    subject: Optional[str] = None,
+    difficulty: Optional[int] = None,
+    tags_any: Optional[List[str]] = None,
+    count: int = 5,
+    shuffle: bool = True,
+) -> List[Dict[str, Any]]:
+    out = pool
+    if subject:
+        out = [q for q in out if q.get("subject") == subject]
+    if difficulty:
+        out = [q for q in out if q.get("difficulty") == difficulty]
+    if tags_any:
+        out = [q for q in out if any(t in (q.get("tags") or []) for t in tags_any)]
+    if shuffle:
+        out = list(out)
+        random.shuffle(out)
+    return out[:count]
+
+def _strip_answers(qs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    sanitized = []
+    for q in qs:
+        sanitized.append({
+            "id": q["id"],
+            "subject": q.get("subject"),
+            "topic": q.get("topic"),
+            "difficulty": q.get("difficulty"),
+            "question": q.get("question"),
+            "options": q.get("options"),
+            "tags": q.get("tags", []),
+            # hide answers/explanations for live quiz
+        })
+    return sanitized
+
 # ----------------- Lifecycle -----------------
 @app.on_event("startup")
 async def _startup():
@@ -40,6 +151,12 @@ async def _startup():
     await tg.initialize()
     await tg.start()
     log.info("✅ Telegram Application started")
+
+    # Load quiz pool once
+    try:
+        _ensure_loaded()
+    except Exception:
+        log.exception("❌ Failed loading quiz.json")
 
     # Run your dataset/bootstrap logic once (optional)
     if bot_on_startup is not None:
@@ -69,6 +186,98 @@ async def telegram_webhook(
     update = Update.de_json(data, tg.bot)
     await tg.process_update(update)
     return {"ok": True}
+
+# ----------------- Quiz API -----------------
+
+@app.get("/quiz")
+async def get_quiz(
+    count: int = Query(5, regex="^(5|10)$"),
+    subject: Optional[str] = Query(default=None),
+    difficulty: Optional[int] = Query(default=None, ge=1, le=3),
+    tags: Optional[str] = Query(default=None, description="comma separated"),
+    reveal: Optional[int] = Query(default=0, ge=0, le=1),
+):
+    """
+    Returns a randomized set of questions.
+
+    Query params:
+      count=5|10
+      subject=Physics|Chemistry|Zoology|Botany
+      difficulty=1|2|3
+      tags=tag1,tag2         (matches ANY)
+      reveal=1               (optional) include answer_index & explanation (for testing)
+    """
+    try:
+        _ensure_loaded()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    tags_any = [t.strip() for t in tags.split(",")] if tags else None
+    qs = _pick_questions(
+        _POOL,
+        subject=subject,
+        difficulty=difficulty,
+        tags_any=tags_any,
+        count=count,
+        shuffle=True,
+    )
+
+    if reveal == 1:
+        return JSONResponse(content=qs)
+    return JSONResponse(content=_strip_answers(qs))
+
+@app.post("/grade")
+async def grade_quiz(payload: Dict[str, Any]):
+    """
+    Body:
+    {
+      "responses": [
+        { "id": "<question_id>", "answer_index": 2 },
+        ...
+      ]
+    }
+    """
+    try:
+        _ensure_loaded()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    if not payload or "responses" not in payload or not isinstance(payload["responses"], list):
+        raise HTTPException(status_code=400, detail="Body must include 'responses' array")
+
+    responses = payload["responses"]
+    score = 0
+    details = []
+
+    for item in responses:
+        qid = item.get("id")
+        user_ai = item.get("answer_index")
+        q = _INDEX.get(qid)
+        if not q:
+            details.append({
+                "id": qid,
+                "correct": False,
+                "error": "unknown question id",
+            })
+            continue
+        correct_ai = q["answer_index"]
+        is_correct = (user_ai == correct_ai)
+        if is_correct:
+            score += 1
+        details.append({
+            "id": qid,
+            "correct": is_correct,
+            "correct_index": correct_ai,
+            "explanation": q.get("explanation"),
+            "subject": q.get("subject"),
+            "topic": q.get("topic"),
+        })
+
+    return JSONResponse(content={
+        "score": score,
+        "total": len(responses),
+        "details": details
+    })
 
 # ----------------- Health & Home -----------------
 @app.get("/healthz")
