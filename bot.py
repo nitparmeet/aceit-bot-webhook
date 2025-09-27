@@ -3065,65 +3065,69 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
     return head + tail
 
 # ========================= Menus & States =========================
-def main_menu_markup() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🏫 NEET College Predictor", callback_data="menu_predict")],
-            [InlineKeyboardButton("📊 Predict from Mock Rank", callback_data="menu_predict_mock")],
-            [InlineKeyboardButton("📝 Daily Quiz", callback_data="menu_quiz")],
-            [InlineKeyboardButton("💬 Clear your NEET Doubts", callback_data="menu_ask")],
-            [InlineKeyboardButton("⚙️ Setup your profile", callback_data="menu_profile")],
-            
-            
-        ]
-    )
+
 
 
 
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏫 College Predictor",     callback_data="menu_predict")],
-        [InlineKeyboardButton("🏫 Predict from Mock Rank", callback_data="menu_mock_predict")],
-        [InlineKeyboardButton("📝 Daily Quiz",             callback_data="menu_quiz")],
-        [InlineKeyboardButton("💬 Clear NEET Doubts",      callback_data="menu_ask")],
-        [InlineKeyboardButton("⚙️ Setup Profile",          callback_data="menu_profile")],
+        [InlineKeyboardButton("📝 Daily Quiz (Exam Mode)", callback_data="menu_quiz")],
+        [InlineKeyboardButton("🏫 NEET College Predictor", callback_data="menu_predict")],
+        [InlineKeyboardButton("📈 Predict from Mock Rank", callback_data="menu_mock_predict")],
+        [InlineKeyboardButton("💬 Clear your NEET Doubts", callback_data="menu_ask")],
+        [InlineKeyboardButton("⚙️ Setup your profile", callback_data="menu_profile")],
     ])
 
-async def show_quiz_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Open the quiz picker from main menu."""
-    # support both /menu click and button click
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str = "Choose an option:"):
+    explanation = (
+        "📋 *Menu Options*\n\n"
+        "🏫 *NEET College Predictor* – Uses your AIR & category and predict list of 10 colleges that you might get at your NEET rank based on last year's cutoffs. It will also give AI-based suggestions.\n\n"
+        "🏫 *Predict from Mock Rank* – Uses your All India Mock Test Rank, Quota & Category to predict colleges based on last year's cutoffs.\n\n"
+        "📝 *Daily Quiz (Exam Mode)* – Take timed quizzes and get scores.\n\n"
+        "💬 *Clear your NEET Doubts* – Send text or photo to get structured solutions and follow-ups.\n\n"
+        "⚙️ *Setup your profile* – Save Name, Contact, Email, Category, Domicile."
+    )
+    tgt = update.callback_query.message if update.callback_query else update.effective_message
+    await tgt.reply_text(explanation, parse_mode="Markdown")
+    await tgt.reply_text(text, reply_markup=main_menu_markup())
+
+async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes top-level menu buttons to their handlers."""
     q = update.callback_query
-    tgt = q.message if q else update.effective_message
-    if q:
-        await q.answer()
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Mini Quiz (5 random)", callback_data="quiz:mini5")],
-        [InlineKeyboardButton("🧪 Mini Test (10) — choose subject", callback_data="quiz:mini10")],
-        [InlineKeyboardButton("⬅️ Back to menu", callback_data="menu:back")],
-    ])
-    await tgt.reply_text("Choose a quiz mode:", reply_markup=kb)
+    await q.answer()
+    data = (q.data or "").strip()
+    if data == "menu_quiz":
+        await menu_quiz_handler(update, context)
+    elif data == "menu_predict":
+        # call your existing predict menu entry if you have one, else just ack
+        await q.message.reply_text("Predictor coming right up. Use /predict to start.")
+    elif data == "menu_mock_predict":
+        await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
+    elif data == "menu_ask":
+        await q.message.reply_text("Ask your NEET doubt with /ask.")
+    elif data == "menu_profile":
+        await q.message.reply_text("Open profile with /profile.")
+    else:
+        await q.message.reply_text("Unknown menu item.")
 
 async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle quiz picker clicks and subject selection."""
     q = update.callback_query
     await q.answer()
     data = (q.data or "")
 
     if data == "quiz:mini5":
-        # 5 random questions across any subject
         await _start_quiz(update, context, count=5)
         return
 
     if data == "quiz:mini10":
-        # list subjects present in QUIZ_POOL
         subjects = sorted({x.get("subject") for x in QUIZ_POOL if x.get("subject")})
         if not subjects:
             await q.message.reply_text("No subjects available in the quiz bank.")
             return
         rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}")] for s in subjects]
         rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_quiz")])
-        await q.message.reply_text("Pick a subject for a 10-question test:", reply_markup=InlineKeyboardMarkup(rows))
+        await q.message.reply_text("Pick a subject for a 10-question test:",
+                                   reply_markup=InlineKeyboardMarkup(rows))
         return
 
     if data.startswith("quiz:sub:"):
@@ -3132,7 +3136,7 @@ async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     if data == "menu:back":
-        await show_menu(update)
+        await show_menu(update, context)
         return
 
 
@@ -3356,20 +3360,16 @@ async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
-    if q:
-        await q.answer()
-        tgt = q.message
-    else:
-        tgt = update.effective_message
+    await q.answer()
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧪 Mini Quiz (5 random)", callback_data="quiz:mini5")],
-        [InlineKeyboardButton("📚 Mini Test (10) — choose subject", callback_data="quiz:picksubject")],
-        # Optional (only if you implement these later)
-        # [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
-        # [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
+        [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
+        [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
+        [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
+        [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
     ])
-    await tgt.reply_text("Choose a quiz mode:", reply_markup=kb)
+    await q.message.reply_text("Choose a quiz mode:", reply_markup=kb)
 
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -6441,34 +6441,24 @@ def _has_all(*names: str) -> bool:
 
 from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
 
-def register_handlers(app: Application):
-    def _add(h, group: int = 0) -> None:
-        app.add_handler(h, group=group)
-
-    # --- NEW QUIZ HANDLERS (keep these OUTSIDE _add) ---
+def register_handlers(app: Application) -> None:
+    # Commands
     app.add_handler(CommandHandler("menu", show_menu), group=0)
     app.add_handler(CommandHandler("quiz5", quiz5), group=0)
     app.add_handler(CommandHandler("quiz10", quiz10), group=0)
     app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)   # optional
     app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)       # optional
 
-# --- Quiz flow ---
-    app.add_handler(CallbackQueryHandler(on_answer,              pattern=r"^ans:"), group=0)
+    # Quiz flow
+    app.add_handler(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+    app.add_handler(CallbackQueryHandler(quiz_menu_router,
+        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"), group=0)
+    app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
-# quiz picker + sub-steps
-    app.add_handler(CallbackQueryHandler(menu_quiz_handler,      pattern=r"^menu_quiz$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_start_mini5,       pattern=r"^quiz:mini5$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_pick_subject,      pattern=r"^quiz:picksubject$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_start_subject10,   pattern=r"^quiz:subject:.+$"), group=0)
-
-# optional extras (ONLY keep if these funcs exist)
-#   app.add_handler(CallbackQueryHandler(quiz_streaks,      pattern=r"^quiz:streaks$"), group=0)
-#   app.add_handler(CallbackQueryHandler(quiz_leaderboard,  pattern=r"^quiz:leaderboard$"), group=0)
-
-# --- Main menu router (exclude quiz here to avoid double-handling) ---
+    # Other top-level menu items (handled elsewhere)
     app.add_handler(CallbackQueryHandler(
-    menu_router, pattern=r"^menu_(predict|mock_predict|ask|profile)$"
-), group=0)
+        menu_router, pattern=r"^menu_(predict|mock_predict|ask|profile)$"
+    ), group=0)
     
     # Single ask_more handler
     if _has("ask_followup_handler"):
