@@ -3089,20 +3089,52 @@ def main_menu_markup() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⚙️ Setup Profile",          callback_data="menu_profile")],
     ])
 
-async def show_menu(update: Update, text: str = "Choose an option:"):
-    explanation = (
-        "📋 *Menu Options*\n\n"
-        "🏫 *NEET College Predictor* – Uses your AIR & category to predict likely colleges from last year's cutoffs, plus quick AI notes.\n\n"
-        "🏫 *Predict from Mock Rank* – Use your All-India mock test rank, quota & category to see possible colleges.\n\n"
-        "📝 *Daily Quiz* – Mini Quiz (5 random Qs) or Mini Test (10 on a chosen subject). Get instant feedback and a review sheet.\n\n"
-        "💬 *Clear your NEET Doubts* – Send text or a photo; get structured explanations and follow-ups.\n\n"
-        "⚙️ *Setup your profile* – Save Name, Contact, Email, Category, Domicile."
-    )
-    tgt = _target(update)
-    if not tgt:
+async def show_quiz_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Open the quiz picker from main menu."""
+    # support both /menu click and button click
+    q = update.callback_query
+    tgt = q.message if q else update.effective_message
+    if q:
+        await q.answer()
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Mini Quiz (5 random)", callback_data="quiz:mini5")],
+        [InlineKeyboardButton("🧪 Mini Test (10) — choose subject", callback_data="quiz:mini10")],
+        [InlineKeyboardButton("⬅️ Back to menu", callback_data="menu:back")],
+    ])
+    await tgt.reply_text("Choose a quiz mode:", reply_markup=kb)
+
+async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle quiz picker clicks and subject selection."""
+    q = update.callback_query
+    await q.answer()
+    data = (q.data or "")
+
+    if data == "quiz:mini5":
+        # 5 random questions across any subject
+        await _start_quiz(update, context, count=5)
         return
-    await tgt.reply_text(explanation, parse_mode="Markdown")
-    await tgt.reply_text(text, reply_markup=main_menu_markup())
+
+    if data == "quiz:mini10":
+        # list subjects present in QUIZ_POOL
+        subjects = sorted({x.get("subject") for x in QUIZ_POOL if x.get("subject")})
+        if not subjects:
+            await q.message.reply_text("No subjects available in the quiz bank.")
+            return
+        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}")] for s in subjects]
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_quiz")])
+        await q.message.reply_text("Pick a subject for a 10-question test:", reply_markup=InlineKeyboardMarkup(rows))
+        return
+
+    if data.startswith("quiz:sub:"):
+        subject = data.split("quiz:sub:", 1)[1]
+        await _start_quiz(update, context, count=10, subject=subject)
+        return
+
+    if data == "menu:back":
+        await show_menu(update)
+        return
+
 
 # States
 ASK_SUBJECT = 105
@@ -6431,20 +6463,30 @@ def register_handlers(app: Application):
         app.add_handler(h, group=group)
 
     # --- NEW QUIZ HANDLERS (keep these OUTSIDE _add) ---
+    app.add_handler(CommandHandler("menu", show_menu), group=0)
     app.add_handler(CommandHandler("quiz5", quiz5), group=0)
     app.add_handler(CommandHandler("quiz10", quiz10), group=0)
     app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)   # optional
     app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)       # optional
-    app.add_handler(CommandHandler("menu", show_menu), group=0)
+
+# --- Quiz flow ---
     app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
-    app.add_handler(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-    app.add_handler(CallbackQueryHandler(menu_quiz_handler,      pattern=r"^menu_quiz$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_start_mini5,       pattern=r"^quiz:mini5$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_pick_subject,      pattern=r"^quiz:picksubject$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_start_subject10,   pattern=r"^quiz:subject:.+$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_streaks,           pattern=r"^quiz:streaks$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_leaderboard,       pattern=r"^quiz:leaderboard$"), group=0)
-    app.add_handler(CallbackQueryHandler(menu_router, pattern=r"^menu_(predict|mock_predict|quiz|ask|profile)$"), group=0)
+
+# quiz picker + sub-steps
+    app.add_handler(CallbackQueryHandler(menu_quiz_handler,     pattern=r"^menu_quiz$"), group=0)     # OPEN picker
+    app.add_handler(CallbackQueryHandler(quiz_start_mini5,      pattern=r"^quiz:mini5$"), group=0)     # start 5 random
+    app.add_handler(CallbackQueryHandler(quiz_pick_subject,     pattern=r"^quiz:picksubject$"), group=0)
+    app.add_handler(CallbackQueryHandler(quiz_start_subject10,  pattern=r"^quiz:subject:.+$"), group=0)
+
+# optional extras (ONLY keep if these funcs exist)
+#   app.add_handler(CallbackQueryHandler(quiz_streaks,      pattern=r"^quiz:streaks$"), group=0)
+#   app.add_handler(CallbackQueryHandler(quiz_leaderboard,  pattern=r"^quiz:leaderboard$"), group=0)
+
+# --- Main menu router (exclude quiz here to avoid double-handling) ---
+    app.add_handler(CallbackQueryHandler(
+    menu_router,
+    pattern=r"^menu_(predict|mock_predict|ask|profile)$"
+), group=0)
     
     # Single ask_more handler
     if _has("ask_followup_handler"):
