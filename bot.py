@@ -51,7 +51,12 @@ _HANDLERS_ATTACHED = False
 
 
 
-log = logging.getLogger("aceit-bot")
+try:
+    log
+except NameError:
+    import logging
+    log = logging.getLogger("aceit-bot")
+    
 TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}
 from dataclasses import dataclass
@@ -4268,10 +4273,12 @@ async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = (q.data or "").strip()
     await q.answer()
 
-    # expected formats: ask:similar, ask:concept, ask:steps, ask:explain, ask:prev, ask:next
-    action = data.split(":", 1)[1] if ":" in data else ""
-    # Map actions -> function names you may already have
-    # Edit these names to match your codebase if different.
+    # Accept ask:similar, ask:concept, ask:steps, ask:explain, ask:prev, ask:next (+ optional :v1 etc.)
+    # Split once to get the action
+    parts = data.split(":", 2)  # ["ask", "similar", "v1"] or ["ask", "similar"]
+    action = parts[1] if len(parts) >= 2 else ""
+
+    # Map actions -> your callback function names (edit if your names differ)
     mapping = {
         "similar": "ask_similar_cb",
         "concept": "ask_concept_cb",
@@ -4284,36 +4291,39 @@ async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE)
     fn_name = mapping.get(action)
     fn = globals().get(fn_name)
     if callable(fn):
+        log.debug("ask_feature_router -> %s", fn_name)
         await fn(update, context)
         return
 
-    # Fallback: tell user and log
     await q.message.reply_text("That Ask feature isn’t wired yet. Please try again later.")
-    log.warning("Ask feature router: no handler for action=%r (expected %r)", action, mapping)
+    log.warning("Ask feature router: no handler for %r (expected one of %s)", data, list(mapping))
 
 
 async def coach_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Routes AI Coach buttons used from Predict results."""
+    """Routes AI Coach buttons emitted from Predict result cards."""
     q = update.callback_query
     data = (q.data or "").strip()
     await q.answer()
 
-    # examples we accept: menu_coach, coach:start, coach:adjust, coach:save
+    # We accept: menu_coach, coach:start, coach:adjust[:...], coach:save[:...]
     if data in ("menu_coach", "coach:start"):
         fn = globals().get("coach_start")
         if callable(fn):
+            log.debug("coach_router -> coach_start")
             await fn(update, context)
             return
 
     if data.startswith("coach:adjust"):
         fn = globals().get("coach_adjust_cb")
         if callable(fn):
+            log.debug("coach_router -> coach_adjust_cb")
             await fn(update, context)
             return
 
     if data.startswith("coach:save"):
         fn = globals().get("coach_save_cb")
         if callable(fn):
+            log.debug("coach_router -> coach_save_cb")
             await fn(update, context)
             return
 
@@ -6645,14 +6655,18 @@ def register_handlers(app: Application) -> None:
     )
     _add(predict_conv, group=3)
 
+    # Predictor follow-ups (AI Coach buttons attached to predict output)
+    # Handles callback_data like: predict:ai, predict:refine, predict:alt, predict:details
+    _add(CallbackQueryHandler(
+        predict_feature_router,
+        pattern=r"^predict:(ai|refine|alt|details)(:.*)?$"
+    ), group=0)
+
     # -------------------------------
     # AI Coach (Preference-List)
     # -------------------------------
-    # Start from menu or coach:start
     _add(CallbackQueryHandler(coach_router, pattern=r"^(menu_coach|coach:start)$"), group=0)
-    # Adjust / Save buttons that often appear under predict results
     _add(CallbackQueryHandler(coach_router, pattern=r"^coach:(adjust|save)(:.*)?$"), group=0)
-    # Legacy/explicit callbacks if you already have them
     try:
         _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
     except NameError:
@@ -6699,6 +6713,14 @@ def register_handlers(app: Application) -> None:
         persistent=False,
     )
     _add(profile_conv, group=4)
+
+    # -------------------------------
+    # Top-level menu router (catch-all for menu_* buttons)
+    # -------------------------------
+    _add(CallbackQueryHandler(
+        menu_router,
+        pattern=r"^menu_(predict|mock_predict|ask|profile|coach|quiz)$"
+    ), group=0)
 
     # -------------------------------
     # Error handler (optional)
