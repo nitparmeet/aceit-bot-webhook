@@ -10,10 +10,8 @@ from fastapi import FastAPI, Request, HTTPException
 
 from telegram.ext import Application
 
-from app import _ensure_loaded as ensure_quiz_loaded, _POOL as QUIZ_POOL, _pick_questions as pick_qs
 
-ensure_quiz_loaded()
-qs = pick_qs(QUIZ_POOL, subject="Physics", difficulty=2, count=10)
+
 
 from pathlib import Path   # <-- add this line
 
@@ -580,7 +578,7 @@ if not TELEGRAM_TOKEN:
 
 # ---------- Constants/paths ----------
 
-
+QUIZ_JSON_PATH = os.getenv("QUIZ_JSON_PATH", str(Path(__file__).parent / "quiz.json"))
 QUIZ_DIR = os.getenv("QUIZ_DIR", "data/quiz")  # override in Render if you like
 
 app = FastAPI()
@@ -589,6 +587,12 @@ tg = Application.builder().token(TOKEN).build()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+
+
+QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}          # user_id -> {"questions":[], "answers":{}, "index": int}
+
+# difficulty mapping used by /quiz5medium etc.
+_DIFF_MAP = {1: "low", 2: "medium", 3: "high"}
 
 DATA_DIR = "data"
 EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx"  # your file
@@ -1696,8 +1700,160 @@ def _read_array_or_questions_node(data) -> list[dict]:
     return out
 
 #----------New Quiz-------
+def _stable_qid(subject: str, question: str, idx_hint: int = 0) -> str:
+    """Create a stable, short id from subject + question text."""
+    h = hashlib.md5(f"{subject}|{question}".encode("utf-8")).hexdigest()[:10]
+    return f"{subject}:{h}:{idx_hint}"
+
+def _normalize_item(subject: str, raw: Dict[str, Any], idx_hint: int) -> Optional[Dict[str, Any]]:
+    """
+    Turn a raw quiz dict into the runtime shape we need:
+
+      {
+        id: str,
+        subject: str,
+        topic: str (optional),
+        question: str,
+        options: List[str],
+        answer_index: int (0..len-1),
+        explanation: Optional[str]
+      }
+
+    Returns None if invalid.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    q_text = str(raw.get("question") or "").strip()
+    if not q_text:
+        return None
+
+    opts = raw.get("options")
+    if not isinstance(opts, list) or len(opts) < 2:
+        return None
+    options = [str(x).strip() for x in opts][:4]  # hard-cap at 4 options
+    while len(options) < 4:
+        options.append("—")
+
+    # answer can be "1".."4", 1..4, 0..3, "A".."D", or exact option text
+    ans = raw.get("answer")
+    ai = None
+    if isinstance(ans, int):
+        ai = ans - 1 if 1 <= ans <= len(options) else (ans if 0 <= ans < len(options) else None)
+    else:
+        s = str(ans or "").strip()
+        if s.upper() in {"A", "B", "C", "D"}:
+            ai = "ABCD".index(s.upper())
+        elif s.isdigit():
+            n = int(s)
+            ai = n - 1 if 1 <= n <= len(options) else (n if 0 <= n < len(options) else None)
+        else:
+            # match by option text (case-insensitive)
+            for i, o in enumerate(options):
+                if s and s.lower() == o.lower():
+                    ai = i
+                    break
+
+    if ai is None or not (0 <= ai < len(options)):
+        return None
+
+    topic = ""
+    # Try to infer a short topic from tags (optional; nice for the header)
+    tags = raw.get("tags") if isinstance(raw.get("tags"), list) else []
+    if tags:
+        topic = str(tags[0])
+
+    item = {
+        "id": str(raw.get("id") or _stable_qid(subject, q_text, idx_hint)),
+        "subject": subject,
+        "topic": topic,
+        "question": q_text,
+        "options": options,
+        "answer_index": int(ai),
+        "explanation": str(raw.get("explanation") or "").strip(),
+        "difficulty": str(raw.get("difficulty") or "").strip().lower(),
+        "tags": tags,
+    }
+    return item
+
+def _load_quiz_pool(path: Optional[str] = None) -> None:
+    """Load quiz.json into QUIZ_POOL (once)."""
+    global QUIZ_POOL
+    p = path or QUIZ_JSON_PATH
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        QUIZ_POOL = data if isinstance(data, dict) else {}
+        try:
+            log.info("Loaded quiz subjects: %s (from %s)", list(QUIZ_POOL.keys()), p)
+        except Exception:
+            pass
+    except Exception:
+        QUIZ_POOL = {}
+        try:
+            log.exception("Failed to load quiz JSON at %s", p)
+        except Exception:
+            pass
+
+def ensure_quiz_ready() -> None:
+    """Lazy init so app.py doesn't need to export anything."""
+    if not QUIZ_POOL:
+        _load_quiz_pool()
+
+def _pick_qs(pool: Dict[str, List[Dict[str, Any]]], *,
+             subject: Optional[str] = None,
+             difficulty: Optional[int] = None,
+             tags_any: Optional[List[str]] = None,
+             count: int = 5,
+             shuffle: bool = True) -> List[Dict[str, Any]]:
+    """
+    Filter by subject/difficulty/tags and sample up to `count`.
+    Returns a list of *normalized* items (with id + answer_index).
+    """
+    # 1) gather
+    raws: List[Dict[str, Any]] = []
+    if subject and subject in pool:
+        raws = pool.get(subject, [])[:]
+        subj_list = [(subject, raws)]
+    else:
+        subj_list = [(s, pool[s]) for s in pool.keys()]
+        for _, arr in subj_list:
+            raws.extend(arr)
+
+    # 2) normalize and tag with subject
+    items: List[Dict[str, Any]] = []
+    subj_to_arr = dict(subj_list)
+    for s, arr in subj_to_arr.items():
+        for i, r in enumerate(arr):
+            it = _normalize_item(s, r, i)
+            if it:
+                items.append(it)
+
+    # 3) difficulty filter (1=low,2=medium,3=high)
+    if difficulty:
+        want = _DIFF_MAP.get(int(difficulty))
+        if want:
+            items = [q for q in items if q.get("difficulty") == want]
+
+    # 4) tags filter (any match)
+    if tags_any:
+        tset = {t.strip().lower() for t in tags_any if t}
+        if tset:
+            def has_any(q):
+                qt = [str(t).lower() for t in (q.get("tags") or [])]
+                return bool(tset.intersection(qt))
+            items = [q for q in items if has_any(q)]
+
+    if shuffle:
+        random.shuffle(items)
+    return items[: min(count, len(items))]
+
+# -------- presentation helpers (unchanged) --------
 def _format_question(q: Dict[str, Any], index: int, total: int) -> str:
-    header = f"Q {index+1}/{total} · {q.get('subject','')} · {q.get('topic','')}".strip()
+    hdr_bits = [f"Q {index+1}/{total}"]
+    if q.get("subject"): hdr_bits.append(q["subject"])
+    if q.get("topic"):   hdr_bits.append(q["topic"])
+    header = " · ".join(hdr_bits)
     body = q["question"]
     return f"{header}\n\n{body}"
 
@@ -1748,15 +1904,27 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     text = _format_question(q, i, total)
     await update.effective_message.reply_text(text, reply_markup=_keyboard_for(q))
 
-async def _start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, *, count: int, subject: Optional[str]=None, difficulty: Optional[int]=None, tags_any: Optional[List[str]]=None) -> None:
+async def _start_quiz(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    count: int,
+    subject: Optional[str] = None,
+    difficulty: Optional[int] = None,
+    tags_any: Optional[List[str]] = None,
+) -> None:
     """Initialize a quiz session and send the first question."""
-    ensure_quiz_loaded()
-    pool = QUIZ_POOL
-    qs = pick_qs(pool, subject=subject, difficulty=difficulty, tags_any=tags_any, count=count, shuffle=True)
+    ensure_quiz_ready()
+    qs = _pick_qs(QUIZ_POOL, subject=subject, difficulty=difficulty, tags_any=tags_any, count=count, shuffle=True)
+
+    # pick the right target (works for both commands and callbacks)
+    target_msg = update.effective_message or (update.callback_query.message if update.callback_query else None)
+
     if not qs:
-        await update.message.reply_text("No questions match your filters. Try different subject/difficulty.")
+        if target_msg:
+            await target_msg.reply_text("No questions match your filters. Try a different subject/difficulty.")
         return
-    # Store full questions (with answer_index) server-side; we never expose answer_index in button data.
+
     QUIZ_SESSIONS[update.effective_user.id] = {
         "questions": qs,
         "answers": {},   # qid -> user answer_index
@@ -1817,12 +1985,13 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     sess["answers"][qid] = chosen
     sess["index"] = i + 1
 
-    # Give immediate feedback (optional). Comment out if you prefer to show only at the end.
+    # Immediate feedback (optional)
     correct_ai = q["answer_index"]
     correct_txt = q["options"][correct_ai]
-    user_txt = q["options"][chosen]
+    user_txt = q["options"][chosen] if 0 <= chosen < len(q["options"]) else "—"
     ok = (chosen == correct_ai)
     fb = "✅ Correct!" if ok else f"❌ Incorrect. Correct: {correct_txt}"
+
     # Replace the previous message text with feedback (keeps chat tidy)
     try:
         await query.edit_message_text(
@@ -1832,8 +2001,9 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # if edit fails (time, perms), just send a new message
         await query.message.reply_text(fb)
 
-    # Send next
+    # Next question or results
     await _send_next(update, context)
+
 
 # ===== END NEW QUIZ INTEGRATION =====
 
@@ -6259,7 +6429,12 @@ def register_handlers(app: Application):
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
         
-
+    app.add_handler(CommandHandler("quiz5", quiz5), group=0)
+    app.add_handler(CommandHandler("quiz10", quiz10), group=0)
+    app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)  # optional
+    app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)      # optional
+    app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+    
     # Single ask_more handler
     if _has("ask_followup_handler"):
         _add(CallbackQueryHandler(
@@ -6280,6 +6455,15 @@ def register_handlers(app: Application):
     if _has("quizdiag"):  # diagnostics for quiz bank
         _add(CommandHandler("quizdiag", quizdiag), group=0)
 
+        _add(CommandHandler("quiz5", quiz5), group=0)
+        _add(CommandHandler("quiz10", quiz10), group=0)
+
+# optional shortcuts; keep if you like them
+        _add(CommandHandler("quiz10physics", quiz10physics), group=0)
+        _add(CommandHandler("quiz5medium", quiz5medium), group=0)
+
+
+    
     # Admin commands
     if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
     if _has("which_round"):         _add(CommandHandler("which_round", which_round), group=5)
