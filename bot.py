@@ -650,21 +650,14 @@ def _trim(s: str, n: int = 140) -> str:
     s = str(s or "")
     return s if len(s) <= n else s[: n - 1] + "…"
 
-async def _safe_clear_kb(q):
-    """
-    Remove the inline keyboard from the message that triggered this callback.
-    Silently ignore benign 400s like 'message is not modified' or 'not found'.
-    """
+async def _safe_clear_kb(q) -> None:
     try:
         await q.edit_message_reply_markup(reply_markup=None)
     except BadRequest as e:
-        msg = str(e)
-        if ("message is not modified" in msg
-            or "message to edit not found" in msg
-            or "MESSAGE_ID_INVALID" in msg):
+        s = str(e)
+        if "message is not modified" in s or "message to edit not found" in s:
             return
-        # Log uncommon reasons for visibility
-        log.warning("editMessageReplyMarkup(clear) failed: %s", msg)
+
 
 async def _safe_set_kb(q, kb):
     """
@@ -680,6 +673,23 @@ async def _safe_set_kb(q, kb):
             return
         log.warning("editMessageReplyMarkup(set) failed: %s", msg)
 
+async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        chat = update.effective_chat
+        if chat:
+            await context.bot.send_message(chat_id=chat.id, text="Choose a quiz mode:", reply_markup=menu_quiz_markup())
+        return
+
+    await q.answer()
+    try:
+        await q.edit_message_text("Choose a quiz mode:", reply_markup=menu_quiz_markup())
+    except BadRequest as e:
+        s = str(e)
+        if "message is not modified" in s or "message to edit not found" in s:
+            return
+        raise
+        
 
 async def _safe_clear_markup(query):
     try:
@@ -3415,21 +3425,14 @@ async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # start the new quiz with defaults (no subject/difficulty filter)
     await _start_quiz(update, context, count=count)
 
-async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    q = update.callback_query
-    await q.answer()
-    await _safe_clear_kb(q)
-    
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
-        [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
-        [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
-        [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
-        [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
+def menu_quiz_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎯 Mini Quiz (5)",                      callback_data="quiz:mini5")],
+        [InlineKeyboardButton("📚 Mini Test (10, choose subject)",     callback_data="quiz:mini10")],
+        [InlineKeyboardButton("🔥 Streaks",                             callback_data="quiz:streaks")],
+        [InlineKeyboardButton("🏆 Leaderboard",                         callback_data="quiz:leaderboard")],
+        [InlineKeyboardButton("⬅️ Back",                                callback_data="menu:back")],
     ])
-
-    await _safe_set_kb(q, kb)
-    await q.message.reply_text("Choose a quiz mode:", reply_markup=kb)
 
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
