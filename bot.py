@@ -8,6 +8,7 @@ import secrets
 
 
 
+
 from telegram.ext import Application
 
 
@@ -6442,54 +6443,78 @@ def _has_all(*names: str) -> bool:
 from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
 
 def register_handlers(app: Application) -> None:
+    # small helper so your later calls read cleanly
+    def _add(h, group: int = 0) -> None:
+        app.add_handler(h, group=group)
+
     # Commands
-    app.add_handler(CommandHandler("menu", show_menu), group=0)
-    app.add_handler(CommandHandler("quiz5", quiz5), group=0)
-    app.add_handler(CommandHandler("quiz10", quiz10), group=0)
-    app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)   # optional
-    app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)       # optional
+    _add(CommandHandler("menu", show_menu), group=0)
+    _add(CommandHandler("quiz5", quiz5), group=0)
+    _add(CommandHandler("quiz10", quiz10), group=0)
+    _add(CommandHandler("quiz10physics", quiz10physics), group=0)
+    _add(CommandHandler("quiz5medium", quiz5medium), group=0)
 
-    # Quiz flow
-    app.add_handler(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-    app.add_handler(CallbackQueryHandler(quiz_menu_router,
-        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"), group=0)
-    app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+    # Quiz menu + router
+    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+    _add(CallbackQueryHandler(
+        quiz_menu_router,
+        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
+    ), group=0)
 
-    # Other top-level menu items (handled elsewhere)
-    app.add_handler(CallbackQueryHandler(
+    # Answer clicks
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+
+    # Other top-level menu items
+    _add(CallbackQueryHandler(
         menu_router, pattern=r"^menu_(predict|mock_predict|ask|profile)$"
     ), group=0)
-    
-    # Single ask_more handler
-    if _has("ask_followup_handler"):
-        _add(CallbackQueryHandler(
-            ask_followup_handler,
-            pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
-        ), group=0)
 
-    # Error handler
+    def register_handlers(app: Application) -> None:
+    # helper
+    def _add(h, group: int = 0) -> None:
+        app.add_handler(h, group=group)
+
+    # --- Error handler ---
     if _has("on_error"):
         app.add_error_handler(on_error)
 
-    # Basic commands
+    # --- Basic commands ---
     if _has("start"):
         _add(CommandHandler("start", start), group=0)
-        _add(CommandHandler("menu", start), group=0)
+        # IMPORTANT: /menu should show the menu, not alias to start
+        if _has("show_menu"):
+            _add(CommandHandler("menu", show_menu), group=0)
+
     if _has("reset_lock"):
         _add(CommandHandler("reset", reset_lock), group=0)
-    if _has("quizdiag"):  # diagnostics for quiz bank
+
+    # Diagnostics (optional)
+    if _has("quizdiag"):
         _add(CommandHandler("quizdiag", quizdiag), group=0)
 
-        _add(CommandHandler("quiz5", quiz5), group=0)
-        _add(CommandHandler("quiz10", quiz10), group=0)
+    # --- QUIZ: plain command shortcuts (ALWAYS add; not gated by quizdiag) ---
+    if _has("quiz5"):            _add(CommandHandler("quiz5", quiz5), group=0)
+    if _has("quiz10"):           _add(CommandHandler("quiz10", quiz10), group=0)
+    if _has("quiz10physics"):    _add(CommandHandler("quiz10physics", quiz10physics), group=0)  # optional
+    if _has("quiz5medium"):      _add(CommandHandler("quiz5medium", quiz5medium), group=0)      # optional
 
-# optional shortcuts; keep if you like them
-        _add(CommandHandler("quiz10physics", quiz10physics), group=0)
-        _add(CommandHandler("quiz5medium", quiz5medium), group=0)
+    # --- QUIZ: menu, router, and answer clicks ---
+    # One menu entry button
+    if _has("menu_quiz_handler"):
+        _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
 
+    # Single router for all quiz picker actions
+    if _has("quiz_menu_router"):
+        _add(CallbackQueryHandler(
+            quiz_menu_router,
+            pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
+        ), group=0)
 
-    
-    # Admin commands
+    # Answer buttons
+    if _has("on_answer"):
+        _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+
+    # --- Admin commands ---
     if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
     if _has("which_round"):         _add(CommandHandler("which_round", which_round), group=5)
     if _has("list_cutoff_sheets"):  _add(CommandHandler("list_sheets", list_cutoff_sheets), group=5)
@@ -6500,7 +6525,7 @@ def register_handlers(app: Application) -> None:
     if _has("quota_counts"):        _add(CommandHandler("quota_counts", quota_counts), group=5)
     if _has("cutoff_probe"):        _add(CommandHandler("cutoff_probe", cutoff_probe), group=5)
 
-    # Ask (Doubt) conversation
+    # --- Ask (Doubt) conversation ---
     if _has("ask_start", "ask_subject_select", "ask_receive_photo", "ask_receive_text", "cancel") and \
        _has_all("ASK_SUBJECT", "ASK_WAIT"):
         ask_conv = ConversationHandler(
@@ -6522,8 +6547,7 @@ def register_handlers(app: Application) -> None:
         )
         _add(ask_conv, group=1)
 
-    
-    # Predictor conversation
+    # --- Predictor conversation ---
     if _has("predict_start", "on_air", "on_quota", "on_category",
             "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
             "on_pref", "cancel_predict") and \
@@ -6550,7 +6574,7 @@ def register_handlers(app: Application) -> None:
         )
         _add(predict_conv, group=3)
 
-    # Profile conversation
+    # --- Profile conversation ---
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
             "profile_set_pref", "profile_set_email", "profile_set_mobile", "profile_set_primary", "cancel") and \
        _has_all("PROFILE_MENU", "PROFILE_SET_CATEGORY", "PROFILE_SET_DOMICILE",
@@ -6578,7 +6602,7 @@ def register_handlers(app: Application) -> None:
         )
         _add(profile_conv, group=4)
 
-    # AI Coach (Preference-List)
+    # --- AI Coach (Preference-List) ---
     if _has("coach_start", "coach_adjust_cb", "coach_save_cb"):
         _add(CommandHandler("coach", coach_start), group=0)
         _add(CallbackQueryHandler(coach_start, pattern=r"^menu_coach$"), group=0)
@@ -6587,12 +6611,11 @@ def register_handlers(app: Application) -> None:
     if _has("ai_notes_from_shortlist"):
         _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)
 
-    # Unknown callbacks last (safety net)
+    # --- Unknown callbacks last (safety net) ---
     if _has("_unknown_cb"):
         _add(CallbackQueryHandler(_unknown_cb), group=9)
 
     log.info("✅ Handlers registered")
-# === END PATCH ===
 
 
 
