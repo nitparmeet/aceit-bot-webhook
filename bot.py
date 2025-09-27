@@ -6,7 +6,7 @@ import re
 import secrets
 
 
-from fastapi import FastAPI, Request, HTTPException
+
 
 from telegram.ext import Application
 
@@ -904,13 +904,7 @@ async def start(update, context):
 
 
 
-@app.post("/telegram")
-async def telegram_webhook(req: Request):
-    data = await req.json()
-    update = Update.de_json(data, tg.bot)
-    # IMPORTANT: do NOT block here with heavy work
-    await tg.process_update(update)
-    return {"ok": True}
+
 
     
 
