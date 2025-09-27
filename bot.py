@@ -83,6 +83,7 @@ _openai_client: Optional["OpenAI"] = None
 _client_singleton = None
 
 
+    
 def _new_token(n=8) -> str:
     # 8 hex chars, upper → short but unique per session
     return secrets.token_hex(n//2).upper()
@@ -950,7 +951,17 @@ async def start(update, context):
 
 
 
-
+async def _debug_unknown_callback(update, context):
+    q = update.callback_query
+    data = q.data if q else None
+    import logging
+    logging.getLogger("aceit-bot").warning("UNHANDLED CALLBACK: %r", data)
+    if q:
+        await q.answer()
+        await q.message.reply_text(
+            "⚠️ Button not wired yet. Logged callback:\n`%s`" % data,
+            parse_mode="Markdown",
+        )
 
     
 
@@ -6482,16 +6493,7 @@ def _resolve_excel_path() -> str:
 
 # ---------- 1) STARTUP: load datasets once ----------
 
-async def _debug_unknown_callback(update, context):
-    q = update.callback_query
-    data = q.data if q else None
-    log.warning("UNHANDLED CALLBACK: %r", data)
-    if q:
-        await q.answer()
-        await q.message.reply_text("⚠️ Button not wired yet. Logged callback:\n`%s`" % data, parse_mode="Markdown")
 
-# Add this as the very last handler (lowest priority catch-all)
-_add(CallbackQueryHandler(_debug_unknown_callback, pattern=r".+"), group=9)
 
 async def on_startup(app: Application):
     """
@@ -6623,7 +6625,7 @@ def register_handlers(app: Application) -> None:
     )
     _add(ask_conv, group=1)
 
-    # Ask follow-ups (Similar / Concept / etc.)
+    # Ask follow-ups (Similar / Concept / etc.) — must precede menu router
     _add(CallbackQueryHandler(
         ask_feature_router,
         pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
@@ -6641,24 +6643,12 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
         ],
         states={
-            ASK_AIR: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, on_air),
-            ],
-            ASK_MOCK_RANK: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank),
-            ],
-            ASK_MOCK_SIZE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
-            ],
-            ASK_QUOTA: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota),
-            ],
-            ASK_CATEGORY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, on_category),
-            ],
-            ASK_DOMICILE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile),
-            ],
+            ASK_AIR: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+            ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+            ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+            ASK_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+            ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+            ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
         },
         fallbacks=[CommandHandler("cancel", cancel_predict)],
         name="predict_conv",
@@ -6668,10 +6658,10 @@ def register_handlers(app: Application) -> None:
     _add(predict_conv, group=3)
 
     # Predictor follow-ups (AI Coach buttons attached to predict output)
-    # Handles callback_data like: predict:ai, predict:refine, predict:alt, predict:details
+    # Handles: predict:ai, predict:refine, predict:alt, predict:details (+ ai_coach/coach aliases)
     _add(CallbackQueryHandler(
         predict_feature_router,
-        pattern=r"^predict:(ai|refine|alt|details)(:.*)?$"
+        pattern=r"^predict:(ai(_coach)?|coach|refine|alt|details)(:.*)?$"
     ), group=0)
 
     # -------------------------------
@@ -6679,7 +6669,6 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     _add(CallbackQueryHandler(coach_router, pattern=r"^(menu_coach|coach:start)$"), group=0)
     _add(CallbackQueryHandler(coach_router, pattern=r"^coach:(adjust|save)(:.*)?$"), group=0)
-    _add(CallbackQueryHandler(predict_feature_router, pattern=r"^predict:(ai(_coach)?|coach|refine|alt|details)(:.*)?$"), group=0)
     try:
         _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
     except NameError:
@@ -6689,7 +6678,6 @@ def register_handlers(app: Application) -> None:
     except NameError:
         pass
 
-    
     # -------------------------------
     # Profile conversation
     # -------------------------------
@@ -6699,28 +6687,16 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(setup_profile, pattern=r"^menu_profile$"),
         ],
         states={
-            PROFILE_MENU: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu),
-            ],
-            PROFILE_SET_CATEGORY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category),
-            ],
-            PROFILE_SET_DOMICILE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile),
-            ],
-            PROFILE_SET_PREF: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref),
-            ],
-            PROFILE_SET_EMAIL: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email),
-            ],
+            PROFILE_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu)],
+            PROFILE_SET_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category)],
+            PROFILE_SET_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile)],
+            PROFILE_SET_PREF: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref)],
+            PROFILE_SET_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email)],
             PROFILE_SET_MOBILE: [
                 MessageHandler(filters.CONTACT, profile_set_mobile),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_mobile),
             ],
-            PROFILE_SET_PRIMARY: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary),
-            ],
+            PROFILE_SET_PRIMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         name="profile_conv",
@@ -6729,7 +6705,7 @@ def register_handlers(app: Application) -> None:
     _add(profile_conv, group=4)
 
     # -------------------------------
-    # Top-level menu router (catch-all for menu_* buttons)
+    # Top-level menu router (catch-all for menu_* buttons) — keep after specifics
     # -------------------------------
     _add(CallbackQueryHandler(
         menu_router,
@@ -6745,7 +6721,6 @@ def register_handlers(app: Application) -> None:
         pass
 
     log.info("✅ Handlers registered")
-
 
 
 
