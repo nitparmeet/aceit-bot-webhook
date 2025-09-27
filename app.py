@@ -14,14 +14,13 @@ from telegram import Update
 from telegram.ext import Application
 
 # ----------------- Config -----------------
-# Required: set these in Render → Environment
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]          # your bot token
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")       # optional; leave blank if not using
 
 # Optional quiz config
 BASE_DIR = Path(__file__).parent
-QUIZ_FILE = Path(os.environ.get("QUIZ_FILE", BASE_DIR / "quiz.json"))  # you saved new data here
-RANDOM_SEED = os.environ.get("QUIZ_RANDOM_SEED")  # set for deterministic shuffles in tests
+QUIZ_FILE = Path(os.environ.get("QUIZ_FILE", BASE_DIR / "quiz.json"))  # your new quiz.json
+RANDOM_SEED = os.environ.get("QUIZ_RANDOM_SEED")  # set this for deterministic shuffles (optional)
 
 # Basic logging (Render shows stdout)
 logging.basicConfig(
@@ -33,10 +32,10 @@ log = logging.getLogger("aceit-bot")
 # ----------------- FastAPI app -----------------
 app = FastAPI(title="aceit-bot-webhook")
 
-# CORS (optional, safe defaults)
+# CORS (optional)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten if you have a frontend origin
+    allow_origins=["*"],  # restrict if you have a specific frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -95,12 +94,13 @@ def _load_pool() -> None:
             errors.append(f"duplicate id: {q['id']}")
             continue
         seen_ids.add(q["id"])
+
     if errors:
         raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errors))
 
     _POOL = data
     _INDEX = {q["id"]: q for q in _POOL}
-    log.info(f"✅ Loaded {len(_POOL)} quiz questions from {QUIZ_FILE}")
+    log.info("✅ Loaded %d quiz questions from %s", len(_POOL), QUIZ_FILE)
 
 def _ensure_loaded():
     if not _POOL:
@@ -178,7 +178,6 @@ async def telegram_webhook(
     req: Request,
     x_telegram_bot_api_secret_token: str | None = Header(default=None),
 ):
-    # If you set WEBHOOK_SECRET, require Telegram to send it
     if WEBHOOK_SECRET and (x_telegram_bot_api_secret_token != WEBHOOK_SECRET):
         raise HTTPException(status_code=403, detail="Bad secret header")
 
@@ -188,10 +187,9 @@ async def telegram_webhook(
     return {"ok": True}
 
 # ----------------- Quiz API -----------------
-
 @app.get("/quiz")
 async def get_quiz(
-    count: int = Query(5, regex="^(5|10)$"),
+    count: int = Query(5, pattern="^(5|10)$"),
     subject: Optional[str] = Query(default=None),
     difficulty: Optional[int] = Query(default=None, ge=1, le=3),
     tags: Optional[str] = Query(default=None, description="comma separated"),
@@ -288,7 +286,6 @@ async def healthz():
 async def home():
     return {"ok": True, "service": "aceit-bot-webhook", "health": "/healthz"}
 
-# Optional: silence HEAD / 405s in logs
 @app.head("/")
 async def home_head():
     return ""
