@@ -56,7 +56,7 @@ QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}
 from dataclasses import dataclass
 QUIZ_POOL: List[Dict[str, Any]] = []  
 QUIZ_INDEX: Dict[str, Dict[str, Any]] = {} 
-_QUIZ_FILE = Path(__file__).parent / "quiz.json"
+QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
 
 from dataclasses import dataclass
 from pydantic import BaseModel, ValidationError, Field
@@ -582,10 +582,9 @@ if not TELEGRAM_TOKEN:
 # ---------- Constants/paths ----------
 
 QUIZ_JSON_PATH = os.getenv("QUIZ_JSON_PATH", str(Path(__file__).parent / "quiz.json"))
-QUIZ_DIR = os.getenv("QUIZ_DIR", "data/quiz")  # override in Render if you like
 
-app = FastAPI()
-tg = Application.builder().token(TOKEN).build()
+
+
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
@@ -629,7 +628,7 @@ OPENAI_MODEL = "gpt-4o-mini"
 
 df_candidate = None
 
-quiz_data: dict = {}
+
 QUIZ_JSON = os.environ.get("QUIZ_JSON", "").strip()
 
 # ---------------------- Canonical helpers (use once, globally) ----------------------
@@ -1705,52 +1704,26 @@ def _read_array_or_questions_node(data) -> list[dict]:
 #----------New Quiz-------
 
 
-def _stable_qid(subject: str, question: str, idx_hint: int = 0) -> str:
-    """Create a stable, short id from subject + question text."""
-    h = hashlib.md5(f"{subject}|{question}".encode("utf-8")).hexdigest()[:10]
-    return f"{subject}:{h}:{idx_hint}"
-
-def _quiz_validate(q: Dict[str, Any], i: int) -> Optional[str]:
-    if not isinstance(q, dict):
-        return f"[{i}] not an object"
-    if not q.get("id"):
-        return f"[{i}] missing id"
-    opts = q.get("options")
-    if not isinstance(opts, list) or len(opts) < 2:
-        return f"[{q.get('id')}] options must have >=2 items"
-    ai = q.get("answer_index")
-    if not isinstance(ai, int) or ai < 0 or ai >= len(opts):
-        return f"[{q.get('id')}] invalid answer_index"
-    diff = q.get("difficulty")
-    if diff not in (1, 2, 3):
-        return f"[{q.get('id')}] difficulty must be 1|2|3"
-    if not q.get("subject"):
-        return f"[{q.get('id')}] subject required"
-    return None
-
 def ensure_quiz_ready() -> None:
-    """Lazy-load QUIZ_POOL/QUIZ_INDEX from quiz.json (new flat array)."""
+    """Load quiz.json (flat array) once."""
     global QUIZ_POOL, QUIZ_INDEX
     if QUIZ_POOL:
         return
-    if not _QUIZ_FILE.exists():
-        raise FileNotFoundError(f"quiz.json not found at {_QUIZ_FILE}")
-    data = json.loads(_QUIZ_FILE.read_text(encoding="utf-8"))
+    with open(QUIZ_FILE_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
     if not isinstance(data, list):
-        raise ValueError("quiz.json must be a flat JSON array of questions.")
-    seen, errs = set(), []
+        raise ValueError("quiz.json must be a flat array of question objects")
+    # minimal validation
     for i, q in enumerate(data):
-        err = _quiz_validate(q, i)
-        if err:
-            errs.append(err); continue
-        if q["id"] in seen:
-            errs.append(f"duplicate id: {q['id']}"); continue
-        seen.add(q["id"])
-    if errs:
-        raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errs))
+        if "id" not in q or "question" not in q or "options" not in q or "answer_index" not in q:
+            raise ValueError(f"Bad question at index {i}: missing keys")
+        if not isinstance(q["options"], list) or len(q["options"]) < 2:
+            raise ValueError(f"Bad options at qid={q.get('id')}")
+        if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
+            raise ValueError(f"Bad answer_index at qid={q.get('id')}")
     QUIZ_POOL = data
-    QUIZ_INDEX = {q["id"]: q for q in data}
-    log.info("✅ QUIZ_READY: %d items (bot.py loader)", len(QUIZ_POOL))
+    QUIZ_INDEX = {q["id"]: q for q in QUIZ_POOL}
+    log.info("✅ Loaded %d quiz items (simple loader)", len(QUIZ_POOL))
 
 def _pick_qs(
     pool: List[Dict[str, Any]],
@@ -1761,22 +1734,23 @@ def _pick_qs(
     count: int = 5,
     shuffle: bool = True,
 ) -> List[Dict[str, Any]]:
-    items = pool
+    out = pool
     if subject:
-        items = [q for q in items if q.get("subject") == subject]
+        out = [q for q in out if q.get("subject") == subject]
     if difficulty:
-        items = [q for q in items if q.get("difficulty") == difficulty]
+        out = [q for q in out if q.get("difficulty") == difficulty]
     if tags_any:
-        items = [q for q in items if any(t in (q.get("tags") or []) for t in tags_any)]
-    items = list(items)
+        out = [q for q in out if any(t in (q.get("tags") or []) for t in tags_any)]
     if shuffle:
-        random.shuffle(items)
-    return items[:count]
+        out = list(out)
+        random.shuffle(out)
+    return out[:count]
 
 def _format_question(q: Dict[str, Any], index: int, total: int) -> str:
-    subj = q.get("subject") or ""
-    topic = q.get("topic") or ""
-    header = f"Q {index+1}/{total} · {subj} · {topic}".strip().rstrip(" ·")
+    header_bits = [f"Q {index+1}/{total}"]
+    if q.get("subject"): header_bits.append(str(q.get("subject")))
+    if q.get("topic"):   header_bits.append(str(q.get("topic")))
+    header = " · ".join(header_bits)
     return f"{header}\n\n{q['question']}"
 
 def _keyboard_for(q: Dict[str, Any]) -> InlineKeyboardMarkup:
@@ -1785,34 +1759,37 @@ def _keyboard_for(q: Dict[str, Any]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send next question or show results."""
     user_id = update.effective_user.id
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
-        await update.effective_message.reply_text("No active quiz. Use /quiz5 or /quiz10 to start.")
+        await update.effective_message.reply_text("No active quiz. Use /quiz5 or /quiz10.")
         return
 
-    i = int(sess["index"])
+    i = sess["index"]
     qs: List[Dict[str, Any]] = sess["questions"]
     total = len(qs)
 
     if i >= total:
-        # finish & report
+        # grade
         answers: Dict[str, int] = sess["answers"]
-        score, lines = 0, []
+        score = 0
+        parts: List[str] = []
         for q in qs:
             qid = q["id"]
             ua = answers.get(qid, -1)
             ca = q["answer_index"]
-            if ua == ca:
+            ok = (ua == ca)
+            if ok:
                 score += 1
             user_txt = q["options"][ua] if 0 <= ua < len(q["options"]) else "—"
-            cor_txt = q["options"][ca]
-            expl = q.get("explanation")
-            part = f"• {q['question']}\n   Your: {user_txt}\n   Correct: {cor_txt}"
+            cor_txt  = q["options"][ca]
+            expl     = q.get("explanation")
+            block = f"• {q['question']}\n   Your: {user_txt}\n   Correct: {cor_txt}"
             if expl:
-                part += f"\n   Why: {expl}"
-            lines.append(part)
-        text = f"✅ Quiz complete!\nScore: {score}/{total}\n\n" + "\n\n".join(lines)
+                block += f"\n   Why: {expl}"
+            parts.append(block)
+        text = f"✅ Quiz complete!\nScore: {score}/{total}\n\n" + "\n\n".join(parts)
         await update.effective_message.reply_text(text)
         QUIZ_SESSIONS.pop(user_id, None)
         return
@@ -1833,45 +1810,36 @@ async def _start_quiz(
     tags_any: Optional[List[str]] = None,
 ) -> None:
     """Initialize a quiz session and send the first question."""
-    try:
-        ensure_quiz_ready()
-    except Exception as e:
-        await (update.effective_message or update.message).reply_text(f"Quiz isn’t ready: {e}")
-        return
-
+    ensure_quiz_ready()
     qs = _pick_qs(QUIZ_POOL, subject=subject, difficulty=difficulty, tags_any=tags_any, count=count, shuffle=True)
-    target_msg = update.effective_message or (update.callback_query.message if update.callback_query else None)
-
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
     if not qs:
-        if target_msg:
-            await target_msg.reply_text("No questions match your filters. Try a different subject/difficulty.")
+        if target:
+            await target.reply_text("No questions match those filters. Try again.")
         return
-
     QUIZ_SESSIONS[update.effective_user.id] = {"questions": qs, "answers": {}, "index": 0}
     await _send_next(update, context)
 
-# Commands
+# public commands
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5)
 
 async def quiz10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=10)
 
-# Optional filtered examples
 async def quiz10physics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=10, subject="Physics")
 
 async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5, difficulty=2)
 
-# Callback for answers
+# button click handler
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    data = (query.data or "")
+    data = query.data or ""
     if not data.startswith("ans:"):
         return
-
     try:
         _, qid, idx_str = data.split(":")
         chosen = int(idx_str)
@@ -1882,37 +1850,43 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
-        await query.edit_message_text("Session expired. Use /quiz5 or /quiz10 to start again.")
+        await query.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
         return
 
     qs: List[Dict[str, Any]] = sess["questions"]
-    i = int(sess["index"])
+    i = sess["index"]
     if i >= len(qs):
-        await query.edit_message_text("Already finished. Use /quiz5 or /quiz10 to start again.")
+        await query.edit_message_text("Already finished. Use /quiz5 to start again.")
         return
-
     q = qs[i]
-    # stale clicks protection
     if q["id"] != qid:
-        await query.answer("That question has already moved on.", show_alert=False)
+        # stale press
+        await query.answer("That question moved on.", show_alert=False)
         return
 
     sess["answers"][qid] = chosen
     sess["index"] = i + 1
 
-    # (Optional) immediate feedback
+    # optional immediate feedback
     ca = q["answer_index"]
     user_txt = q["options"][chosen]
-    correct_txt = q["options"][ca]
-    fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {correct_txt}"
-
+    cor_txt  = q["options"][ca]
+    fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
     try:
         await query.edit_message_text(f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}")
     except Exception:
         await query.message.reply_text(fb)
 
     await _send_next(update, context)
-# ===== END NEW QUIZ =====
+
+# small diag command
+async def quizdiag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        ensure_quiz_ready()
+        await update.message.reply_text(f"Pool size: {len(QUIZ_POOL)}. First id: {QUIZ_POOL[0]['id'] if QUIZ_POOL else '—'}")
+    except Exception as e:
+        await update.message.reply_text(f"Quiz load error: {e}")
+# ===== END SIMPLE QUIZ =====
 
 # ===== END NEW QUIZ INTEGRATION =====
 
@@ -6195,9 +6169,9 @@ EXCEL_PATH = os.getenv("EXCEL_PATH", str(REPO_DIR / DEFAULT_FILENAME))
 # Optional: direct download URL if the file isn't in the repo
 EXCEL_URL  = os.getenv("EXCEL_URL", "")
 
-# Quiz JSON
-QUIZ_JSON_PATH = os.environ.get("QUIZ_JSON_PATH", str(REPO_DIR / "quiz.json"))
-quiz_data: Dict[str, List[Dict[str, Any]]] = {}
+
+
+
 
 
 def _safe_df(v) -> pd.DataFrame:
@@ -6247,29 +6221,8 @@ def _resolve_excel_path() -> str:
     return str(candidates[0])
 
 
-def load_quiz_data(path: Optional[str] = None) -> None:
-    """
-    Load quiz bank into the global `quiz_data` dict. Logs subjects.
-    Safe: never raises.
-    """
-    global quiz_data
-    p = path or QUIZ_JSON_PATH
-    try:
-        with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            quiz_data = data
-        else:
-            quiz_data = {}
-    except FileNotFoundError:
-        log.warning("quiz.json not found at %s; quiz feature will show 'No quiz data available.'", p)
-        quiz_data = {}
-    except Exception:
-        log.exception("Could not parse quiz JSON at %s", p)
-        quiz_data = {}
 
-    log.info("Loaded quiz subjects: %s (from %s)", list(quiz_data.keys()), p)
-
+    
 
 # ---------- 1) STARTUP: load datasets once ----------
 async def on_startup(app: Application):
@@ -6327,8 +6280,7 @@ async def on_startup(app: Application):
     app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
     log.info("[startup] CUTOFFS_DF ready: %d rows", len(CUTOFFS_DF))
 
-    # 4) Load quiz bank exactly once
-    load_quiz_data()
+
 
     # One consolidated banner
     qsubs = list(quiz_data.keys())
