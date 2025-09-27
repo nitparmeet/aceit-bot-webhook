@@ -3202,8 +3202,8 @@ async def quiz_menu_router(update, context):
         return
 
     if data == "menu:back":
-    await show_menu(update, context)
-    return
+        await show_menu(update, context)
+        return
     
 
 async def menu_back(update, context):
