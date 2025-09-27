@@ -5967,16 +5967,14 @@ def main():
     )
 
     # 4) Startup banner
-    try:
-        qsubs = list(quiz_data.keys())  # if you have quiz_data loaded earlier
-    except Exception:
-        qsubs = []
-    log.info(
-        "Starting bot… quiz subjects: %s | colleges: %d | cutoff entries: %d",
-        qsubs,
-        (len(COLLEGES) if isinstance(COLLEGES, pd.DataFrame) else 0),
-        len(CUTOFF_LOOKUP),
-    )
+    col_count = (0 if not isinstance(COLLEGES, pd.DataFrame) or COLLEGES.empty else len(COLLEGES))
+    cut_count = (len(CUTOFF_LOOKUP) if isinstance(CUTOFF_LOOKUP, dict) else 0)
+    round_code = globals().get("ACTIVE_CUTOFF_ROUND_DEFAULT")
+
+    if round_code:
+        log.info("Starting bot… colleges: %d | cutoff entries: %d (round=%s)", col_count, cut_count, round_code)
+    else:
+        log.info("Starting bot… colleges: %d | cutoff entries: %d", col_count, cut_count)
 
     # --- Helpers to add handlers only if callbacks exist (prevents NameError) ---
     def _has(*names: str) -> bool:
