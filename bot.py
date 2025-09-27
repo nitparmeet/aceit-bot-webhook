@@ -6481,6 +6481,18 @@ def _resolve_excel_path() -> str:
     
 
 # ---------- 1) STARTUP: load datasets once ----------
+
+async def _debug_unknown_callback(update, context):
+    q = update.callback_query
+    data = q.data if q else None
+    log.warning("UNHANDLED CALLBACK: %r", data)
+    if q:
+        await q.answer()
+        await q.message.reply_text("⚠️ Button not wired yet. Logged callback:\n`%s`" % data, parse_mode="Markdown")
+
+# Add this as the very last handler (lowest priority catch-all)
+_add(CallbackQueryHandler(_debug_unknown_callback, pattern=r".+"), group=9)
+
 async def on_startup(app: Application):
     """
     Runs once when the FastAPI app starts.
@@ -6615,7 +6627,7 @@ def register_handlers(app: Application) -> None:
     _add(CallbackQueryHandler(
         ask_feature_router,
         pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
-    ), group=1)
+    ), group=0)
 
     # -------------------------------
     # Predictor conversation
@@ -6667,6 +6679,7 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     _add(CallbackQueryHandler(coach_router, pattern=r"^(menu_coach|coach:start)$"), group=0)
     _add(CallbackQueryHandler(coach_router, pattern=r"^coach:(adjust|save)(:.*)?$"), group=0)
+    _add(CallbackQueryHandler(predict_feature_router, pattern=r"^predict:(ai(_coach)?|coach|refine|alt|details)(:.*)?$"), group=0)
     try:
         _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
     except NameError:
@@ -6676,6 +6689,7 @@ def register_handlers(app: Application) -> None:
     except NameError:
         pass
 
+    
     # -------------------------------
     # Profile conversation
     # -------------------------------
