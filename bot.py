@@ -3080,13 +3080,22 @@ def main_menu_markup() -> InlineKeyboardMarkup:
 
 
 
+def main_menu_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🏫 College Predictor",     callback_data="menu_predict")],
+        [InlineKeyboardButton("🏫 Predict from Mock Rank", callback_data="menu_mock_predict")],
+        [InlineKeyboardButton("📝 Daily Quiz",             callback_data="menu_quiz")],
+        [InlineKeyboardButton("💬 Clear NEET Doubts",      callback_data="menu_ask")],
+        [InlineKeyboardButton("⚙️ Setup Profile",          callback_data="menu_profile")],
+    ])
+
 async def show_menu(update: Update, text: str = "Choose an option:"):
     explanation = (
         "📋 *Menu Options*\n\n"
-        "🏫 *NEET College Predictor* – Uses your AIR & category and predict list of 10 colleges that you might get at your NEET rank based on the last year's cutoffs. It will also give AI based suggestion for those colleges\n\n" 
-        "🏫 *PREDICT FROM MOCK RANK* – Uses your All India Mock Test Rank, Quota & category and predict list of colleges that you might get at your rank based on the last year's cutoffs.\n\n"
-        "📝 *Daily Quiz (Exam Mode)* – Take timed quiz/test and get scores.\n\n"
-        "💬 *Clear your NEET Doubts* – Send text or photo and get structured solution + follow-ups for NEET Subject Queries or Conunselling based queries.\n\n"
+        "🏫 *NEET College Predictor* – Uses your AIR & category to predict likely colleges from last year's cutoffs, plus quick AI notes.\n\n"
+        "🏫 *Predict from Mock Rank* – Use your All-India mock test rank, quota & category to see possible colleges.\n\n"
+        "📝 *Daily Quiz* – Mini Quiz (5 random Qs) or Mini Test (10 on a chosen subject). Get instant feedback and a review sheet.\n\n"
+        "💬 *Clear your NEET Doubts* – Send text or a photo; get structured explanations and follow-ups.\n\n"
         "⚙️ *Setup your profile* – Save Name, Contact, Email, Category, Domicile."
     )
     tgt = _target(update)
@@ -3398,6 +3407,25 @@ async def quiz_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await (update.effective_message or update.callback_query.message).reply_text(
         "Leaderboard coming soon 🔜"
     )
+
+
+
+async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    data = (q.data or "")
+    if data == "menu_quiz":
+        # open the quiz picker (Mini 5 / Mini 10 + subject)
+        await show_quiz_menu(update, context)
+    elif data == "menu_predict":
+        await predict_start(update, context)          # your existing entry
+    elif data == "menu_mock_predict":
+        await mock_predict_start(update, context)     # your existing entry
+    elif data == "menu_ask":
+        await ask_start(update, context)              # your existing entry
+    elif data == "menu_profile":
+        await profile_start(update, context)          # your existing entry
+
     
 #----------------------------New Quiz end
     # ---------------- small helpers ----------------
@@ -6407,6 +6435,7 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("quiz10", quiz10), group=0)
     app.add_handler(CommandHandler("quiz10physics", quiz10physics), group=0)   # optional
     app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)       # optional
+    app.add_handler(CommandHandler("menu", show_menu), group=0)
     app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
     app.add_handler(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
     app.add_handler(CallbackQueryHandler(menu_quiz_handler,      pattern=r"^menu_quiz$"), group=0)
@@ -6415,6 +6444,7 @@ def register_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(quiz_start_subject10,   pattern=r"^quiz:subject:.+$"), group=0)
     app.add_handler(CallbackQueryHandler(quiz_streaks,           pattern=r"^quiz:streaks$"), group=0)
     app.add_handler(CallbackQueryHandler(quiz_leaderboard,       pattern=r"^quiz:leaderboard$"), group=0)
+    app.add_handler(CallbackQueryHandler(menu_router, pattern=r"^menu_(predict|mock_predict|quiz|ask|profile)$"), group=0)
     
     # Single ask_more handler
     if _has("ask_followup_handler"):
