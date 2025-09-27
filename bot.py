@@ -45,7 +45,7 @@ from dotenv import load_dotenv
 from unidecode import unidecode
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
-
+_HANDLERS_ATTACHED = False
 
 
 
@@ -675,20 +675,19 @@ async def _safe_set_kb(q, kb):
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
-    if not q:
-        chat = update.effective_chat
-        if chat:
-            await context.bot.send_message(chat_id=chat.id, text="Choose a quiz mode:", reply_markup=menu_quiz_markup())
-        return
-
-    await q.answer()
-    try:
-        await q.edit_message_text("Choose a quiz mode:", reply_markup=menu_quiz_markup())
-    except BadRequest as e:
-        s = str(e)
-        if "message is not modified" in s or "message to edit not found" in s:
-            return
-        raise
+    if q:
+        await q.answer()
+        try:
+            await q.edit_message_text("Choose a quiz mode:", reply_markup=menu_quiz_markup())
+        except BadRequest as e:
+            s = str(e)
+            if "message is not modified" in s or "message to edit not found" in s:
+                return
+            raise
+    else:
+        # In case the handler is triggered by a command (rare), send once
+        chat_id = update.effective_chat.id
+        await context.bot.send_message(chat_id=chat_id, text="Choose a quiz mode:", reply_markup=menu_quiz_markup())
         
 
 async def _safe_clear_markup(query):
@@ -3176,43 +3175,33 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     else:
         await q.message.reply_text("Unknown menu item.")
 
-async def quiz_menu_router(update, context):
+async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer()
-    await _safe_clear_kb(q)
-
     data = (q.data or "")
 
-    if data == "quiz_mini5":
+    if data == "quiz:mini5":
         await _start_quiz(update, context, count=5)
         return
 
-    if data == "quiz_mini10":
+    if data == "quiz:mini10":
         subjects = sorted({x.get("subject") for x in QUIZ_POOL if x.get("subject")})
         if not subjects:
             await q.message.reply_text("No subjects available in the quiz bank.")
             return
-        rows = [[InlineKeyboardButton(s, callback_data=f"quiz_sub:{s}")] for s in subjects]
-        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_back")])
-        kb = InlineKeyboardMarkup(rows)
-        await q.message.reply_text("Pick a subject for a 10-question test:", reply_markup=kb)
+        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}")] for s in subjects]
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_quiz")])
+        await q.message.edit_text("Pick a subject for a 10-question test:",
+                                  reply_markup=InlineKeyboardMarkup(rows))
         return
 
-    if data.startswith("quiz_sub:"):
-        subject = data.split("quiz_sub:", 1)[1]
+    if data.startswith("quiz:sub:"):
+        subject = data.split("quiz:sub:", 1)[1]
         await _start_quiz(update, context, count=10, subject=subject)
         return
 
-    if data == "quiz_streaks":
-        await q.message.reply_text("Streaks coming soon.")
-        return
-
-    if data == "quiz_leaderboard":
-        await q.message.reply_text("Leaderboard coming soon.")
-        return
-
     if data == "menu:back":
-        await show_menu(update, context)
+        await show_menu(update, context)   # go back to the main menu (correct signature)
         return
     
 
@@ -3427,11 +3416,11 @@ async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 def menu_quiz_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎯 Mini Quiz (5)",                      callback_data="quiz:mini5")],
-        [InlineKeyboardButton("📚 Mini Test (10, choose subject)",     callback_data="quiz:mini10")],
-        [InlineKeyboardButton("🔥 Streaks",                             callback_data="quiz:streaks")],
-        [InlineKeyboardButton("🏆 Leaderboard",                         callback_data="quiz:leaderboard")],
-        [InlineKeyboardButton("⬅️ Back",                                callback_data="menu:back")],
+        [InlineKeyboardButton("🎯 Mini Quiz (5)",                  callback_data="quiz:mini5")],
+        [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
+        [InlineKeyboardButton("🔥 Streaks",                         callback_data="quiz:streaks")],
+        [InlineKeyboardButton("🏆 Leaderboard",                     callback_data="quiz:leaderboard")],
+        [InlineKeyboardButton("⬅️ Back",                            callback_data="menu:back")],
     ])
 
 
@@ -6508,168 +6497,40 @@ def _has_all(*names: str) -> bool:
 from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
 
 def register_handlers(app: Application) -> None:
-    """
-    Attach all handlers once. Keep this function defined only once in the file.
-    Uses feature-detection to avoid NameErrors when optional handlers/constants
-    are missing.
-    """
-    # --- tiny helpers ---------------------------------------------------------
+    """Attach all handlers exactly once."""
+    global _HANDLERS_ATTACHED
+    if _HANDLERS_ATTACHED:
+        log.warning("register_handlers called again; skipping duplicate attachment.")
+        return
+
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
 
-    def _has(*names: str) -> bool:
-        g = globals()
-        return all(n in g and g[n] is not None for n in names)
+    # --- Basic commands ---
+    _add(CommandHandler("start", start), group=0)
+    _add(CommandHandler("menu", show_menu), group=0)
 
-    def _has_all(*names: str) -> bool:
-        return _has(*names)
+    # --- Quick quiz commands (optional shortcuts) ---
+    _add(CommandHandler("quiz5",         quiz5), group=0)
+    _add(CommandHandler("quiz10",        quiz10), group=0)
+    _add(CommandHandler("quiz10physics", quiz10physics), group=0)
+    _add(CommandHandler("quiz5medium",   quiz5medium), group=0)
 
-    # --- Error handler (optional) ---------------------------------------------
-    if _has("on_error"):
-        try:
-            app.add_error_handler(on_error)  # type: ignore[name-defined]
-        except Exception as e:
-            log.warning("Could not add error handler: %s", e)
+    # --- Quiz menu + router + answers (ONE of each) ---
+    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+    _add(CallbackQueryHandler(
+        quiz_menu_router,
+        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
+    ), group=0)
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
-    # --- Basic commands -------------------------------------------------------
-    if _has("start"):
-        _add(CommandHandler("start", start), group=0)  # type: ignore[name-defined]
-    if _has("show_menu"):
-        # IMPORTANT: /menu should open the menu screen (not alias to /start)
-        _add(CommandHandler("menu", show_menu), group=0)  # type: ignore[name-defined]
+    # --- Top-level menu router for other sections ---
+    _add(CallbackQueryHandler(
+        menu_router,
+        pattern=r"^menu_(predict|mock_predict|ask|profile)$"
+    ), group=0)
 
-    if _has("reset_lock"):
-        _add(CommandHandler("reset", reset_lock), group=0)  # type: ignore[name-defined]
-
-    # --- Diagnostics (optional) ----------------------------------------------
-    if _has("quizdiag"):
-        _add(CommandHandler("quizdiag", quizdiag), group=0)  # type: ignore[name-defined]
-
-    # --- Quick quiz commands (optional shortcuts) ----------------------------
-    if _has("quiz5"):            _add(CommandHandler("quiz5", quiz5), group=0)  # type: ignore[name-defined]
-    if _has("quiz10"):           _add(CommandHandler("quiz10", quiz10), group=0)  # type: ignore[name-defined]
-    if _has("quiz10physics"):    _add(CommandHandler("quiz10physics", quiz10physics), group=0)  # type: ignore[name-defined]
-    if _has("quiz5medium"):      _add(CommandHandler("quiz5medium", quiz5medium), group=0)  # type: ignore[name-defined]
-
-    # --- QUIZ: menu, router, and answer clicks -------------------------------
-    if _has("menu_quiz_handler"):
-        _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)  # type: ignore[name-defined]
-
-    if _has("quiz_menu_router"):
-        _add(
-            CallbackQueryHandler(
-                quiz_menu_router,
-                pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$",
-            ),
-            group=0,
-        )  # type: ignore[name-defined]
-
-    if _has("on_answer"):
-        _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)  # type: ignore[name-defined]
-
-    # --- Top-level menu router for other sections ----------------------------
-    if _has("menu_router"):
-        _add(
-            CallbackQueryHandler(
-                menu_router,
-                pattern=r"^menu_(predict|mock_predict|ask|profile)$",
-            ),
-            group=0,
-        )  # type: ignore[name-defined]
-
-    # --- Ask (Doubt) conversation --------------------------------------------
-    if _has("ask_start", "ask_subject_select", "ask_receive_photo", "ask_receive_text", "cancel") and \
-       _has_all("ASK_SUBJECT", "ASK_WAIT"):
-        ask_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("ask", ask_start),  # type: ignore[name-defined]
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),  # type: ignore[name-defined]
-            ],
-            states={
-                ASK_SUBJECT: [  # type: ignore[name-defined]
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)  # type: ignore[name-defined]
-                ],
-                ASK_WAIT: [  # type: ignore[name-defined]
-                    MessageHandler(filters.PHOTO, ask_receive_photo),  # type: ignore[name-defined]
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),  # type: ignore[name-defined]
-                ],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],  # type: ignore[name-defined]
-            name="ask_conv",
-            persistent=False,
-            per_message=False,
-        )
-        _add(ask_conv, group=1)
-
-    # --- Predictor conversation ----------------------------------------------
-    if _has("predict_start", "on_air", "on_quota", "on_category",
-            "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
-            "on_pref", "cancel_predict", "predict_mockrank_start",
-            "predict_mockrank_collect_rank", "predict_mockrank_collect_size") and \
-       _has_all("ASK_AIR", "ASK_MOCK_RANK", "ASK_MOCK_SIZE", "ASK_QUOTA", "ASK_CATEGORY", "ASK_DOMICILE"):
-        predict_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("predict",       predict_start),         # type: ignore[name-defined]
-                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),  # type: ignore[name-defined]
-                CommandHandler("mockpredict",   predict_mockrank_start),  # type: ignore[name-defined]
-                CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),  # type: ignore[name-defined]
-            ],
-            states={
-                ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],        # type: ignore[name-defined]
-                ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],  # type: ignore[name-defined]
-                ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],  # type: ignore[name-defined]
-                ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],      # type: ignore[name-defined]
-                ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],   # type: ignore[name-defined]
-                ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],   # type: ignore[name-defined]
-            },
-            fallbacks=[CommandHandler("cancel", cancel_predict)],  # type: ignore[name-defined]
-            name="predict_conv",
-            persistent=False,
-            per_message=False,
-        )
-        _add(predict_conv, group=3)
-
-    # --- Profile conversation -------------------------------------------------
-    if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
-            "profile_set_pref", "profile_set_email", "profile_set_mobile", "profile_set_primary", "cancel") and \
-       _has_all("PROFILE_MENU", "PROFILE_SET_CATEGORY", "PROFILE_SET_DOMICILE",
-                "PROFILE_SET_PREF", "PROFILE_SET_EMAIL", "PROFILE_SET_MOBILE", "PROFILE_SET_PRIMARY"):
-        profile_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("profile", setup_profile),  # type: ignore[name-defined]
-                CallbackQueryHandler(setup_profile, pattern=r"^menu_profile$"),  # type: ignore[name-defined]
-            ],
-            states={
-                PROFILE_MENU:         [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu)],          # type: ignore[name-defined]
-                PROFILE_SET_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category)],  # type: ignore[name-defined]
-                PROFILE_SET_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile)],  # type: ignore[name-defined]
-                PROFILE_SET_PREF:     [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref)],      # type: ignore[name-defined]
-                PROFILE_SET_EMAIL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email)],     # type: ignore[name-defined]
-                PROFILE_SET_MOBILE: [
-                    MessageHandler(filters.CONTACT, profile_set_mobile),                                       # type: ignore[name-defined]
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_mobile),                       # type: ignore[name-defined]
-                ],
-                PROFILE_SET_PRIMARY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],   # type: ignore[name-defined]
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],  # type: ignore[name-defined]
-            name="profile_conv",
-            persistent=False,
-        )
-        _add(profile_conv, group=4)
-
-    # --- AI Coach (Preference-List) ------------------------------------------
-    if _has("coach_start"):
-        _add(CommandHandler("coach", coach_start), group=0)  # type: ignore[name-defined]
-        _add(CallbackQueryHandler(coach_start, pattern=r"^menu_coach$"), group=0)  # type: ignore[name-defined]
-    if _has("coach_notes_cb"):
-        _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)  # type: ignore[name-defined]
-    if _has("ai_notes_from_shortlist"):
-        _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)  # type: ignore[name-defined]
-
-    # --- Unknown callbacks last (safety net) ---------------------------------
-    if _has("_unknown_cb"):
-        _add(CallbackQueryHandler(_unknown_cb), group=9)  # type: ignore[name-defined]
-
+    _HANDLERS_ATTACHED = True
     log.info("✅ Handlers registered")
 
 
