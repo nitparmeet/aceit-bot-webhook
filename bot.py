@@ -6471,8 +6471,8 @@ def register_handlers(app: Application) -> None:
 
     def register_handlers(app: Application) -> None:
     # helper
-    def _add(h, group: int = 0) -> None:
-        app.add_handler(h, group=group)
+        def _add(h, group: int = 0) -> None:
+            app.add_handler(h, group=group)
 
     # --- Error handler ---
     if _has("on_error"):
