@@ -6275,14 +6275,14 @@ async def on_startup(app: Application):
 
 
     # One consolidated banner
-    qsubs = list(quiz_data.keys())
-    log.info(
-        "Starting bot… quiz subjects: %s | colleges: %d | cutoff entries: %d (round=%s)",
-        qsubs,
-        (0 if COLLEGES.empty else len(COLLEGES)),
-        len(CUTOFF_LOOKUP),
-        ACTIVE_CUTOFF_ROUND_DEFAULT,
-    )
+    col_count = (0 if not isinstance(COLLEGES, pd.DataFrame) or COLLEGES.empty else len(COLLEGES))
+    cut_count = (len(CUTOFF_LOOKUP) if isinstance(CUTOFF_LOOKUP, dict) else 0)
+    round_code = globals().get("ACTIVE_CUTOFF_ROUND_DEFAULT")
+
+    if round_code:
+        log.info("Starting bot… colleges: %d | cutoff entries: %d (round=%s)", col_count, cut_count, round_code)
+    else:
+        log.info("Starting bot… colleges: %d | cutoff entries: %d", col_count, cut_count)
 
 
 def _has(*names: str) -> bool:
