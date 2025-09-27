@@ -9,7 +9,10 @@ from fastapi import FastAPI, Request, HTTPException
 
 from telegram.ext import Application
 
+from app import _ensure_loaded as ensure_quiz_loaded, _POOL as QUIZ_POOL, _pick_questions as pick_qs
 
+ensure_quiz_loaded()
+qs = pick_qs(QUIZ_POOL, subject="Physics", difficulty=2, count=10)
 
 from pathlib import Path   # <-- add this line
 
