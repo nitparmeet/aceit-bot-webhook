@@ -1816,7 +1816,7 @@ async def _start_quiz(
 
 # public commands
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _start_quiz(update, context, count=5)
+   
 
 async def quiz10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=10)
@@ -3283,6 +3283,18 @@ def _pick(d: dict, *keys):
     return None
 
 #New Quiz----------
+
+def _quiz_subjects_from_pool() -> list[str]:
+    """Find unique subjects available in QUIZ_POOL. Fallback to standard list."""
+    try:
+        subs = sorted({str(q.get("subject") or "").strip() for q in QUIZ_POOL if q.get("subject")})
+        subs = [s for s in subs if s]  # remove blanks
+        return subs or ["Physics", "Chemistry", "Zoology", "Botany"]
+    except Exception:
+        return ["Physics", "Chemistry", "Zoology", "Botany"]
+
+
+
 async def menu_quiz_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer()
@@ -3302,6 +3314,21 @@ async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _start_quiz(update, context, count=count)
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """First-tier quiz menu."""
+    if update.callback_query:
+        await update.callback_query.answer()
+        with contextlib.suppress(Exception):
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚡ Mini Quiz (5) • random subjects", callback_data="quiz:mini5")],
+        [InlineKeyboardButton("🧪 Mini Test (10) • choose subject", callback_data="quiz:picksubject")],
+        [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks"),
+         InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
+    ])
+    tgt = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if tgt:
+        await tgt.reply_text("Choose a quiz mode:", reply_markup=kb)er(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.callback_query:
         await update.callback_query.answer()
         with contextlib.suppress(Exception):
@@ -3310,6 +3337,68 @@ async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import math, os
+
+
+async def quiz_start_mini5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # 5 random from any subject
+    if update.callback_query:
+        await update.callback_query.answer()
+        with contextlib.suppress(Exception):
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+    await _start_quiz(update, context, count=5)
+
+async def quiz_pick_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # show available subjects
+    if update.callback_query:
+        await update.callback_query.answer()
+        with contextlib.suppress(Exception):
+            await update.callback_query.edit_message_reply_markup(reply_markup=None)
+    subs = _quiz_subjects_from_pool()
+    rows = []
+    row = []
+    for s in subs:
+        row.append(InlineKeyboardButton(s, callback_data=f"quiz:subject:{s}"))
+        if len(row) == 2:
+            rows.append(row); row = []
+    if row: rows.append(row)
+    rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_quiz")])
+    kb = InlineKeyboardMarkup(rows)
+    tgt = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if tgt:
+        await tgt.reply_text("Pick a subject for the 10-question mini test:", reply_markup=kb)
+
+async def quiz_start_subject10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # callback_data: quiz:subject:<SUBJECT>
+    q = update.callback_query
+    if not q:
+        return
+    await q.answer()
+    with contextlib.suppress(Exception):
+        await q.edit_message_reply_markup(reply_markup=None)
+    try:
+        subject = (q.data or "").split(":", 2)[2]
+    except Exception:
+        subject = None
+    if not subject:
+        await q.message.reply_text("Couldn't read subject. Try again.")
+        return
+    await _start_quiz(update, context, count=10, subject=subject)
+
+# Optional stubs
+async def quiz_streaks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query:
+        await update.callback_query.answer()
+    await (update.effective_message or update.callback_query.message).reply_text(
+        "Streaks coming soon 🔜"
+    )
+
+async def quiz_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query:
+        await update.callback_query.answer()
+    await (update.effective_message or update.callback_query.message).reply_text(
+        "Leaderboard coming soon 🔜"
+    )
+    
 #----------------------------New Quiz end
     # ---------------- small helpers ----------------
     NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
@@ -6320,7 +6409,12 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("quiz5medium", quiz5medium), group=0)       # optional
     app.add_handler(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
     app.add_handler(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-    
+    app.add_handler(CallbackQueryHandler(menu_quiz_handler,      pattern=r"^menu_quiz$"), group=0)
+    app.add_handler(CallbackQueryHandler(quiz_start_mini5,       pattern=r"^quiz:mini5$"), group=0)
+    app.add_handler(CallbackQueryHandler(quiz_pick_subject,      pattern=r"^quiz:picksubject$"), group=0)
+    app.add_handler(CallbackQueryHandler(quiz_start_subject10,   pattern=r"^quiz:subject:.+$"), group=0)
+    app.add_handler(CallbackQueryHandler(quiz_streaks,           pattern=r"^quiz:streaks$"), group=0)
+    app.add_handler(CallbackQueryHandler(quiz_leaderboard,       pattern=r"^quiz:leaderboard$"), group=0)
     
     # Single ask_more handler
     if _has("ask_followup_handler"):
