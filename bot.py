@@ -650,6 +650,37 @@ def _trim(s: str, n: int = 140) -> str:
     s = str(s or "")
     return s if len(s) <= n else s[: n - 1] + "…"
 
+async def _safe_clear_kb(q):
+    """
+    Remove the inline keyboard from the message that triggered this callback.
+    Silently ignore benign 400s like 'message is not modified' or 'not found'.
+    """
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except BadRequest as e:
+        msg = str(e)
+        if ("message is not modified" in msg
+            or "message to edit not found" in msg
+            or "MESSAGE_ID_INVALID" in msg):
+            return
+        # Log uncommon reasons for visibility
+        log.warning("editMessageReplyMarkup(clear) failed: %s", msg)
+
+async def _safe_set_kb(q, kb):
+    """
+    Replace the inline keyboard on the message that triggered this callback.
+    """
+    try:
+        await q.edit_message_reply_markup(reply_markup=kb)
+    except BadRequest as e:
+        msg = str(e)
+        if ("message is not modified" in msg
+            or "message to edit not found" in msg
+            or "MESSAGE_ID_INVALID" in msg):
+            return
+        log.warning("editMessageReplyMarkup(set) failed: %s", msg)
+
+
 async def _safe_clear_markup(query):
     try:
         await query.edit_message_reply_markup(None)
@@ -1832,6 +1863,7 @@ async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    await _safe_clear_kb(query)
     data = query.data or ""
     if not data.startswith("ans:"):
         return
@@ -3127,8 +3159,11 @@ async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return
         rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}")] for s in subjects]
         rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_quiz")])
+
+        await _safe_set_kb(q, kb)
         await q.message.reply_text("Pick a subject for a 10-question test:",
                                    reply_markup=InlineKeyboardMarkup(rows))
+        
         return
 
     if data.startswith("quiz:sub:"):
@@ -3362,7 +3397,8 @@ async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     await q.answer()
-
+    await _safe_clear_kb(q)
+    
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
         [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
@@ -3370,6 +3406,8 @@ async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
         [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
     ])
+
+    await _safe_set_kb(q, kb)
     await q.message.reply_text("Choose a quiz mode:", reply_markup=kb)
 
 
