@@ -1816,7 +1816,7 @@ async def _start_quiz(
 
 # public commands
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-   
+    await _start_quiz(update, context, count=5)
 
 async def quiz10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=10)
