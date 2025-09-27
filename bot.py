@@ -683,17 +683,32 @@ async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     q = update.callback_query
     if q:
         await q.answer()
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
+            [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
+            [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
+            [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
+        ])
+        # Edit the same message (avoid sending a duplicate "Choose a quiz mode")
         try:
-            await q.edit_message_text("Choose a quiz mode:", reply_markup=menu_quiz_markup())
-        except BadRequest as e:
-            s = str(e)
-            if "message is not modified" in s or "message to edit not found" in s:
-                return
-            raise
-    else:
-        # In case the handler is triggered by a command (rare), send once
-        chat_id = update.effective_chat.id
-        await context.bot.send_message(chat_id=chat_id, text="Choose a quiz mode:", reply_markup=menu_quiz_markup())
+            await q.message.edit_text("Choose a quiz mode:", reply_markup=kb)
+        except Exception:
+            # If edit fails (e.g., no change), just set markup
+            await q.message.edit_reply_markup(reply_markup=kb)
+        return
+
+    # If triggered via /menu or directly:
+    await update.effective_chat.send_message(
+        "Choose a quiz mode:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
+            [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
+            [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
+            [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
+            [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
+        ])
+    )
         
 
 async def _safe_clear_markup(query):
@@ -3173,52 +3188,90 @@ async def show_menu(
 
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Routes top-level menu buttons to their handlers."""
     q = update.callback_query
+    data = q.data if q else ""
     await q.answer()
-    data = (q.data or "").strip()
+
+    if data == "menu_predict":
+        return await predict_start(update, context)
+    if data in {"menu_mock_predict", "menu_predict_mock"}:
+        return await predict_mockrank_start(update, context)
+    if data == "menu_ask":
+        return await ask_start(update, context)
+    if data == "menu_profile":
+        return await setup_profile(update, context)
+    if data == "menu_coach":
+        return await coach_router(update, context)
     if data == "menu_quiz":
-        await menu_quiz_handler(update, context)
-    elif data == "menu_predict":
-        # call your existing predict menu entry if you have one, else just ack
-        await q.message.reply_text("Predictor coming right up. Use /predict to start.")
-    elif data == "menu_mock_predict":
-        await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
-    elif data == "menu_ask":
-        await q.message.reply_text("Ask your NEET doubt with /ask.")
-    elif data == "menu_profile":
-        await q.message.reply_text("Open profile with /profile.")
-    else:
-        await q.message.reply_text("Unknown menu item.")
+        return await menu_quiz_handler(update, context)
+
+    # Catch-all so unknown menu_* never hangs
+    await q.message.reply_text("That menu item isn’t set up yet.")
 
 async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
+    data = q.data if q else ""
     await q.answer()
-    data = (q.data or "")
 
+    # 5-Q quick quiz
     if data == "quiz:mini5":
-        await _start_quiz(update, context, count=5)
-        return
+        try:
+            return await quiz5(update, context)  # your existing handler
+        except NameError:
+            pass
+        return await q.message.reply_text("Mini Quiz (5) isn’t wired to a handler.")
 
+    # Subject chooser for 10-Q
     if data == "quiz:mini10":
-        subjects = sorted({x.get("subject") for x in QUIZ_POOL if x.get("subject")})
-        if not subjects:
-            await q.message.reply_text("No subjects available in the quiz bank.")
-            return
-        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}")] for s in subjects]
+        subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
+        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}") ] for s in subjects]
         rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_quiz")])
-        await q.message.edit_text("Pick a subject for a 10-question test:",
-                                  reply_markup=InlineKeyboardMarkup(rows))
+        kb = InlineKeyboardMarkup(rows)
+        try:
+            await q.message.edit_text("Pick a subject for 10 questions:", reply_markup=kb)
+        except Exception:
+            await q.message.edit_reply_markup(reply_markup=kb)
         return
 
+    # Subjected 10-Q
     if data.startswith("quiz:sub:"):
         subject = data.split("quiz:sub:", 1)[1]
-        await _start_quiz(update, context, count=10, subject=subject)
-        return
+
+        # Prefer subject-specific functions if you already have them:
+        try:
+            if subject.lower() == "physics" and "quiz10physics" in globals():
+                return await quiz10physics(update, context)
+        except NameError:
+            pass
+
+        # Otherwise call your generic 10-Q function with subject support if you have it
+        try:
+            return await quiz10(update, context, subject=subject)  # if you implemented signature
+        except TypeError:
+            # Fallback: generic 10 without subject (still better than hanging)
+            try:
+                return await quiz10(update, context)
+            except NameError:
+                return await q.message.reply_text(f"Subject quiz for {subject} isn’t wired to a handler.")
+
+    # Optional extras
+    if data == "quiz:streaks":
+        try:
+            return await quiz_show_streaks(update, context)
+        except NameError:
+            return await q.message.reply_text("Streaks isn’t implemented yet.")
+
+    if data == "quiz:leaderboard":
+        try:
+            return await quiz_leaderboard(update, context)
+        except NameError:
+            return await q.message.reply_text("Leaderboard isn’t implemented yet.")
 
     if data == "menu:back":
-        await show_menu(update, context)   # go back to the main menu (correct signature)
-        return
+        try:
+            return await show_menu(update, context)
+        except NameError:
+            return await q.message.reply_text("Main menu isn’t available right now.")
     
 
 async def menu_back(update, context):
@@ -4279,35 +4332,28 @@ async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, wan
     return True
 
 async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Routes Ask follow-up buttons like ask:similar, ask:concept, etc."""
     q = update.callback_query
-    data = (q.data or "").strip()
+    data = q.data if q else ""
     await q.answer()
 
-    # Accept ask:similar, ask:concept, ask:steps, ask:explain, ask:prev, ask:next (+ optional :v1 etc.)
-    # Split once to get the action
-    parts = data.split(":", 2)  # ["ask", "similar", "v1"] or ["ask", "similar"]
-    action = parts[1] if len(parts) >= 2 else ""
+    # data like: ask:similar, ask:concept, ask:steps, ask:explain, ask:prev, ask:next
+    feature = data.split(":", 1)[1] if ":" in data else ""
 
-    # Map actions -> your callback function names (edit if your names differ)
+    # Map to your concrete handlers if present
     mapping = {
-        "similar": "ask_similar_cb",
-        "concept": "ask_concept_cb",
-        "steps":   "ask_steps_cb",
-        "explain": "ask_explain_cb",
-        "prev":    "ask_prev_cb",
-        "next":    "ask_next_cb",
+        "similar": "ask_similar",
+        "concept": "ask_concept",
+        "steps": "ask_steps",
+        "explain": "ask_explain",
+        "prev": "ask_prev",
+        "next": "ask_next",
     }
+    fn_name = mapping.get(feature)
+    if fn_name and fn_name in globals():
+        return await globals()[fn_name](update, context)
 
-    fn_name = mapping.get(action)
-    fn = globals().get(fn_name)
-    if callable(fn):
-        log.debug("ask_feature_router -> %s", fn_name)
-        await fn(update, context)
-        return
-
-    await q.message.reply_text("That Ask feature isn’t wired yet. Please try again later.")
-    log.warning("Ask feature router: no handler for %r (expected one of %s)", data, list(mapping))
+    # Graceful fallback so it never hangs
+    await q.message.reply_text(f"‘{feature}’ isn’t wired yet. (Button received ok.)")
 
 
 async def coach_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
