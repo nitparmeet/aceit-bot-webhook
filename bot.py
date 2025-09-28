@@ -5075,126 +5075,152 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             unlock_flow(context)
 
 
-async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import contextlib, html as _html
+async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+    """
+    Handles: ask_more:similar | ask_more:explain | (optionally) ask_more:flash
+    Uses ask_more_ctx (subject/question/explanation/answer) with legacy fallbacks.
+    Always sends a reply; never silently returns.
+    """
+    import contextlib, html as _html, re, logging
     from telegram.constants import ChatAction
     from telegram.error import BadRequest
+
+    log = logging.getLogger("aceit-bot")
 
     q = update.callback_query
     data = (q.data or "").strip()
     await q.answer()
 
+    # Remove inline keyboard if still present
     with contextlib.suppress(BadRequest, Exception):
         await q.edit_message_reply_markup(reply_markup=None)
 
+    # ---- pull context (quiz-first, then legacy) ----
     ctx_more  = context.user_data.get("ask_more_ctx") or {}
-    subject   = (ctx_more.get("subject")
-                 or context.user_data.get("ask_subject")
-                 or context.user_data.get("quiz_subject")
-                 or "NEET")
-    last_q    = (ctx_more.get("question")
-                 or context.user_data.get("ask_last_question")
-                 or "").strip()
+    subject   = (
+        ctx_more.get("subject")
+        or context.user_data.get("ask_subject")
+        or context.user_data.get("quiz_subject")
+        or "NEET"
+    )
+    last_q    = (ctx_more.get("question") or context.user_data.get("ask_last_question") or "").strip()
+    last_a    = (ctx_more.get("answer_text") or context.user_data.get("ask_last_answer") or "").strip()
+    expl_hint = (ctx_more.get("explanation") or "").strip()
+
+    log.info("[ask_followup] data=%s | subject=%s | last_q.len=%d | last_a.len=%d",
+             data, subject, len(last_q), len(last_a))
 
     if not last_q:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="I lost the last question’s context. Please use /ask again.",
+        return await context.bot.send_message(
+            chat_id=q.message.chat.id,
+            text="I lost the last question’s context. Please ask again with /ask.",
+            reply_to_message_id=q.message.message_id,
         )
-        return
 
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action=ChatAction.TYPING
-    )
+    # Typing indicator
+    with contextlib.suppress(Exception):
+        await q.message.chat.send_action(action=ChatAction.TYPING)
 
-    if data == "ask_more:similar":
-        text = _html.escape(make_similar_question(last_q))  # make_similar_question is yours
-    elif data == "ask_more:explain":
-        text = _html.escape(explain_concept(last_q, subject))  # explain_concept is yours
-    elif data == "ask_more:flash":
-        text = _html.escape(make_flashcard(last_q))  # optional
-    else:
-        text = "Unknown option."
-
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=text,
-        parse_mode="HTML",
-        disable_web_page_preview=True,
-    )
-
-    # --- helpers ---
+    # -------- helpers --------
     def _tg_chunks(s: str, n: int = 3800):
         s = s or ""
         for i in range(0, len(s), n):
             yield s[i:i+n]
 
     def _plainify(txt: str) -> str:
-        """Light cleanup to match 'AI notes' style: no asterisks/bullets, keep paragraphs."""
+        """Light cleanup: no asterisks/bullets; compact paragraphs."""
         if not txt:
             return ""
-        # remove markdown bold/italics markers and common bullet glyphs
         txt = txt.replace("**", "").replace("__", "").replace("_", "")
         txt = txt.replace("•", "")
-        # strip leading list markers like "* ", "- ", "1) ", "1. "
         txt = re.sub(r"(?m)^\s*([*+-]|\d+[.)])\s+", "", txt)
-        # collapse >2 consecutive newlines to exactly 2 (tidy paragraphs)
         txt = re.sub(r"\n{3,}", "\n\n", txt)
         return txt.strip()
 
-    mode = (data.split(":", 1)[1] if ":" in data else "explain").lower()
+    # -------- try your custom generators first, else LLM fallback --------
+    ok, text = False, ""
 
-    # --- Prompt builder with strict formatting contract ---
-    base_instructions = (
-        "Write in plain paragraphs. No asterisks, no bullets, no markdown, no code fences. "
-        "Keep it concise and readable like short notes."
-    )
+    try:
+        if data == "ask_more:similar":
+            if "make_similar_question" in globals():
+                # Your sync helper should return a string
+                text = str(globals()["make_similar_question"](last_q) or "").strip()
+                ok = bool(text)
+            elif "_gen_similar_questions" in globals():
+                ok, text = await globals()["_gen_similar_questions"](subject=subject, concept=last_q, n=1)
+            else:
+                # LLM fallback prompt
+                base_instructions = (
+                    "Write in plain paragraphs. No asterisks, no bullets, no markdown, no code fences. "
+                    "Keep it concise and readable like short notes."
+                )
+                prompt = (
+                    f"{base_instructions}\n"
+                    f"Create ONE NEET-style problem similar in concept and difficulty to the original, "
+                    f"then provide a brief worked solution and final answer. Use 2–4 short paragraphs total.\n\n"
+                    f"Subject: {subject}\n\n"
+                    f"Original problem:\n{last_q}\n"
+                    + (f"\nReference/approach (optional):\n{last_a}\n" if last_a else "")
+                )
+                raw = await call_openai(prompt)
+                text = raw or ""
+                ok = bool(text)
 
-    if mode in ("quickqa", "qna5"):
-        prompt = (
-            f"{base_instructions}\n"
-            f"Create five short NEET practice Q&A items based on the concept of the problem below. "
-            f"Each item should be 1–2 lines: a question then the answer on the next line. "
-            f"Separate items with a blank line. Do not number or bullet them.\n\n"
-            f"Subject: {subject}\n\n"
-            f"Problem:\n{last_q}\n"
-            + (f"\nReference solution (if helpful):\n{last_a}\n" if last_a else "")
-        )
-    elif mode == "similar":
-        prompt = (
-            f"{base_instructions}\n"
-            f"Create ONE NEET-style problem similar in concept and difficulty to the original. "
-            f"Then provide a brief worked solution and final answer. Use 2–4 short paragraphs total.\n\n"
-            f"Subject: {subject}\n\n"
-            f"Original problem:\n{last_q}\n"
-            + (f"\nReference/approach (optional):\n{last_a}\n" if last_a else "")
-        )
-    elif mode == "flash":
-        prompt = (
-            f"{base_instructions}\n"
-            f"Create five concise flashcard pairs (Q then A on next line) from the core ideas in the problem. "
-            f"No numbering or bullets. Separate pairs with a blank line.\n\n"
-            f"Subject: {subject}\n\n"
-            f"Problem:\n{last_q}"
-        )
-    else:  # "explain"
-        prompt = (
-            f"{base_instructions}\n"
-            f"Explain the key concepts behind solving this problem, then give a compact step-by-step approach, "
-            f"two tips, and a common pitfall—each as short paragraphs (no lists).\n\n"
-            f"Subject: {subject}\n\n"
-            f"Problem:\n{last_q}\n"
-            + (f"\nAuthor notes (optional):\n{expl_hint}\n" if expl_hint else "")
-            + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else "")
-        )
+        elif data == "ask_more:explain":
+            if "explain_concept" in globals():
+                text = str(globals()["explain_concept"](last_q, subject) or "").strip()
+                ok = bool(text)
+            elif "_gen_concept_explain" in globals():
+                ok, text = await globals()["_gen_concept_explain"](subject=subject, concept=last_q, hint=expl_hint)
+            else:
+                base_instructions = (
+                    "Write in plain paragraphs. No asterisks, no bullets, no markdown, no code fences. "
+                    "Keep it concise and readable like short notes."
+                )
+                prompt = (
+                    f"{base_instructions}\n"
+                    f"Explain the key concepts behind solving this problem, then give a compact step-by-step approach, "
+                    f"two tips, and a common pitfall—each as short paragraphs (no lists).\n\n"
+                    f"Subject: {subject}\n\n"
+                    f"Problem:\n{last_q}\n"
+                    + (f"\nAuthor notes (optional):\n{expl_hint}\n" if expl_hint else "")
+                    + (f"\nExisting solution (optional):\n{last_a}\n" if last_a else "")
+                )
+                raw = await call_openai(prompt)
+                text = raw or ""
+                ok = bool(text)
 
-    # typing indicator
-    with contextlib.suppress(Exception):
-        await q.message.chat.send_action(action=ChatAction.TYPING)
+        elif data == "ask_more:flash":
+            if "make_flashcard" in globals():
+                text = str(globals()["make_flashcard"](last_q) or "").strip()
+                ok = bool(text)
+            else:
+                base_instructions = (
+                    "Write in plain paragraphs. No asterisks, no bullets, no markdown, no code fences."
+                )
+                prompt = (
+                    f"{base_instructions}\n"
+                    f"Create five concise flashcard pairs (Q then A on next line) from the core ideas in the problem. "
+                    f"No numbering or bullets. Separate pairs with a blank line.\n\n"
+                    f"Subject: {subject}\n\n"
+                    f"Problem:\n{last_q}"
+                )
+                raw = await call_openai(prompt)
+                text = raw or ""
+                ok = bool(text)
 
-    # --- llm call ---
-    raw = await call_openai(prompt)  # your helper should return plain str
-    cleaned = _plainify(raw or "Could not generate a response right now.")
+        else:
+            text = "Unknown option."
+            ok = True
+
+    except Exception as e:
+        log.exception("[ask_followup] generation error")
+        ok, text = False, f"Sorry—couldn’t generate that right now. ({e})"
+
+    if not ok or not text:
+        text = "Sorry—couldn’t generate that right now."
+
+    cleaned = _plainify(text)
     safe_html = _html.escape(cleaned)
 
     for part in _tg_chunks(safe_html, 3800):
@@ -5205,6 +5231,7 @@ async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             disable_web_page_preview=True,
             reply_to_message_id=q.message.message_id,
         )
+    return
 
 
 # ========================= Predictor =========================
