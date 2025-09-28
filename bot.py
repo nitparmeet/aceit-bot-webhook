@@ -2006,7 +2006,34 @@ async def next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     # move to the next item / or show results when finished
     await _send_next(update, context)
-    
+
+async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Abort the active quiz and clean up the session."""
+    q = getattr(update, "callback_query", None)
+    if q:
+        await q.answer()
+        # best-effort: remove inline keyboard on the message the user is cancelling from
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        chat_id = q.message.chat.id
+    else:
+        chat_id = update.effective_chat.id
+
+    user_id = update.effective_user.id
+    had_session = bool(QUIZ_SESSIONS.pop(user_id, None))
+
+    msg = "❌ Quiz cancelled." if had_session else "No active quiz."
+    try:
+        if q:
+            await context.bot.send_message(chat_id=chat_id, text=msg)
+        else:
+            await update.effective_message.reply_text(msg)
+    except Exception:
+        pass
+
+
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5)
 
@@ -7127,7 +7154,7 @@ def register_handlers(app: Application) -> None:
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
-    #_add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
     # -------------------------------
     # Ask (Doubt) conversation
