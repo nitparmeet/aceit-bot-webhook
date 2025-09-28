@@ -6991,7 +6991,7 @@ def register_handlers(app: Application) -> None:
                 MessageHandler(filters.PHOTO, ask_receive_photo),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
             ],
-        ],
+        },
         fallbacks=[CommandHandler("cancel", cancel)],
         name="ask_conv",
         persistent=False,
