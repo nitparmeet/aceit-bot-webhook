@@ -3605,6 +3605,50 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True,
     )
 
+try:
+    import inspect  # stdlib
+    _fn = globals().get("_city_vibe_from_row")
+
+    if _fn is None:
+        # define the modern 2-arg version
+        def _city_vibe_from_row(city: str | None, state: str | None) -> str:
+            c = (str(city).strip() if city else "")
+            s = (str(state).strip() if state else "")
+            if c and s: return f"{c}, {s} — typical city–campus mix."
+            if s:       return f"{s} — regional hub feel."
+            return "—"
+        globals()["_city_vibe_from_row"] = _city_vibe_from_row
+
+    else:
+        # if an older 1-arg signature exists, wrap it
+        try:
+            if len(inspect.signature(_fn).parameters) == 1:
+                _old = _fn
+                def _city_vibe_from_row(city: str | None, state: str | None) -> str:
+                    loc = ", ".join([x for x in (city or "", state or "") if str(x).strip()])
+                    return _old(loc)  # delegate to old function
+                globals()["_city_vibe_from_row"] = _city_vibe_from_row
+        except Exception:
+            # if introspection fails, just provide a robust 2-arg fallback
+            def _city_vibe_from_row(city: str | None, state: str | None) -> str:
+                c = (str(city).strip() if city else "")
+                s = (str(state).strip() if state else "")
+                if c and s: return f"{c}, {s} — typical city–campus mix."
+                if s:       return f"{s} — regional hub feel."
+                return "—"
+            globals()["_city_vibe_from_row"] = _city_vibe_from_row
+
+except Exception:
+    # absolute fallback (very defensive)
+    def _city_vibe_from_row(city: str | None, state: str | None) -> str:
+        try:
+            c = (str(city).strip() if city else "")
+            s = (str(state).strip() if state else "")
+            if c and s: return f"{c}, {s} — typical city–campus mix."
+            if s:       return f"{s} — regional hub feel."
+            return "—"
+        except Exception:
+            return "—"
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Deterministic AI-notes style summary for the shortlist stored in user_data.
