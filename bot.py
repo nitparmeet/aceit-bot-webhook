@@ -1996,43 +1996,59 @@ async def next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     Advances the quiz to the next question. Triggered by callback_data='quiz:next'.
     Clears the old inline keyboard to avoid double presses, then delegates to _send_next().
     """
-    q = update.callback_query
-    await q.answer()
-    # best-effort: remove inline keyboard on the previous message
-    try:
-        await q.edit_message_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-
-    # move to the next item / or show results when finished
-    await _send_next(update, context)
-
-async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Abort the active quiz and clean up the session."""
     q = getattr(update, "callback_query", None)
     if q:
-        await q.answer()
-        # best-effort: remove inline keyboard on the message the user is cancelling from
+        try:
+            await q.answer()
+        except Exception:
+            pass
+        # best-effort: remove inline keyboard on the previous message
         try:
             await q.edit_message_reply_markup(reply_markup=None)
         except Exception:
             pass
+
+    # if session is gone, inform user gracefully
+    user_id = update.effective_user.id
+    if not QUIZ_SESSIONS.get(user_id):
+        chat_id = q.message.chat.id if q else update.effective_chat.id
+        await context.bot.send_message(chat_id=chat_id, text="No active quiz. Use /quiz5 or /quiz10.")
+        return
+
+    # actually advance to the next question
+    await _send_next(update, context)
+
+async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Abort the active quiz and clean up the session."""
+    import contextlib
+
+    q = getattr(update, "callback_query", None)
+    chat_id = update.effective_chat.id
+
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+        # best-effort: remove inline keyboard on the message the user is cancelling from
+        with contextlib.suppress(Exception):
+            await q.edit_message_reply_markup(reply_markup=None)
         chat_id = q.message.chat.id
-    else:
-        chat_id = update.effective_chat.id
 
     user_id = update.effective_user.id
+
+    # drop session (this is the only state that matters)
     had_session = bool(QUIZ_SESSIONS.pop(user_id, None))
 
-    msg = "❌ Quiz cancelled." if had_session else "No active quiz."
-    try:
-        if q:
-            await context.bot.send_message(chat_id=chat_id, text=msg)
-        else:
-            await update.effective_message.reply_text(msg)
-    except Exception:
-        pass
+    # (optional) clear any per-user quiz crumbs you might keep
+    with contextlib.suppress(Exception):
+        context.user_data.pop("quiz_mode", None)
+        context.user_data.pop("quiz_subject", None)
 
+    msg = "❌ Quiz cancelled." if had_session else "No active quiz."
+    with contextlib.suppress(Exception):
+        await context.bot.send_message(chat_id=chat_id, text=msg)
+
+    # hard return so nothing else in the calling flow runs
+    return
 
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5)
@@ -7125,10 +7141,7 @@ async def start_quiz_10(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return await _start_quiz(update, context, count=10)
 
 def register_handlers(app: Application) -> None:
-
-    """
-    Wire all PTB handlers exactly once. Safe to call multiple times.
-    """
+    """Wire all PTB handlers exactly once."""
     global _HANDLERS_WIRED
     if _HANDLERS_WIRED:
         log.warning("register_handlers() called again; ignoring second call")
@@ -7142,11 +7155,7 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
 
-    # --- Quick quiz commands ---
-    #_add(CommandHandler("quiz5",         quiz5), group=0)
-    #_add(CommandHandler("quiz10",        quiz10), group=0)
-    #_add(CommandHandler("quiz10physics", quiz10physics), group=0)
-    #_add(CommandHandler("quiz5medium",   quiz5medium), group=0)
+  
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
@@ -7166,9 +7175,7 @@ def register_handlers(app: Application) -> None:
         ],
         states={
             ASK_SUBJECT: [
-                # user types a subject name
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
-                # user taps an inline subject button like "ask:subject:Physics"
                 CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
             ],
             ASK_WAIT: [
@@ -7183,6 +7190,7 @@ def register_handlers(app: Application) -> None:
     )
     _add(ask_conv, group=1)
 
+
     # (Optional) legacy feature router, keep if you still use these buttons
     _add(
         CallbackQueryHandler(
@@ -7192,7 +7200,7 @@ def register_handlers(app: Application) -> None:
         group=0,
     )
 
-    # New “Ask more” buttons, including Quick Q&A (5)
+    # New “Ask more” buttons
     _add(CallbackQueryHandler(
         ask_followup_handler,
         pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
@@ -7202,9 +7210,13 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     _add(CommandHandler("quiz5", start_quiz_5), group=1)
     _add(CommandHandler("quiz10", start_quiz_10), group=1)
+
+    # Register `on_answer` **only once** (do NOT also add it in group=0)
     _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=1)
+
+    # Optional nav/cancel buttons
     _add(CallbackQueryHandler(next_question, pattern=r"^quiz:next$"), group=1)
-    _add(CallbackQueryHandler(cancel_quiz, pattern=r"^quiz:cancel$"), group=1)
+    _add(CallbackQueryHandler(cancel_quiz,  pattern=r"^quiz:cancel$"), group=1)
 
     log.info("✅ Handlers registered")
 
