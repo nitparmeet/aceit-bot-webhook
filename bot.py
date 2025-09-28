@@ -3632,6 +3632,13 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True,
     )
 
+user_ctx  = context.user_data or {}
+round_ui  = user_ctx.get("cutoff_round") or user_ctx.get("round") or "2025_R1"
+quota     = user_ctx.get("quota") or "AIQ"
+category  = user_ctx.get("category") or "General"
+
+# dataframe / dict used for lookups (both supported)
+df_lookup = context.application.bot_data.get("CUTOFFS_DF")
             
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -4005,6 +4012,8 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     round_ui, quota, category,
                     df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
                 )
+
+            
 
             fee_raw       = _pick(r, "total_fee", "Fee") or _pick(m, "total_fee", "Fee")
             fee_lakh      = _to_fee_lakh(fee_raw)
