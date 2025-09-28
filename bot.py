@@ -6994,8 +6994,10 @@ def register_handlers(app: Application) -> None:
     )
 
     # New “Ask more” buttons, including Quick Q&A (5)
-    _add(CallbackQueryHandler(ask_followup_handler, pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"), group=0))
-
+    _add(CallbackQueryHandler(
+        ask_followup_handler,
+        pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
+    ), group=0)
     # -------------------------------
     # Predictor conversation
     # -------------------------------
