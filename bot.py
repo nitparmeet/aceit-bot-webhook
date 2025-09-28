@@ -2575,8 +2575,8 @@ async def coach_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Notes-only coach: uses last_predict_shortlist, keeps order, no crosses."""
     tgt = _target(update) or update.effective_message
     ud = context.user_data or {}
-    shortlist = ud.get("last_predict_shortlist") or []
-    air = ud.get("last_predict_air")
+    shortlist = ud.get("LAST_SHORTLIST") or ud.get("last_predict_shortlist") or []
+    air = ud.get("rank_air") or ud.get("last_predict_air")
 
     if not shortlist:
         await tgt.reply_text("Run /predict first, then tap 🧠 AI Notes.")
@@ -3458,8 +3458,8 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     ud = context.user_data or {}
-    shortlist = ud.get("last_predict_shortlist") or []
-    air = ud.get("last_predict_air")
+    shortlist = ud.get("LAST_SHORTLIST") or ud.get("last_predict_shortlist") or []
+    air = ud.get("rank_air") or ud.get("last_predict_air")
 
     if not shortlist:
         await q.edit_message_text("No shortlist in memory. Please run /predict first.")
@@ -3495,7 +3495,131 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import math, os
+    """Build & send AI-style notes for the most recent shortlist (top 10)."""
+    try:
+        # UX: show typing + status message
+        if update.callback_query:
+            await update.callback_query.answer()
+        chat_id = update.effective_chat.id
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        status = await context.bot.send_message(chat_id=chat_id, text="🧠 Working on AI notes for your top colleges…")
+
+        # Get the shortlist saved by _finish_predict_now (or older key as fallback)
+        ud = context.user_data or {}
+        items = ud.get("LAST_SHORTLIST") or ud.get("last_predict_shortlist") or []
+        air = ud.get("rank_air") or ud.get("last_predict_air")
+
+        # If nothing stored, build a quick shortlist so user isn’t stuck
+        if not items:
+            ud["require_pg_quota"] = None
+            ud["avoid_bond"] = None
+            items = shortlist_and_score(COLLEGES, ud, cutoff_lookup=CUTOFF_LOOKUP) or []
+            items = _dedupe_results(items)
+        items = items[:10]
+        if not items:
+            await status.edit_text("I couldn’t find any shortlisted colleges to summarize. Run /predict first.")
+            return
+
+        # Build master indices for enrichment (safe if COLLEGES is df or list)
+        try:
+            master_rows = COLLEGES.to_dict("records") if hasattr(COLLEGES, "to_dict") else (COLLEGES if isinstance(COLLEGES, list) else [])
+        except Exception:
+            master_rows = COLLEGES if isinstance(COLLEGES, list) else []
+        idx_by_code, idx_by_id, idx_by_name = {}, {}, {}
+        for row in master_rows:
+            if not isinstance(row, dict):
+                continue
+            code = _safe_str(row.get("college_code") or row.get("code"))
+            cid  = _safe_str(row.get("college_id")  or row.get("institute_code"))
+            nm   = _safe_str(row.get("college_name") or row.get("College Name")).lower()
+            if code: idx_by_code[code] = row
+            if cid:  idx_by_id[cid] = row
+            if nm:   idx_by_name[nm] = row
+
+        # context for closing-rank lookup
+        round_ui = ud.get("cutoff_round") or ud.get("round") or "2025_R1"
+        quota    = ud.get("quota") or "AIQ"
+        category = ud.get("category") or "General"
+        df_lookup = context.application.bot_data.get("CUTOFFS_DF")
+
+        # Prepare deterministic rich notes (offline)
+        blocks = []
+        for i, r in enumerate(items, 1):
+            if not isinstance(r, dict):
+                continue
+
+            # try to join with master row using several IDs
+            name_key = _safe_str(r.get("college_name") or r.get("College Name")).lower()
+            mr = (
+                idx_by_code.get(_safe_str(r.get("college_code") or r.get("code"))) or
+                idx_by_id.get(_safe_str(r.get("college_id") or r.get("institute_code"))) or
+                idx_by_name.get(name_key) or
+                {}
+            )
+
+            name  = _safe_str(r.get("college_name") or r.get("College Name") or mr.get("college_name") or mr.get("College Name")) or "Unknown college"
+            state = _safe_str(r.get("state") or r.get("State") or mr.get("state") or mr.get("State"))
+            city  = _safe_str(r.get("city")  or r.get("City")  or mr.get("city")  or mr.get("City"))
+            place = ", ".join([x for x in (city, state) if x])
+
+            # robust closing-rank resolution
+            closing = r.get("ClosingRank") or r.get("closing") or r.get("rank")
+            if _is_missing(closing):
+                ids = [r.get("college_code"), r.get("code"), r.get("college_id"), r.get("institute_code"), name]
+                closing = _closing_rank_for_identifiers(
+                    [x for x in ids if not _is_missing(x)],
+                    round_ui, quota, category,
+                    df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
+                )
+
+            fee          = r.get("total_fee") or r.get("Fee") or mr.get("total_fee") or mr.get("Fee")
+            ownership    = r.get("ownership") or mr.get("ownership")
+            pg_quota     = r.get("pg_quota")  or mr.get("pg_quota")
+            bond_years   = r.get("bond_years") if not _is_missing(r.get("bond_years")) else mr.get("bond_years")
+            bond_penalty = r.get("bond_penalty_lakhs") if not _is_missing(r.get("bond_penalty_lakhs")) else mr.get("bond_penalty_lakhs")
+            hostel_avail = r.get("hostel_available") if not _is_missing(r.get("hostel_available")) else mr.get("hostel_available")
+
+            header   = f"{i}. {name}" + (f", {place}" if place else "")
+            rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
+            fee_ln   = f"Annual Fee: {_fmt_money(fee)}"
+            why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail)
+            vibe_ln  = "City & campus vibe: " + _city_vibe_from_row(city, state)
+            pg_ln    = f"PG Quota: {_yn(pg_quota)}"
+            bond_ln  = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
+            hostel_ln= f"Hostel: {_yn(hostel_avail)}"
+
+            blocks.append("\n".join([header, rank_ln, fee_ln, why_ln, vibe_ln, pg_ln, bond_ln, hostel_ln]))
+
+        # Try LLM summary; fall back to deterministic
+        # (Optional: if you want the same LLM text as coach_start/coach_notes_cb)
+        try:
+            facts = []
+            for i, r in enumerate(items[:10], 1):
+                nr = _norm_row_for_cache(r)
+                facts.append({
+                    "rank": i,
+                    "code": nr.get("college_code"),
+                    "name": nr.get("college_name"),
+                    "state": nr.get("state"),
+                    "closing_rank": _to_int(nr.get("ClosingRank")),
+                    "nirf": _to_int(nr.get("nirf_rank_medical_latest")),
+                    "fee": _to_fee_lakh(nr.get("total_fee")),
+                    "ownership": nr.get("ownership"),
+                    "hostel": (True if r.get("hostel_available") is True else None),
+                })
+            llm_text = _notes_via_llm(facts, air)
+        except Exception:
+            llm_text = None
+
+        ai_text = llm_text or "\n\n".join(blocks)
+        await status.edit_text(ai_text)
+
+    except Exception:
+        log.exception("[ai_notes] failed")
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Couldn't prepare AI notes.")
+        except Exception:
+            pass
 
 
 async def quiz_start_mini5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6141,6 +6265,8 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
         top = results[:10]
         # remember these for AI notes (use the actual rows, not just the display compact)
         context.user_data["LAST_SHORTLIST"] = top
+        context.user_data["last_predict_shortlist"] = top
+        context.user_data["last_predict_air"] = context.user_data.get("rank_air") or context.user_data.get("air")
 
         # let the formatter resolve ranks via df lookup
         for r in top:
@@ -6441,8 +6567,7 @@ def _resolve_excel_path() -> str:
     if _has("coach_notes_cb"):
         _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
 
-    if _has("ai_notes_from_shortlist"):
-        _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)
+   
 
 
     # --- Unknown callbacks last (safety net) ---
