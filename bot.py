@@ -1938,10 +1938,9 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         report_html = format_quiz_report(score, total, details)
 
         # Telegram-safe chunking (keep HTML parse_mode)
-        for i in range(0, len(report_html), 3800):
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=report_html[i:i+3800],
+        for i0 in range(0, len(report_html), 3800):
+            await update.effective_message.reply_text(
+                report_html[i0:i0+3800],
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
