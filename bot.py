@@ -328,15 +328,49 @@ def _inst_type_from_row(r: dict) -> str:
         return "Government medical college"
     return own or "Medical college"
 
-def _city_vibe_from_row(r: dict) -> str:
-    city  = _safe_upper(r.get("city") or r.get("City"))
-    state = _safe_upper(r.get("state") or r.get("State"))
-    metro_cities = {"DELHI","NEW DELHI","MUMBAI","PUNE","BENGALURU","BANGALORE","HYDERABAD","CHENNAI","KOLKATA","AHMEDABAD"}
-    metro_states = {"DELHI (NCT)","DELHI","MAHARASHTRA","KARNATAKA","TELANGANA","TAMIL NADU","WEST BENGAL"}
-    if city in metro_cities or state in metro_states or "DELHI" in state:
-        return "Metro pace; higher living costs; English/Hindi widely used"
-    return "Calmer pace; mid living costs; local language common"
+def _city_vibe_from_row(city_or_row, state=None):
+    """
+    Works in BOTH modes:
+    - New: _city_vibe_from_row(city:str|None, state:str|None)
+    - Old: _city_vibe_from_row(row:dict-like)
+    """
+    # If we already had an implementation, branch based on its signature
+    if _orig_city_vibe:
+        try:
+            sig = inspect.signature(_orig_city_vibe)
+            params = list(sig.parameters.values())
+            if len(params) == 1:
+                # Legacy: expects a single row-like object with .get()
+                if isinstance(city_or_row, dict):
+                    row = city_or_row
+                else:
+                    # Build a pseudo-row from the two strings we received
+                    row = {
+                        "city":  city_or_row,
+                        "City":  city_or_row,
+                        "state": state,
+                        "State": state,
+                    }
+                return _orig_city_vibe(row)
+            else:
+                # Newer: allows (city, state) directly
+                return _orig_city_vibe(city_or_row, state)
+        except Exception:
+            # Fall through to robust default below
+            pass
 
+    # Robust default text if neither path worked
+    city = (str(city_or_row).strip() if city_or_row else "")
+    st   = (str(state).strip() if state else "")
+    if city and st:
+        return f"{city}, {st} — typical city–campus mix."
+    if st:
+        return f"{st} — regional hub feel."
+    return "—"
+
+
+
+_orig_city_vibe = globals().get("_city_vibe_from_row")
 def get_openai_client():
     return _get_openai_client()
 
