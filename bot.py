@@ -1923,13 +1923,16 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             if ok:
                 score += 1
 
-            your_text = q["options"][ua] if 0 <= ua < len(q["options"]) else "—"
-            corr_text = q["options"][ca]
+            # Build one detail object per question — this powers the report.
             details.append({
-                "question": q["question"],
-                "your_text": your_text,
-                "correct_text": corr_text,
-                "explanation": q.get("explanation", ""),
+                "question": q.get("question"),
+                "options": opts,                # needed so the formatter can map indices -> text
+                "user_index": ua,               # your selected option index
+                "correct_index": ca,            # correct option index
+                "user_answer_text": (opts[ua] if 0 <= ua < len(opts) else None),
+                "correct_text": (opts[ca] if 0 <= ca < len(opts) else None),
+                "explanation": q.get("explanation"),
+                "correct": ok,
             })
 
         report_html = format_quiz_report(score, total, details)
