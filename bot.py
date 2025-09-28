@@ -1898,76 +1898,83 @@ def _keyboard_for(q: Dict[str, Any]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send the next question or, if finished, grade and show a clean report."""
+    """Send the next question or grade. Guarded with an inflight lock to avoid duplicates."""
     user_id = update.effective_user.id
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
-        await update.effective_message.reply_text("No active quiz. Use /quiz5 or /quiz10.")
+        # no session; stay quiet or inform the user
+        with contextlib.suppress(Exception):
+            await update.effective_message.reply_text("No active quiz. Use /quiz5 or /quiz10.")
         return
 
-    # touch session so it doesn't get GC'd by any idle cleanup you might add
-    sess["last_active"] = time.time()
-
-    i = int(sess.get("index", 0))
-    qs: List[Dict[str, Any]] = sess["questions"]
-    total = len(qs)
-
-    # -------- finished: grade ----------
-    if i >= total:
-        answers: Dict[str, int] = sess["answers"]
-        score = 0
-        details: List[Dict[str, Any]] = []
-
-        for q in qs:
-            qid  = q["id"]
-            opts = q.get("options") or []
-            ua   = answers.get(qid, -1)                 # user index (or -1 if skipped)
-            ca   = int(q.get("answer_index", -1))       # correct index
-            ok   = (ua == ca)
-
-            if ok:
-                score += 1
-
-            details.append({
-                "question": q.get("question"),
-                "options": opts,                                       # <-- needed by formatter
-                "user_index": ua,
-                "correct_index": ca,
-                "user_answer_text": (opts[ua] if 0 <= ua < len(opts) else None),
-                "correct_text": (opts[ca] if 0 <= ca < len(opts) else None),
-                "explanation": q.get("explanation"),
-                "correct": ok,
-            })
-
-        report_html = format_quiz_report(score, total, details)
-
-        # Telegram-safe chunking
-        for off in range(0, len(report_html), 3800):
-            await update.effective_message.reply_text(
-                report_html[off:off+3800],
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-
-        QUIZ_SESSIONS.pop(user_id, None)   # end session
+    if sess.get("inflight"):
+        # another path is already sending; bail out
         return
 
-    # -------- still running: send next ----------
-    q = qs[i]
-    sess["index"] = i + 1                  # advance pointer now
-    sess["last_active"] = time.time()      # refresh activity timestamp
+    sess["inflight"] = True
+    try:
+        qs: list[dict] = sess["questions"]
+        i = int(sess["index"])
+        total = len(qs)
 
-    await update.effective_message.reply_text(
-        _format_question(q, i, total),
-        reply_markup=_keyboard_for(q)
-    )
+        # --- Done? Grade & report
+        if i >= total:
+            answers: dict[str, int] = sess["answers"]
+            details: list[dict] = []
+            score = 0
 
-    # --- still questions left: send the next one ---
-    q = qs[i]
-    await update.effective_message.reply_text(
-        _format_question(q, i, total),
-        reply_markup=_keyboard_for(q)
-    )
+            for idx, q in enumerate(qs, 1):
+                qid = q["id"]
+                opts = q.get("options") or []
+                ca = q["answer_index"]
+                ua = answers.get(qid, -1)
+                ok = (ua == ca)
+                if ok:
+                    score += 1
+
+                details.append({
+                    "question": q.get("question") or "",
+                    "correct": ok,
+                    "options": opts,
+                    "correct_index": ca,
+                    "user_index": ua,
+                    "user_answer_text": opts[ua] if 0 <= ua < len(opts) else None,
+                    "explanation": q.get("explanation") or None,
+                })
+
+            # Your existing HTML formatter:
+            report_html = format_quiz_report(score, total, details)
+
+            # Send in Telegram-safe chunks
+            for i0 in range(0, len(report_html), 3800):
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=report_html[i0:i0+3800],
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+
+            # Cleanup
+            QUIZ_SESSIONS.pop(user_id, None)
+            return
+
+        # --- Ask next question
+        q = qs[i]
+
+        # Compose prompt + keyboard
+        text = _format_question(q, i, total)          # show "Q{i+1}/{total}" etc.
+        kb   = _keyboard_for(q)                        # InlineKeyboardMarkup with callback_data="ans:<qid>:<idx>"
+
+        # Send the message; store msg id to prevent accidental duplication
+        msg = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            reply_markup=kb
+        )
+        sess["last_msg_id"] = msg.message_id
+
+    finally:
+        sess["inflight"] = False
 
 async def _start_quiz(
     update: Update,
@@ -1978,77 +1985,73 @@ async def _start_quiz(
     difficulty: Optional[int] = None,
     tags_any: Optional[List[str]] = None,
 ) -> None:
-    """Initialize a quiz session and send the first question."""
+    """Initialize a fresh quiz session and send the first question exactly once."""
+    import time
     ensure_quiz_ready()
-    qs = _pick_qs(QUIZ_POOL, subject=subject, difficulty=difficulty, tags_any=tags_any, count=count, shuffle=True)
-    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+
+    qs = _pick_qs(
+        QUIZ_POOL,
+        subject=subject,
+        difficulty=difficulty,
+        tags_any=tags_any,
+        count=count,
+        shuffle=True,
+    )
+
+    target_msg = getattr(update, "effective_message", None)
     if not qs:
-        if target:
-            await target.reply_text("No questions match those filters. Try again.")
+        if target_msg:
+            await target_msg.reply_text("No questions match those filters. Try again.")
         return
-    QUIZ_SESSIONS[update.effective_user.id] = {"questions": qs, "answers": {}, "index": 0}
-    await _send_next(update, context)
+
+    user_id = update.effective_user.id
+
+    # Overwrite any stale session with the new, lock-aware shape
+    QUIZ_SESSIONS[user_id] = {
+        "questions": qs,
+        "answers": {},        # qid -> user_index
+        "index": 0,
+        "inflight": False,    # sending/grading guard (used by _send_next)
+        "last_msg_id": None,  # last question message we sent
+        "created_at": time.time(),
+    }
+
+    # Delegate to the single sender; it is lock-guarded to avoid duplicates
+    try:
+        await _send_next(update, context)
+    except Exception:
+        # Make sure a broken start doesn't leave a half-baked session around
+        QUIZ_SESSIONS.pop(user_id, None)
+        raise
 
 # public commands
 
 async def next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Advances the quiz to the next question. Triggered by callback_data='quiz:next'.
-    Clears the old inline keyboard to avoid double presses, then delegates to _send_next().
-    """
-    q = getattr(update, "callback_query", None)
-    if q:
-        try:
-            await q.answer()
-        except Exception:
-            pass
-        # best-effort: remove inline keyboard on the previous message
-        try:
-            await q.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-
-    # if session is gone, inform user gracefully
-    user_id = update.effective_user.id
-    if not QUIZ_SESSIONS.get(user_id):
-        chat_id = q.message.chat.id if q else update.effective_chat.id
-        await context.bot.send_message(chat_id=chat_id, text="No active quiz. Use /quiz5 or /quiz10.")
-        return
-
-    # actually advance to the next question
+    """Manual 'Next' button (if you show one). Just clears KB and delegates."""
+    qcb = update.callback_query
+    with contextlib.suppress(Exception):
+        await qcb.answer()
+    with contextlib.suppress(Exception):
+        await qcb.edit_message_reply_markup(reply_markup=None)
     await _send_next(update, context)
 
 async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Abort the active quiz and clean up the session."""
-    import contextlib
-
     q = getattr(update, "callback_query", None)
     chat_id = update.effective_chat.id
-
     if q:
         with contextlib.suppress(Exception):
             await q.answer()
-        # best-effort: remove inline keyboard on the message the user is cancelling from
         with contextlib.suppress(Exception):
             await q.edit_message_reply_markup(reply_markup=None)
         chat_id = q.message.chat.id
 
     user_id = update.effective_user.id
-
-    # drop session (this is the only state that matters)
     had_session = bool(QUIZ_SESSIONS.pop(user_id, None))
 
-    # (optional) clear any per-user quiz crumbs you might keep
     with contextlib.suppress(Exception):
-        context.user_data.pop("quiz_mode", None)
-        context.user_data.pop("quiz_subject", None)
+        await context.bot.send_message(chat_id=chat_id, text="❌ Quiz cancelled." if had_session else "No active quiz.")
 
-    msg = "❌ Quiz cancelled." if had_session else "No active quiz."
-    with contextlib.suppress(Exception):
-        await context.bot.send_message(chat_id=chat_id, text=msg)
-
-    # hard return so nothing else in the calling flow runs
-    return
 
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5)
@@ -2063,74 +2066,65 @@ async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _start_quiz(update, context, count=5, difficulty=2)
 
 # button click handler
+Answer handler (stale-press safe + no duplicate sending)
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    import time, contextlib
+    """Handle 'ans:<qid>:<opt_idx>' and immediately advance to the next question."""
+    qcb = update.callback_query
+    await qcb.answer()
+    with contextlib.suppress(Exception):
+        await qcb.edit_message_reply_markup(reply_markup=None)  # clear old keyboard
 
-    q = update.callback_query
-    await q.answer()
-
-    data = (q.data or "")
+    data = qcb.data or ""
     if not data.startswith("ans:"):
         return
 
-    # Payload is expected as: "ans:<question_id>:<index>"
     try:
-        _, qid, idx_str = data.split(":", 2)
+        _, qid, idx_str = data.split(":")
         chosen = int(idx_str)
     except Exception:
         with contextlib.suppress(Exception):
-            await q.edit_message_text("Invalid answer payload.")
+            await qcb.edit_message_text("Invalid answer payload.")
         return
 
     user_id = update.effective_user.id
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
         with contextlib.suppress(Exception):
-            await q.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
+            await qcb.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
         return
 
-    # keep session warm
-    sess["last_active"] = time.time()
-
-    qs: List[Dict[str, Any]] = sess.get("questions", [])
-    i = int(sess.get("index", 0))
+    qs: list[dict] = sess["questions"]
+    i = int(sess["index"])
     if i >= len(qs):
         with contextlib.suppress(Exception):
-            await q.edit_message_text("Already finished. Use /quiz5 to start again.")
+            await qcb.edit_message_text("Already finished. Use /quiz5 to start again.")
         return
 
-    curr = qs[i]
-    if str(curr.get("id")) != str(qid):
-        # Stale press for an older inline keyboard
-        await q.answer("That question has already moved on.", show_alert=False)
-        with contextlib.suppress(Exception):
-            await q.edit_message_reply_markup(reply_markup=None)
+    q = qs[i]
+
+    # Ignore stale button presses for older questions
+    if str(q.get("id")) != str(qid):
+        await qcb.answer("That question already moved on.", show_alert=False)
         return
 
-    # Record the answer
-    sess.setdefault("answers", {})[qid] = chosen
+    # Record answer
+    sess["answers"][qid] = chosen
     sess["index"] = i + 1
-    sess["last_active"] = time.time()
 
-    # Immediate feedback (safe lookups)
-    opts = curr.get("options") or []
-    ca   = int(curr.get("answer_index", -1))
-    user_txt = opts[chosen] if 0 <= chosen < len(opts) else "—"
-    cor_txt  = opts[ca]     if 0 <= ca     < len(opts) else "—"
-    fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
-
-    # Remove buttons and show feedback inline; fall back to a new message if needed
-    with contextlib.suppress(Exception):
-        await q.edit_message_reply_markup(reply_markup=None)
+    # Optional lightweight feedback (avoid heavy edits to minimize 400s)
     try:
-        await q.edit_message_text(
-            f"{_format_question(curr, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
-        )
+        ca = q["answer_index"]
+        cor_txt = q["options"][ca]
+        if chosen == ca:
+            fb = "✅ Correct!"
+        else:
+            fb = f"❌ Incorrect. Correct: {cor_txt}"
+        # Put a tiny note below the original message (don’t re-render the whole question)
+        await context.bot.send_message(chat_id=qcb.message.chat.id, text=fb, reply_to_message_id=qcb.message.message_id)
     except Exception:
-        with contextlib.suppress(Exception):
-            await q.message.reply_text(fb)
+        pass
 
-    # Continue to next question or grade
+    # Move to the next question (guarded by inflight inside)
     await _send_next(update, context)
 
 # small diag command
@@ -7132,13 +7126,34 @@ def _has_all(*names: str) -> bool:
 
 from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
 
-async def start_quiz_5(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # start a 5-question quiz
-    return await _start_quiz(update, context, count=5)
+async def start_quiz_5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz_common(update, context, n=5)
 
-async def start_quiz_10(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # start a 10-question quiz
-    return await _start_quiz(update, context, count=10)
+async def start_quiz_10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz_common(update, context, n=10)
+
+async def _start_quiz_common(update: Update, context: ContextTypes.DEFAULT_TYPE, n: int) -> None:
+    """Create a fresh session and send ONLY ONE first question."""
+    user_id = update.effective_user.id
+
+    qs = load_quiz_questions(n)  # returns list[dict] with keys: id, question, options, answer_index, explanation?
+    if not qs:
+        await update.effective_message.reply_text("Sorry, quiz questions are unavailable right now.")
+        return
+
+    # New session (overwrite any stale one)
+    QUIZ_SESSIONS[user_id] = {
+        "questions": qs,
+        "index": 0,
+        "answers": {},           # qid -> user_index
+        "inflight": False,       # sending/grading lock
+        "last_msg_id": None,     # last message we sent for the question
+        "created_at": time.time()
+    }
+
+    # Send the first question once
+    await _send_next(update, context)
+
 
 def register_handlers(app: Application) -> None:
     """Wire all PTB handlers exactly once."""
@@ -7208,7 +7223,7 @@ def register_handlers(app: Application) -> None:
 
     # Quiz: start, answer, navigation
     # -------------------------------
-    _add(CommandHandler("quiz5", start_quiz_5), group=1)
+    _add(CommandHandler("quiz5",  start_quiz_5), group=1)
     _add(CommandHandler("quiz10", start_quiz_10), group=1)
 
     # Register `on_answer` **only once** (do NOT also add it in group=0)
