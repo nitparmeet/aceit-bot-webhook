@@ -7072,6 +7072,14 @@ def _has_all(*names: str) -> bool:
 
 from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
 
+async def start_quiz_5(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # start a 5-question quiz
+    return await _start_quiz(update, context, count=5)
+
+async def start_quiz_10(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # start a 10-question quiz
+    return await _start_quiz(update, context, count=10)
+
 def register_handlers(app: Application) -> None:
 
     """
@@ -7079,13 +7087,10 @@ def register_handlers(app: Application) -> None:
     """
     global _HANDLERS_WIRED
     if _HANDLERS_WIRED:
-        # Already wired; avoid double-registration (which causes duplicate messages)
         log.warning("register_handlers() called again; ignoring second call")
         return
     _HANDLERS_WIRED = True
-    
-    """Attach all handlers once, with no duplicates and clear routing."""
-    
+
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
 
@@ -7094,10 +7099,10 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("menu", show_menu), group=0)
 
     # --- Quick quiz commands ---
-    _add(CommandHandler("quiz5",         quiz5), group=0)
-    _add(CommandHandler("quiz10",        quiz10), group=0)
-    _add(CommandHandler("quiz10physics", quiz10physics), group=0)
-    _add(CommandHandler("quiz5medium",   quiz5medium), group=0)
+    #_add(CommandHandler("quiz5",         quiz5), group=0)
+    #_add(CommandHandler("quiz10",        quiz10), group=0)
+    #_add(CommandHandler("quiz10physics", quiz10physics), group=0)
+    #_add(CommandHandler("quiz5medium",   quiz5medium), group=0)
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
@@ -7105,7 +7110,7 @@ def register_handlers(app: Application) -> None:
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
-    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+    #_add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
     # -------------------------------
     # Ask (Doubt) conversation
