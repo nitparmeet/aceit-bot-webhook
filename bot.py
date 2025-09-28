@@ -82,12 +82,7 @@ _openai_client: Optional["OpenAI"] = None
 
 _client_singleton = None
 
-application.add_handler(CallbackQueryHandler(
-    ask_more_router, pattern=r"^ask_more:(quickqa|qna5)$"
-))
-application.add_handler(CallbackQueryHandler(
-    ask_followup_handler, pattern=r"^ask_more:(similar|explain|flash)$"
-))
+
     
 def _new_token(n=8) -> str:
     # 8 hex chars, upper → short but unique per session
@@ -3384,8 +3379,8 @@ async def menu_back(update, context):
     await show_menu(update)
 
 # States
-ASK_SUBJECT = 105
-ASK_WAIT = 100
+ASK_SUBJECT = 1001
+ASK_WAIT    = 1002
 
 ASK_AIR, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF = range(300, 307)
 
@@ -6987,12 +6982,16 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
         ],
         states={
-            ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
+            # Let users pick subject via inline keyboard OR by typing
+            ASK_SUBJECT: [
+                CallbackQueryHandler(ask_subject_pick, pattern=r"^ask:subject:"),  # inline subject buttons
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select), # typed subject
+            ],
             ASK_WAIT: [
                 MessageHandler(filters.PHOTO, ask_receive_photo),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
             ],
-        },
+        ],
         fallbacks=[CommandHandler("cancel", cancel)],
         name="ask_conv",
         persistent=False,
@@ -7000,7 +6999,16 @@ def register_handlers(app: Application) -> None:
     )
     _add(ask_conv, group=1)
 
-    # Ask follow-ups (Similar / Concept / etc.) — keep before menu router
+# -------------------------------
+# Ask follow-ups (Similar / Explain / Quick Q&A)
+# -------------------------------
+# New buttons you render under answers (ask_more:*)
+    _add(CallbackQueryHandler(
+        ask_followup_handler,
+        pattern=r"^ask_more:(similar|explain|quickqa|qna5)$"
+    ), group=0)
+
+# Keep legacy router for any older callback payloads still out there (ask:*)
     _add(CallbackQueryHandler(
         ask_feature_router,
         pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
