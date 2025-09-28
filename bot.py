@@ -82,7 +82,12 @@ _openai_client: Optional["OpenAI"] = None
 
 _client_singleton = None
 
-
+application.add_handler(CallbackQueryHandler(
+    ask_more_router, pattern=r"^ask_more:(quickqa|qna5)$"
+))
+application.add_handler(CallbackQueryHandler(
+    ask_followup_handler, pattern=r"^ask_more:(similar|explain|flash)$"
+))
     
 def _new_token(n=8) -> str:
     # 8 hex chars, upper → short but unique per session
@@ -4585,23 +4590,33 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = (q.data or "").strip()
     await q.answer()
 
-    subject = context.user_data.get("ask_subject")
-    concept = context.user_data.get("ask_last_question")
+    subject = (context.user_data.get("ask_subject")
+               or (context.user_data.get("ask_more_ctx") or {}).get("subject")
+               or "NEET")
+    concept = (context.user_data.get("ask_last_question")
+               or (context.user_data.get("ask_more_ctx") or {}).get("question")
+               or "")
 
-    if data == "ask_more:quickqa":
+    if data in ("ask_more:quickqa", "ask_more:qna5"):
         with contextlib.suppress(Exception):
-            await q.message.edit_reply_markup(reply_markup=None)
-        with contextlib.suppress(Exception):
-            await q.message.chat.send_action(action=ChatAction.TYPING)
+            await q.edit_message_reply_markup(reply_markup=None)
+
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.TYPING
+        )
 
         ok, text = await _gen_quick_qna(subject=subject, concept=concept, n=5)
-        txt = text if ok else "Couldn’t generate practice questions this time."
+        if not ok:
+            text = "Couldn't generate quick Q&A right now."
 
-        for i in range(0, len(txt), 3800):
-            await update.effective_chat.send_message(
-                txt[i:i+3800], parse_mode="HTML", disable_web_page_preview=True
+        # send in chunks (Telegram limit safe slice)
+        for i in range(0, len(text), 3800):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text[i:i+3800],
+                parse_mode="HTML",
+                disable_web_page_preview=True,
             )
-        return
 
 async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, want: str) -> bool:
     """
@@ -4691,9 +4706,14 @@ async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ok = await guard_or_block(update, context, "ask")
     if not ok:
         return ConversationHandler.END
+
     log.info("ask_start()")
-    context.user_data.pop("ask_subject", None)
-    context.user_data.pop("ask_last_question", None)
+
+    # Clear any stale follow-up context (old and new keys)
+    ud = context.user_data
+    for k in ("ask_subject", "ask_last_question", "ask_last_answer", "ask_more_ctx"):
+        ud.pop(k, None)
+
     tgt = _target(update)
     await tgt.reply_text(
         "💬 *Ask a NEET doubt*\nFirst, pick a subject (optional).",
@@ -4868,16 +4888,11 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # very light sanitizer → HTML-safe + normalize bullets/newlines
     def _clean_to_html(s: str) -> str:
         s = s or ""
-        # If upstream already used <b>, <i>, etc., keep them; escape everything else safely
-        # First, escape fully…
         esc = html.escape(s, quote=False)
-        # …then revert our minimal allowlist tags if model produced them literally
         esc = esc.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
         esc = esc.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
         esc = esc.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
-        # normalize bullets
         esc = esc.replace("&bull;", "•")
-        # Telegram HTML supports plain newlines; no <br> needed
         return esc
 
     try:  # OUTER try
@@ -4901,10 +4916,28 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             ok, res = False, f"Error contacting solver: {e}"
 
-        context.user_data["ask_last_question"] = q
-        context.user_data["ask_last_answer"]  = res if ok else ""
-        
+        # Clean + stash legacy keys
         text = _clean_to_html(res if ok else f"Error: {res}")
+        context.user_data["ask_last_question"] = q
+        context.user_data["ask_last_answer"]  = text if ok else ""
+
+        # >>>>>>>>>>>>>>>>>>  FOLLOW-UP CONTEXT PATCH  <<<<<<<<<<<<<<<<<
+        if ok:
+            detected_subject = subject or "NEET"
+            answer_html = text                     # we’re sending HTML
+            explanation_html = ""                  # set if you generate one
+
+            context.user_data["ask_more_ctx"] = {
+                "subject": detected_subject,
+                "question": q,
+                "answer_text": answer_html,
+                "explanation": explanation_html,
+            }
+            # Legacy keys (your follow-up handlers also read these)
+            context.user_data["ask_subject"] = detected_subject
+            context.user_data["ask_last_question"] = q
+            context.user_data["ask_last_answer"] = answer_html
+        # >>>>>>>>>>>>>>>>>  END FOLLOW-UP CONTEXT PATCH  <<<<<<<<<<<<<<
 
         # Try editing the “working…” message first; if that fails, fall back to sends
         try:
@@ -5029,47 +5062,53 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             unlock_flow(context)
 
 
-async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
-    """
-    Handles:
-      ask_more:similar | ask_more:explain | ask_more:flash | ask_more:quickqa | ask_more:qna5
-
-    Prefers quiz context from context.user_data["ask_more_ctx"], then falls back
-    to legacy context keys: ask_subject / ask_last_question / ask_last_answer.
-    Output is plain paragraphs (no asterisks/bullets), HTML-escaped for Telegram.
-    """
-    # --- imports needed here to avoid NameError in some deploy flows ---
-    import contextlib, html as _html, re
+async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import contextlib, html as _html
     from telegram.constants import ChatAction
     from telegram.error import BadRequest
 
     q = update.callback_query
-    await q.answer()
     data = (q.data or "").strip()
+    await q.answer()
 
-    # Best-effort: remove inline keyboard (avoid 400 on double-edit)
     with contextlib.suppress(BadRequest, Exception):
         await q.edit_message_reply_markup(reply_markup=None)
 
-    # ---- pull context (quiz-first, then legacy) ----
     ctx_more  = context.user_data.get("ask_more_ctx") or {}
-    subject   = (
-        ctx_more.get("subject")
-        or context.user_data.get("ask_subject")
-        or context.user_data.get("quiz_subject")
-        or "NEET"
-    )
-    last_q    = (ctx_more.get("question") or context.user_data.get("ask_last_question") or "").strip()
-    last_a    = (ctx_more.get("answer_text") or context.user_data.get("ask_last_answer") or "").strip()
-    expl_hint = (ctx_more.get("explanation") or "").strip()
+    subject   = (ctx_more.get("subject")
+                 or context.user_data.get("ask_subject")
+                 or context.user_data.get("quiz_subject")
+                 or "NEET")
+    last_q    = (ctx_more.get("question")
+                 or context.user_data.get("ask_last_question")
+                 or "").strip()
 
     if not last_q:
         await context.bot.send_message(
-            chat_id=q.message.chat.id,
+            chat_id=update.effective_chat.id,
             text="I lost the last question’s context. Please use /ask again.",
-            reply_to_message_id=q.message.message_id,
         )
         return
+
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=ChatAction.TYPING
+    )
+
+    if data == "ask_more:similar":
+        text = _html.escape(make_similar_question(last_q))  # make_similar_question is yours
+    elif data == "ask_more:explain":
+        text = _html.escape(explain_concept(last_q, subject))  # explain_concept is yours
+    elif data == "ask_more:flash":
+        text = _html.escape(make_flashcard(last_q))  # optional
+    else:
+        text = "Unknown option."
+
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=text,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
 
     # --- helpers ---
     def _tg_chunks(s: str, n: int = 3800):
