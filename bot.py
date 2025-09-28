@@ -1990,6 +1990,23 @@ async def _start_quiz(
     await _send_next(update, context)
 
 # public commands
+
+async def next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Advances the quiz to the next question. Triggered by callback_data='quiz:next'.
+    Clears the old inline keyboard to avoid double presses, then delegates to _send_next().
+    """
+    q = update.callback_query
+    await q.answer()
+    # best-effort: remove inline keyboard on the previous message
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    # move to the next item / or show results when finished
+    await _send_next(update, context)
+    
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5)
 
