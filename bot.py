@@ -3635,16 +3635,14 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Deterministic AI-notes style summary for the shortlist stored in user_data.
-    Looks at LAST_SHORTLIST (or legacy keys) and prints top-10 blocks.
+    Deterministic AI-notes summary that enriches shortlist rows with master COLLEGES
+    metadata before printing. Uses cached master indexes for speed.
     """
     try:
-        # acknowledge taps & get chat id
         if update.callback_query:
             await update.callback_query.answer()
         chat_id = update.effective_chat.id
 
-        # small status message
         status = await context.bot.send_message(chat_id=chat_id, text="🧠 Preparing notes…")
 
         ud = context.user_data or {}
@@ -3658,33 +3656,93 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             await status.edit_text("I couldn’t find any shortlisted colleges to summarize. Run /predict first.")
             return
 
+        # ---------- cache a master index from COLLEGES ----------
+        bot_cache = context.application.bot_data
+        idx_cache = bot_cache.get("MASTER_IDX")
+        if not idx_cache:
+            idx_by_code, idx_by_id, idx_by_name = {}, {}, {}
+            try:
+                master_rows = COLLEGES.to_dict("records") if hasattr(COLLEGES, "to_dict") else list(COLLEGES or [])
+            except Exception:
+                master_rows = list(COLLEGES or [])
+
+            def _s(v):
+                try:
+                    return str(v).strip()
+                except Exception:
+                    return ""
+
+            for row in master_rows:
+                if not isinstance(row, dict):
+                    continue
+                code = _s(row.get("college_code") or row.get("code"))
+                cid  = _s(row.get("college_id")  or row.get("institute_code"))
+                nm   = _s(row.get("college_name") or row.get("College Name")).lower()
+                if code: idx_by_code[code] = row
+                if cid:  idx_by_id[cid] = row
+                if nm:   idx_by_name[nm] = row
+            idx_cache = {"code": idx_by_code, "id": idx_by_id, "name": idx_by_name}
+            bot_cache["MASTER_IDX"] = idx_cache
+
+        def _resolve_master_row(r: dict) -> dict:
+            # by code/id first…
+            for key in ("college_code", "code", "college_id", "institute_code"):
+                v = r.get(key)
+                if v is None:
+                    continue
+                sid = str(v).strip()
+                if sid and sid in idx_cache["code"]:
+                    return idx_cache["code"][sid]
+                if sid and sid in idx_cache["id"]:
+                    return idx_cache["id"][sid]
+            # …then by lowercase name
+            nm = _safe_str(r.get("college_name") or r.get("College Name")).lower()
+            return idx_cache["name"].get(nm, {})
+
+        def _is_missing(v) -> bool:
+            try:
+                s = str(v).strip().lower()
+            except Exception:
+                return True
+            return s in {"", "—", "-", "na", "n/a", "nan", "none"}
+
+        def _pick2(r: dict, m: dict, *keys):
+            """first non-missing among r[keys], else m[keys]"""
+            for k in keys:
+                v = r.get(k)
+                if not _is_missing(v):
+                    return v
+            for k in keys:
+                v = m.get(k) if isinstance(m, dict) else None
+                if not _is_missing(v):
+                    return v
+            return None
+
+        # ---------- build blocks ----------
         blocks = []
         for i, r in enumerate(items[:10], 1):
-            # --- basics ---
-            name  = _safe_str(_pick(r, "college_name", "College Name"), "Unknown college")
-            state = _safe_str(_pick(r, "state", "State"))
-            city  = _safe_str(_pick(r, "city",  "City"))
-            place = ", ".join([x for x in (city, state) if x])
+            m = _resolve_master_row(r)
 
-            # --- numbers / attrs from the row (no master lookup here) ---
-            closing       = _pick(r, "ClosingRank", "closing", "closing_rank", "rank")
-            fee_raw       = _pick(r, "total_fee", "Fee", "Total Fee")
-            ownership     = _pick(r, "ownership", "Ownership")
+            name   = _safe_str(_pick2(r, m, "college_name", "College Name"), "Unknown college")
+            state  = _safe_str(_pick2(r, m, "state", "State"))
+            city   = _safe_str(_pick2(r, m, "city",  "City"))
+            place  = ", ".join([x for x in (city, state) if x])
 
-            pg_quota_raw  = r.get("pg_quota")
-            bond_years    = r.get("bond_years")
-            bond_penalty  = r.get("bond_penalty_lakhs")
-            hostel_raw    = r.get("hostel_available")
+            closing      = _pick2(r, m, "ClosingRank", "closing", "closing_rank", "rank")
+            fee_raw      = _pick2(r, m, "total_fee", "Fee", "Total Fee")
+            ownership    = _pick2(r, m, "ownership", "Ownership")
+            pg_quota_raw = _pick2(r, m, "pg_quota")
+            bond_years   = _pick2(r, m, "bond_years")
+            bond_penalty = _pick2(r, m, "bond_penalty_lakhs")
+            hostel_raw   = _pick2(r, m, "hostel_available")
 
-            # normalize yes/no-ish fields to booleans where possible
+            # normalize boolean-ish fields
             pg_quota_bool = _truthy_or_none(pg_quota_raw)
             hostel_bool   = _truthy_or_none(hostel_raw)
 
-            # debug so we can see what we actually read from the sheet
             log.debug("[ai_notes] %s | pg=%r hostel=%r bond=%r/%r fee=%r",
                       name, pg_quota_raw, hostel_raw, bond_years, bond_penalty, fee_raw)
 
-            # --- lines ---
             header    = f"{i}. {name}" + (f", {place}" if place else "")
             rank_ln   = f"Closing Rank: {_fmt_rank_val(closing)}"
             fee_ln    = f"Annual Fee: {_fmt_money(fee_raw)}"
