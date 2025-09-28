@@ -331,10 +331,15 @@ def _inst_type_from_row(r: dict) -> str:
 def _city_vibe_from_row(city: str, state: str) -> str:
     c = (city or "").strip().lower()
     s = (state or "").strip().lower()
-    metro = {"delhi", "new delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "pune"}
-    if c in metro:
+
+    # treat as metro if city OR state contains a known metro token
+    metro_tokens = {"delhi", "new delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "pune"}
+    def _has_metro(txt: str) -> bool:
+        return any(tok in txt for tok in metro_tokens)
+
+    if _has_metro(c) or _has_metro(s):
         return "Metro pace; higher living costs; English/Hindi widely used"
-    if s in {"kerala", "goa"}:
+    if "kerala" in s or "goa" in s:
         return "Calmer pace; mid living costs; local language common"
     return "Calmer pace; mid living costs; local language common"
 
@@ -364,13 +369,26 @@ def _to_int(x):
     except Exception:
         return None
 
-def _to_fee_lakh(x):
+def _to_int_or_none(x):
     try:
-        s = str(x).lower().replace(",", "").strip()
-        if "l" in s:  # e.g., "7.3 L"
-            return float(s.replace("l", "").strip())
+        if x is None: return None
+        s = str(x).strip()
+        if s == "" or s.lower() in {"na","n/a","nan","—","-"}:
+            return None
+        return int(float(s))
+    except Exception:
+        return None
+    
+def _to_fee_lakh(x):
+    """Return fee in lakhs as float or None."""
+    try:
+        if x is None: return None
+        s = str(x).replace(",", "").strip()
+        if s == "" or s.lower() in {"na","n/a","nan","—","-"}:
+            return None
         v = float(s)
-        return v / 100000.0 if v > 99999 else v  # rupees → lakhs heuristic
+        # your sheet keeps annual fee in rupees; convert to lakhs
+        return round(v / 100000.0, 1)
     except Exception:
         return None
 
@@ -465,23 +483,23 @@ def _yn(v):
 
 
 def _truthy_or_none(x):
-    """Parse many possible 'yes/no' encodings; None if unknown."""
-    if x is None:
-        return None
-    if isinstance(x, float) and math.isnan(x):
-        return None
-    if isinstance(x, bool):
-        return x
+    """Robust Yes/No parser → True/False/None."""
+    if x is None: return None
+    if isinstance(x, float):
+        # handle pandas NaN
+        try:
+            import math
+            if math.isnan(x): return None
+        except Exception:
+            pass
+    if isinstance(x, bool): return x
     s = str(x).strip().lower()
 
-    TRUTHY = {
-        "y","yes","true","t","1","available","avail","present","has","hostel yes","✔","✅","✓"
-    }
-    FALSY = {
-        "n","no","false","f","0","na","n/a","not available","absent","none","nil","x","✖","✘","❌","no hostel","-"
-    }
+    TRUTHY = {"y","yes","true","t","1","available","avail","present","has","hostel yes","✔","✅","✓"}
+    FALSY  = {"n","no","false","f","0","na","n/a","not available","absent","none","nil","x","✖","✘","❌","no hostel","-","—"}
+
     if s in TRUTHY: return True
-    if s in FALSY: return False
+    if s in FALSY:  return False
     if any(ch in s for ch in ("✅","✔","✓")): return True
     if any(ch in s for ch in ("❌","✖","✘")): return False
     try:
@@ -3094,10 +3112,10 @@ if "_fmt_money" not in globals():
             return "—"
 
 def _yn(v):
-    t = _truthy_or_none(v)
-    if t is True:  return "✅"
-    if t is False: return "❌"
-    return "ℹ️ verify"
+    # use simple words so your current output lines don’t look odd
+    if v is True:  return "yes"
+    if v is False: return "no"
+    return "unknown"
 
 if "_fmt_bond_line" not in globals():
     def _fmt_bond_line(bond_years, bond_penalty):
@@ -3621,13 +3639,12 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
     Looks at LAST_SHORTLIST (or legacy keys) and prints top-10 blocks.
     """
     try:
+        # acknowledge taps & get chat id
         if update.callback_query:
             await update.callback_query.answer()
-            chat_id = update.effective_chat.id
-        else:
-            chat_id = update.effective_chat.id
+        chat_id = update.effective_chat.id
 
-        # Show a small "working" message
+        # small status message
         status = await context.bot.send_message(chat_id=chat_id, text="🧠 Preparing notes…")
 
         ud = context.user_data or {}
@@ -3641,37 +3658,45 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             await status.edit_text("I couldn’t find any shortlisted colleges to summarize. Run /predict first.")
             return
 
-        # Build simple blocks for up to 10 entries
         blocks = []
         for i, r in enumerate(items[:10], 1):
-            # Prefer row itself; fall back to master fields if present (optional)
-            name   = _safe_str(_pick(r, "college_name", "College Name"), "Unknown college")
-            state  = _safe_str(_pick(r, "state", "State"))
-            city   = _safe_str(_pick(r, "city", "City"))
-            place  = ", ".join([x for x in (city, state) if x])
+            # --- basics ---
+            name  = _safe_str(_pick(r, "college_name", "College Name"), "Unknown college")
+            state = _safe_str(_pick(r, "state", "State"))
+            city  = _safe_str(_pick(r, "city",  "City"))
+            place = ", ".join([x for x in (city, state) if x])
 
-            # ranks/fees/attrs
-            closing     = _pick(r, "ClosingRank", "closing", "closing_rank", "rank")
-            fee         = _pick(r, "total_fee", "Fee", "Total Fee")
-            ownership   = _pick(r, "ownership", "Ownership")
-            pg_quota    = r.get("pg_quota")
-            bond_years  = r.get("bond_years")
-            bond_pen    = r.get("bond_penalty_lakhs")
-            hostel_avl  = r.get("hostel_available")
+            # --- numbers / attrs from the row (no master lookup here) ---
+            closing       = _pick(r, "ClosingRank", "closing", "closing_rank", "rank")
+            fee_raw       = _pick(r, "total_fee", "Fee", "Total Fee")
+            ownership     = _pick(r, "ownership", "Ownership")
 
-            header   = f"{i}. {name}" + (f", {place}" if place else "")
-            rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
-            fee_ln   = f"Annual Fee: {_fmt_money(fee)}"
-            why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avl)
-            vibe_ln  = "City & campus vibe: " + _city_vibe_from_row(city, state)
-            pg_ln    = f"PG Quota: {_yn(pg_quota)}"
-            bond_ln  = f"Bond: {_fmt_bond_line(bond_years, bond_pen)}"
-            hostel_ln= f"Hostel: {_yn(hostel_avl)}"
+            pg_quota_raw  = r.get("pg_quota")
+            bond_years    = r.get("bond_years")
+            bond_penalty  = r.get("bond_penalty_lakhs")
+            hostel_raw    = r.get("hostel_available")
+
+            # normalize yes/no-ish fields to booleans where possible
+            pg_quota_bool = _truthy_or_none(pg_quota_raw)
+            hostel_bool   = _truthy_or_none(hostel_raw)
+
+            # debug so we can see what we actually read from the sheet
+            log.debug("[ai_notes] %s | pg=%r hostel=%r bond=%r/%r fee=%r",
+                      name, pg_quota_raw, hostel_raw, bond_years, bond_penalty, fee_raw)
+
+            # --- lines ---
+            header    = f"{i}. {name}" + (f", {place}" if place else "")
+            rank_ln   = f"Closing Rank: {_fmt_rank_val(closing)}"
+            fee_ln    = f"Annual Fee: {_fmt_money(fee_raw)}"
+            why_ln    = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool)
+            vibe_ln   = "City & campus vibe: " + _city_vibe_from_row(city, state)
+            pg_ln     = f"PG Quota: {_yn(pg_quota_bool)}"
+            bond_ln   = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
+            hostel_ln = f"Hostel: {_yn(hostel_bool)}"
 
             blocks.append("\n".join([header, rank_ln, fee_ln, why_ln, vibe_ln, pg_ln, bond_ln, hostel_ln]))
 
-        text = "\n\n".join(blocks)
-        await status.edit_text(text)
+        await status.edit_text("\n\n".join(blocks))
 
     except Exception:
         log.exception("[ai_notes] failed")
@@ -3809,23 +3834,16 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return str(v)
 
     def _fmt_bond_line(bond_years, bond_penalty_lakhs):
-        def _num(x):
-            try:
-                if _is_missing(x): return None
-                return float(str(x).replace(",", "").strip())
-            except Exception:
-                return None
-        yrs = _num(bond_years)
-        pen = _num(bond_penalty_lakhs)
-        if not yrs and not pen:
-            return "No"
+        y = _to_int_or_none(years)
+        p = _to_int_or_none(penalty_lakh)
+        if y is None and p is None:
+            return "—"
         parts = []
-        if yrs and yrs > 0:
-            parts.append(f"{int(yrs) if float(yrs).is_integer() else yrs} yrs")
-        if pen and pen > 0:
-            lakhs = int(pen) if float(pen).is_integer() else pen
-            parts.append(f"₹{lakhs}L")
-        return ", ".join(parts) if parts else "No"
+        if y is not None:
+            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
+        if p is not None:
+            parts.append(f"₹{p:,}k")  # penalty in lakhs → print as e.g. 50k
+        return " / ".join(parts) if parts else "—"
 
     
 
@@ -3930,12 +3948,19 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
                 )
 
-            fee          = _pick(r, "total_fee", "Fee") or _pick(m, "total_fee", "Fee")
-            ownership    = r.get("ownership") or m.get("ownership")
-            pg_quota     = r.get("pg_quota")  or m.get("pg_quota")
-            bond_years   = r.get("bond_years") if not _is_missing(r.get("bond_years")) else m.get("bond_years")
-            bond_penalty = r.get("bond_penalty_lakhs") if not _is_missing(r.get("bond_penalty_lakhs")) else m.get("bond_penalty_lakhs")
-            hostel_avail = r.get("hostel_available") if not _is_missing(r.get("hostel_available")) else m.get("hostel_available")
+            fee_raw       = _pick(r, "total_fee", "Fee") or _pick(m, "total_fee", "Fee")
+            fee_lakh      = _to_fee_lakh(fee_raw)
+
+            ownership     = r.get("ownership") or m.get("ownership")
+
+            pg_quota_raw  = r.get("pg_quota")  if not _is_missing(r.get("pg_quota"))  else m.get("pg_quota")
+            pg_quota_bool = _truthy_or_none(pg_quota_raw)
+
+            bond_years    = r.get("bond_years") if not _is_missing(r.get("bond_years")) else m.get("bond_years")
+            bond_penalty  = r.get("bond_penalty_lakhs") if not _is_missing(r.get("bond_penalty_lakhs")) else m.get("bond_penalty_lakhs")
+
+            hostel_raw    = r.get("hostel_available") if not _is_missing(r.get("hostel_available")) else m.get("hostel_available")
+            hostel_bool   = _truthy_or_none(hostel_raw)
 
             header   = f"{i}. {name}" + (f", {', '.join([x for x in (city, state) if x])}" if (city or state) else "")
             rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
