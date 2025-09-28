@@ -980,46 +980,6 @@ async def _debug_unknown_callback(update, context):
 
     
 
-async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Render AI notes for the top 10 from the last shortlist; no reordering."""
-    q = update.callback_query
-    await q.answer()
-    ud = context.user_data or {}
-    shortlist = ud.get("last_predict_shortlist") or []
-    air = ud.get("last_predict_air")
-
-    if not shortlist:
-        await q.edit_message_text("No shortlist in memory. Please run /predict first.")
-        return
-
-    # build facts for top 10, preserving order
-    facts = []
-    for i, r in enumerate(shortlist[:10], 1):
-        facts.append({
-            "rank": i,
-            "code": r.get("college_code"),
-            "name": r.get("college_name"),
-            "state": r.get("state"),
-            "closing_rank": _to_int(r.get("ClosingRank")),
-            "nirf": _to_int(r.get("nirf_rank_medical_latest")),
-            "fee": _to_fee(r.get("total_fee")),
-            "ownership": r.get("ownership"),
-            # only True means we know hostel is available; otherwise omit
-            "hostel": (True if r.get("hostel_available") is True else None),
-        })
-
-    # Try LLM first; then fallback
-    text = _notes_via_llm(facts, air)
-    if not text:
-        text = _notes_deterministic(facts, air)
-
-    # Don’t edit the original shortlist; send a fresh message
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=text,
-        parse_mode="Markdown",
-        disable_web_page_preview=True,
-    )
 
 
 
@@ -3492,6 +3452,47 @@ def menu_quiz_markup() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⬅️ Back",                            callback_data="menu:back")],
     ])
 
+
+async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Render AI notes for the top 10 from the last shortlist; no reordering."""
+    q = update.callback_query
+    await q.answer()
+    ud = context.user_data or {}
+    shortlist = ud.get("last_predict_shortlist") or []
+    air = ud.get("last_predict_air")
+
+    if not shortlist:
+        await q.edit_message_text("No shortlist in memory. Please run /predict first.")
+        return
+
+    # build facts for top 10, preserving order
+    facts = []
+    for i, r in enumerate(shortlist[:10], 1):
+        facts.append({
+            "rank": i,
+            "code": r.get("college_code"),
+            "name": r.get("college_name"),
+            "state": r.get("state"),
+            "closing_rank": _to_int(r.get("ClosingRank")),
+            "nirf": _to_int(r.get("nirf_rank_medical_latest")),
+            "fee": _to_fee(r.get("total_fee")),
+            "ownership": r.get("ownership"),
+            # only True means we know hostel is available; otherwise omit
+            "hostel": (True if r.get("hostel_available") is True else None),
+        })
+
+    # Try LLM first; then fallback
+    text = _notes_via_llm(facts, air)
+    if not text:
+        text = _notes_deterministic(facts, air)
+
+    # Don’t edit the original shortlist; send a fresh message
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=text,
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import math, os
