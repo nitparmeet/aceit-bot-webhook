@@ -4585,26 +4585,35 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = (q.data or "").strip()
     await q.answer()
 
-    subject = (context.user_data.get("ask_subject")
-               or (context.user_data.get("ask_more_ctx") or {}).get("subject")
-               or "NEET")
-    concept = (context.user_data.get("ask_last_question")
-               or (context.user_data.get("ask_more_ctx") or {}).get("question")
-               or "")
+    # Pull context (subject/concept) from either legacy keys or ask_more_ctx
+    ctx_more = context.user_data.get("ask_more_ctx") or {}
+    subject = (
+        context.user_data.get("ask_subject")
+        or ctx_more.get("subject")
+        or "NEET"
+    )
+    concept = (
+        context.user_data.get("ask_last_question")
+        or ctx_more.get("question")
+        or ""
+    )
 
+    # Best-effort: remove inline keyboard to avoid "message is not modified" errors later
+    with contextlib.suppress(Exception):
+        await q.edit_message_reply_markup(reply_markup=None)
+
+    # ---- Quick Q&A branch ----
     if data in ("ask_more:quickqa", "ask_more:qna5"):
         with contextlib.suppress(Exception):
-            await q.edit_message_reply_markup(reply_markup=None)
-
-        await context.bot.send_chat_action(
-            chat_id=update.effective_chat.id, action=ChatAction.TYPING
-        )
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
 
         ok, text = await _gen_quick_qna(subject=subject, concept=concept, n=5)
         if not ok:
             text = "Couldn't generate quick Q&A right now."
 
-        # send in chunks (Telegram limit safe slice)
+        # Send in safe chunks for Telegram
         for i in range(0, len(text), 3800):
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -4612,6 +4621,15 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
+        return
+
+    # ---- Similar / Explain branch ----
+    if data in ("ask_more:similar", "ask_more:explain"):
+        # Reuse your followup handler that knows how to produce these
+        return await ask_followup_handler(update, context)
+
+    # Unknown ask_more action → no-op
+    return
 
 async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, want: str) -> bool:
     """
