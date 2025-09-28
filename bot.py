@@ -83,7 +83,83 @@ _openai_client: Optional["OpenAI"] = None
 _client_singleton = None
 
 
-    
+def _opt_text(options, idx):
+    try:
+        if isinstance(idx, int) and options and 0 <= idx < len(options):
+            return str(options[idx])
+    except Exception:
+        pass
+    return None
+
+def _ellipsize(s: str, limit: int = 280):
+    s = (s or "").strip()
+    return (s[:limit].rstrip() + " …") if len(s) > limit else s
+
+def format_quiz_report(score: int, total: int, details: list[dict]) -> str:
+    """
+    details[i] may contain:
+      - question: str
+      - correct: bool
+      - options: list[str]
+      - correct_index: int
+      - user_index: int
+      - user_answer_text: str
+      - correct_text: str
+      - explanation: str
+    Returns Telegram-HTML.
+    """
+    import html as _html
+
+    def _opt_text(opts: list[str] | None, idx: int | None) -> str | None:
+        if opts is None or idx is None:
+            return None
+        try:
+            if 0 <= int(idx) < len(opts):
+                return str(opts[int(idx)])
+        except Exception:
+            pass
+        return None
+
+    def _ellipsize(s: str, max_len: int = 240) -> str:
+        s = (s or "").strip()
+        return s if len(s) <= max_len else (s[: max_len - 1].rstrip() + "…")
+
+    # header
+    head_icon = "✅" if score == total else ("🟡" if score else "🧩")
+    lines = [
+        f"{head_icon} <b>Quiz complete!</b>",
+        f"<b>Score:</b> {score}/{total}",
+        ""
+    ]
+
+    # body
+    for i, d in enumerate(details or [], 1):
+        q_raw = d.get("question") or ""
+        opts  = d.get("options") or []
+        your  = d.get("user_answer_text") or _opt_text(opts, d.get("user_index"))
+        corr  = d.get("correct_text") or _opt_text(opts, d.get("correct_index"))
+        why   = d.get("explanation") or ""
+
+        tick = "✅" if d.get("correct") else "❌"
+
+        q    = _html.escape(_ellipsize(q_raw, 280))
+        your = _html.escape((your or "—").strip())
+        corr = _html.escape((corr or "—").strip())
+        why  = _html.escape(_ellipsize(why, 320)) if why else ""
+
+        block = [
+            f"<b>{i}.</b> {q}",
+            f"{tick} <b>Your:</b> {your}",
+            f"🔹 <b>Correct:</b> {corr}",
+        ]
+        if why:
+            block.append(f"<i>Why:</i> {why}")
+
+        lines.append("\n".join(block))
+        lines.append("")  # blank line between items
+
+    return "\n".join(lines).strip()
+
 def _new_token(n=8) -> str:
     # 8 hex chars, upper → short but unique per session
     return secrets.token_hex(n//2).upper()
@@ -735,7 +811,15 @@ async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ])
     )
         
-
+async def _send_quiz_report(update, context, score: int, total: int, details: list[dict]):
+    report_html = format_quiz_report(score, total, details)
+    for i in range(0, len(report_html), 3800):
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=report_html[i:i+3800],
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
 async def _safe_clear_markup(query):
     try:
         await query.edit_message_reply_markup(None)
@@ -1825,11 +1909,12 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     qs: List[Dict[str, Any]] = sess["questions"]
     total = len(qs)
 
+    # --- finished: grade and show clean report ---
     if i >= total:
-        # grade
         answers: Dict[str, int] = sess["answers"]
         score = 0
-        parts: List[str] = []
+        details: List[Dict[str, Any]] = []
+
         for q in qs:
             qid = q["id"]
             ua = answers.get(qid, -1)
@@ -1837,18 +1922,31 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             ok = (ua == ca)
             if ok:
                 score += 1
-            user_txt = q["options"][ua] if 0 <= ua < len(q["options"]) else "—"
-            cor_txt  = q["options"][ca]
-            expl     = q.get("explanation")
-            block = f"• {q['question']}\n   Your: {user_txt}\n   Correct: {cor_txt}"
-            if expl:
-                block += f"\n   Why: {expl}"
-            parts.append(block)
-        text = f"✅ Quiz complete!\nScore: {score}/{total}\n\n" + "\n\n".join(parts)
-        await update.effective_message.reply_text(text)
+
+            your_text = q["options"][ua] if 0 <= ua < len(q["options"]) else "—"
+            corr_text = q["options"][ca]
+            details.append({
+                "question": q["question"],
+                "your_text": your_text,
+                "correct_text": corr_text,
+                "explanation": q.get("explanation", ""),
+            })
+
+        report_html = format_quiz_report(score, total, details)
+
+        # Telegram-safe chunking (keep HTML parse_mode)
+        for i in range(0, len(report_html), 3800):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=report_html[i:i+3800],
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+
         QUIZ_SESSIONS.pop(user_id, None)
         return
 
+    # --- still questions left: send the next one ---
     q = qs[i]
     await update.effective_message.reply_text(
         _format_question(q, i, total),
