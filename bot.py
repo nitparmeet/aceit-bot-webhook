@@ -3632,24 +3632,18 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True,
     )
 
-user_ctx  = context.user_data or {}
-round_ui  = user_ctx.get("cutoff_round") or user_ctx.get("round") or "2025_R1"
-quota     = user_ctx.get("quota") or "AIQ"
-category  = user_ctx.get("category") or "General"
 
-# dataframe / dict used for lookups (both supported)
-df_lookup = context.application.bot_data.get("CUTOFFS_DF")
             
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Deterministic AI-notes summary that enriches shortlist rows with master COLLEGES
-    metadata before printing. Uses cached master indexes for speed.
+    metadata before printing. Uses cached master indexes for speed. Falls back to
+    cutoff table to resolve Closing Rank when missing.
     """
     try:
         if update.callback_query:
             await update.callback_query.answer()
         chat_id = update.effective_chat.id
-
         status = await context.bot.send_message(chat_id=chat_id, text="🧠 Preparing notes…")
 
         ud = context.user_data or {}
@@ -3662,6 +3656,18 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
         if not items:
             await status.edit_text("I couldn’t find any shortlisted colleges to summarize. Run /predict first.")
             return
+
+        # ------- cutoff context (for closing-rank fallback) -------
+        round_ui = ud.get("cutoff_round") or ud.get("round") or "2025_R1"
+        quota    = ud.get("quota") or "AIQ"
+        category = ud.get("category") or "General"
+        # light normalization for common aliases
+        QUOTA_MAP = {"All India": "AIQ", "All-India": "AIQ", "AI": "AIQ"}
+        CAT_MAP   = {"UR": "General", "Open": "General", "GN": "General"}
+        quota    = QUOTA_MAP.get(quota, quota)
+        category = CAT_MAP.get(category, category)
+
+        df_lookup = context.application.bot_data.get("CUTOFFS_DF", None)
 
         # ---------- cache a master index from COLLEGES ----------
         bot_cache = context.application.bot_data
@@ -3692,7 +3698,6 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             bot_cache["MASTER_IDX"] = idx_cache
 
         def _resolve_master_row(r: dict) -> dict:
-            # by code/id first…
             for key in ("college_code", "code", "college_id", "institute_code"):
                 v = r.get(key)
                 if v is None:
@@ -3702,7 +3707,6 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
                     return idx_cache["code"][sid]
                 if sid and sid in idx_cache["id"]:
                     return idx_cache["id"][sid]
-            # …then by lowercase name
             nm = _safe_str(r.get("college_name") or r.get("College Name")).lower()
             return idx_cache["name"].get(nm, {})
 
@@ -3735,7 +3739,25 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             city   = _safe_str(_pick2(r, m, "city",  "City"))
             place  = ", ".join([x for x in (city, state) if x])
 
-            closing      = _pick2(r, m, "ClosingRank", "closing", "closing_rank", "rank")
+            # closing with robust fallback to cutoffs
+            closing = _pick2(r, m, "ClosingRank", "closing", "closing_rank", "rank")
+            if _is_missing(closing):
+                id_candidates = [
+                    r.get("college_code"), r.get("code"),
+                    r.get("college_id"),   r.get("institute_code"),
+                    m.get("college_code"), m.get("code"),
+                    m.get("college_id"),   m.get("institute_code"),
+                    name,  # last resort: name match
+                ]
+                ids = [str(x).strip() for x in id_candidates if not _is_missing(x)]
+                try:
+                    closing = _closing_rank_for_identifiers(
+                        ids, round_ui, quota, category,
+                        df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
+                    )
+                except Exception:
+                    closing = None  # stay graceful
+
             fee_raw      = _pick2(r, m, "total_fee", "Fee", "Total Fee")
             ownership    = _pick2(r, m, "ownership", "Ownership")
             pg_quota_raw = _pick2(r, m, "pg_quota")
@@ -3743,12 +3765,12 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             bond_penalty = _pick2(r, m, "bond_penalty_lakhs")
             hostel_raw   = _pick2(r, m, "hostel_available")
 
-            # normalize boolean-ish fields
+            # normalize boolean-ish fields (handles yes/no/emoji/etc.)
             pg_quota_bool = _truthy_or_none(pg_quota_raw)
             hostel_bool   = _truthy_or_none(hostel_raw)
 
-            log.debug("[ai_notes] %s | pg=%r hostel=%r bond=%r/%r fee=%r",
-                      name, pg_quota_raw, hostel_raw, bond_years, bond_penalty, fee_raw)
+            log.debug("[ai_notes] %s | pg=%r hostel=%r bond=%r/%r fee=%r closing=%r",
+                      name, pg_quota_raw, hostel_raw, bond_years, bond_penalty, fee_raw, closing)
 
             header    = f"{i}. {name}" + (f", {place}" if place else "")
             rank_ln   = f"Closing Rank: {_fmt_rank_val(closing)}"
