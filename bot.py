@@ -1898,37 +1898,41 @@ def _keyboard_for(q: Dict[str, Any]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send next question or show results."""
+    """Send the next question or, if finished, grade and show a clean report."""
     user_id = update.effective_user.id
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
         await update.effective_message.reply_text("No active quiz. Use /quiz5 or /quiz10.")
         return
 
-    i = sess["index"]
+    # touch session so it doesn't get GC'd by any idle cleanup you might add
+    sess["last_active"] = time.time()
+
+    i = int(sess.get("index", 0))
     qs: List[Dict[str, Any]] = sess["questions"]
     total = len(qs)
 
-    # --- finished: grade and show clean report ---
+    # -------- finished: grade ----------
     if i >= total:
         answers: Dict[str, int] = sess["answers"]
         score = 0
         details: List[Dict[str, Any]] = []
 
         for q in qs:
-            qid = q["id"]
-            ua = answers.get(qid, -1)
-            ca = q["answer_index"]
-            ok = (ua == ca)
+            qid  = q["id"]
+            opts = q.get("options") or []
+            ua   = answers.get(qid, -1)                 # user index (or -1 if skipped)
+            ca   = int(q.get("answer_index", -1))       # correct index
+            ok   = (ua == ca)
+
             if ok:
                 score += 1
 
-            # Build one detail object per question — this powers the report.
             details.append({
                 "question": q.get("question"),
-                "options": opts,                # needed so the formatter can map indices -> text
-                "user_index": ua,               # your selected option index
-                "correct_index": ca,            # correct option index
+                "options": opts,                                       # <-- needed by formatter
+                "user_index": ua,
+                "correct_index": ca,
                 "user_answer_text": (opts[ua] if 0 <= ua < len(opts) else None),
                 "correct_text": (opts[ca] if 0 <= ca < len(opts) else None),
                 "explanation": q.get("explanation"),
@@ -1937,16 +1941,26 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         report_html = format_quiz_report(score, total, details)
 
-        # Telegram-safe chunking (keep HTML parse_mode)
-        for i0 in range(0, len(report_html), 3800):
+        # Telegram-safe chunking
+        for off in range(0, len(report_html), 3800):
             await update.effective_message.reply_text(
-                report_html[i0:i0+3800],
+                report_html[off:off+3800],
                 parse_mode="HTML",
                 disable_web_page_preview=True,
             )
 
-        QUIZ_SESSIONS.pop(user_id, None)
+        QUIZ_SESSIONS.pop(user_id, None)   # end session
         return
+
+    # -------- still running: send next ----------
+    q = qs[i]
+    sess["index"] = i + 1                  # advance pointer now
+    sess["last_active"] = time.time()      # refresh activity timestamp
+
+    await update.effective_message.reply_text(
+        _format_question(q, i, total),
+        reply_markup=_keyboard_for(q)
+    )
 
     # --- still questions left: send the next one ---
     q = qs[i]
@@ -1990,49 +2004,73 @@ async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 # button click handler
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    await _safe_clear_kb(query)
-    data = query.data or ""
+    import time, contextlib
+
+    q = update.callback_query
+    await q.answer()
+
+    data = (q.data or "")
     if not data.startswith("ans:"):
         return
+
+    # Payload is expected as: "ans:<question_id>:<index>"
     try:
-        _, qid, idx_str = data.split(":")
+        _, qid, idx_str = data.split(":", 2)
         chosen = int(idx_str)
     except Exception:
-        await query.edit_message_text("Invalid answer payload.")
+        with contextlib.suppress(Exception):
+            await q.edit_message_text("Invalid answer payload.")
         return
 
     user_id = update.effective_user.id
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
-        await query.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
+        with contextlib.suppress(Exception):
+            await q.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
         return
 
-    qs: List[Dict[str, Any]] = sess["questions"]
-    i = sess["index"]
+    # keep session warm
+    sess["last_active"] = time.time()
+
+    qs: List[Dict[str, Any]] = sess.get("questions", [])
+    i = int(sess.get("index", 0))
     if i >= len(qs):
-        await query.edit_message_text("Already finished. Use /quiz5 to start again.")
-        return
-    q = qs[i]
-    if q["id"] != qid:
-        # stale press
-        await query.answer("That question moved on.", show_alert=False)
+        with contextlib.suppress(Exception):
+            await q.edit_message_text("Already finished. Use /quiz5 to start again.")
         return
 
-    sess["answers"][qid] = chosen
+    curr = qs[i]
+    if str(curr.get("id")) != str(qid):
+        # Stale press for an older inline keyboard
+        await q.answer("That question has already moved on.", show_alert=False)
+        with contextlib.suppress(Exception):
+            await q.edit_message_reply_markup(reply_markup=None)
+        return
+
+    # Record the answer
+    sess.setdefault("answers", {})[qid] = chosen
     sess["index"] = i + 1
+    sess["last_active"] = time.time()
 
-    # optional immediate feedback
-    ca = q["answer_index"]
-    user_txt = q["options"][chosen]
-    cor_txt  = q["options"][ca]
+    # Immediate feedback (safe lookups)
+    opts = curr.get("options") or []
+    ca   = int(curr.get("answer_index", -1))
+    user_txt = opts[chosen] if 0 <= chosen < len(opts) else "—"
+    cor_txt  = opts[ca]     if 0 <= ca     < len(opts) else "—"
     fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
-    try:
-        await query.edit_message_text(f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}")
-    except Exception:
-        await query.message.reply_text(fb)
 
+    # Remove buttons and show feedback inline; fall back to a new message if needed
+    with contextlib.suppress(Exception):
+        await q.edit_message_reply_markup(reply_markup=None)
+    try:
+        await q.edit_message_text(
+            f"{_format_question(curr, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
+        )
+    except Exception:
+        with contextlib.suppress(Exception):
+            await q.message.reply_text(fb)
+
+    # Continue to next question or grade
     await _send_next(update, context)
 
 # small diag command
