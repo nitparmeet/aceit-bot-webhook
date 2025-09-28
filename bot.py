@@ -6982,10 +6982,11 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
         ],
         states={
-            # Let users pick subject via inline keyboard OR by typing
             ASK_SUBJECT: [
-                CallbackQueryHandler(ask_subject_pick, pattern=r"^ask:subject:"),  # inline subject buttons
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select), # typed subject
+                # user types a subject name
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
+                # user taps an inline subject button like "ask:subject:Physics"
+                CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
             ],
             ASK_WAIT: [
                 MessageHandler(filters.PHOTO, ask_receive_photo),
@@ -6999,20 +7000,23 @@ def register_handlers(app: Application) -> None:
     )
     _add(ask_conv, group=1)
 
-# -------------------------------
-# Ask follow-ups (Similar / Explain / Quick Q&A)
-# -------------------------------
-# New buttons you render under answers (ask_more:*)
-    _add(CallbackQueryHandler(
-        ask_followup_handler,
-        pattern=r"^ask_more:(similar|explain|quickqa|qna5)$"
-    ), group=0)
+    # (Optional) legacy feature router, keep if you still use these buttons
+    _add(
+        CallbackQueryHandler(
+            ask_feature_router,
+            pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
+        ),
+        group=0,
+    )
 
-# Keep legacy router for any older callback payloads still out there (ask:*)
-    _add(CallbackQueryHandler(
-        ask_feature_router,
-        pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
-    ), group=0)
+    # New “Ask more” buttons, including Quick Q&A (5)
+    _add(
+        CallbackQueryHandler(
+            ask_more_router,
+            pattern=r"^ask_more:(similar|explain|quickqa|qna5)$"
+        ),
+        group=0,
+    )
 
     # -------------------------------
     # Predictor conversation
