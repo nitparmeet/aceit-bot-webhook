@@ -5,7 +5,7 @@ import os
 import re
 import secrets
 
-
+_HANDLERS_WIRED = False
 
 
 
@@ -7073,7 +7073,19 @@ def _has_all(*names: str) -> bool:
 from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
 
 def register_handlers(app: Application) -> None:
+
+    """
+    Wire all PTB handlers exactly once. Safe to call multiple times.
+    """
+    global _HANDLERS_WIRED
+    if _HANDLERS_WIRED:
+        # Already wired; avoid double-registration (which causes duplicate messages)
+        log.warning("register_handlers() called again; ignoring second call")
+        return
+    _HANDLERS_WIRED = True
+    
     """Attach all handlers once, with no duplicates and clear routing."""
+    
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
 
@@ -7136,6 +7148,18 @@ def register_handlers(app: Application) -> None:
         ask_followup_handler,
         pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
     ), group=0)
+
+    # Quiz: start, answer, navigation
+    # -------------------------------
+    _add(CommandHandler("quiz5", start_quiz_5), group=1)
+    _add(CommandHandler("quiz10", start_quiz_10), group=1)
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=1)
+    _add(CallbackQueryHandler(next_question, pattern=r"^quiz:next$"), group=1)
+    _add(CallbackQueryHandler(cancel_quiz, pattern=r"^quiz:cancel$"), group=1)
+
+    log.info("✅ Handlers registered")
+
+    
     # -------------------------------
     # Predictor conversation
     # -------------------------------
