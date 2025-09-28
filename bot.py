@@ -328,46 +328,15 @@ def _inst_type_from_row(r: dict) -> str:
         return "Government medical college"
     return own or "Medical college"
 
-def _city_vibe_from_row(city_or_row, state=None):
-    """
-    Works in BOTH modes:
-    - New: _city_vibe_from_row(city:str|None, state:str|None)
-    - Old: _city_vibe_from_row(row:dict-like)
-    """
-    # If we already had an implementation, branch based on its signature
-    if _orig_city_vibe:
-        try:
-            sig = inspect.signature(_orig_city_vibe)
-            params = list(sig.parameters.values())
-            if len(params) == 1:
-                # Legacy: expects a single row-like object with .get()
-                if isinstance(city_or_row, dict):
-                    row = city_or_row
-                else:
-                    # Build a pseudo-row from the two strings we received
-                    row = {
-                        "city":  city_or_row,
-                        "City":  city_or_row,
-                        "state": state,
-                        "State": state,
-                    }
-                return _orig_city_vibe(row)
-            else:
-                # Newer: allows (city, state) directly
-                return _orig_city_vibe(city_or_row, state)
-        except Exception:
-            # Fall through to robust default below
-            pass
-
-    # Robust default text if neither path worked
-    city = (str(city_or_row).strip() if city_or_row else "")
-    st   = (str(state).strip() if state else "")
-    if city and st:
-        return f"{city}, {st} — typical city–campus mix."
-    if st:
-        return f"{st} — regional hub feel."
-    return "—"
-
+def _city_vibe_from_row(city: str, state: str) -> str:
+    c = (city or "").strip().lower()
+    s = (state or "").strip().lower()
+    metro = {"delhi", "new delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "pune"}
+    if c in metro:
+        return "Metro pace; higher living costs; English/Hindi widely used"
+    if s in {"kerala", "goa"}:
+        return "Calmer pace; mid living costs; local language common"
+    return "Calmer pace; mid living costs; local language common"
 
 
 _orig_city_vibe = globals().get("_city_vibe_from_row")
@@ -520,7 +489,9 @@ def _truthy_or_none(x):
     except Exception:
         return None
 
-
+def _truthy(x) -> bool:
+    """Strict True/False based on _truthy_or_none."""
+    return _truthy_or_none(x) is True
 
 def hostel_badge(row) -> str:
     """
@@ -3122,53 +3093,57 @@ if "_fmt_money" not in globals():
         except Exception:
             return "—"
 
-if "_yn" not in globals():
-    def _yn(v) -> str:
-        if v is True:  return "Yes"
-        if v is False: return "No"
-        return "—"
+def _yn(v):
+    t = _truthy_or_none(v)
+    if t is True:  return "✅"
+    if t is False: return "❌"
+    return "ℹ️ verify"
 
 if "_fmt_bond_line" not in globals():
-    def _fmt_bond_line(years, penalty_lakhs) -> str:
-        y = _to_int(years)
-        try:
-            p = float(str(penalty_lakhs).replace(",", "").strip())
-        except Exception:
-            p = None
-        if y and p is not None:
-            return f"{y} yrs / ₹{int(p):,}L"
-        if y:
-            return f"{y} yrs"
-        if p is not None:
-            return f"₹{int(p):,}L"
-        return "—"
+    def _fmt_bond_line(bond_years, bond_penalty):
+        if _is_missing(bond_years) and _is_missing(bond_penalty):
+            return "—"
+        parts = []
+        if not _is_missing(bond_years):
+            try:
+                y = float(str(bond_years).strip())
+                parts.append(f"{int(y) if y.is_integer() else y} yrs")
+            except Exception:
+                parts.append(str(bond_years))
+        if not _is_missing(bond_penalty):
+            try:
+                p = float(str(bond_penalty).replace(",", "").strip())
+                parts.append(f"₹{int(p*100000):,}")  # if stored in lakhs
+            except Exception:
+                parts.append(str(bond_penalty))
+        return " + ".join(parts) if parts else "—"
 
-if "_city_vibe_from_row" not in globals():
-    def _city_vibe_from_row(city: str | None, state: str | None) -> str:
-        c = _safe_str(city)
-        s = _safe_str(state)
-        if c and s: return f"{c}, {s} — typical city–campus mix."
-        if s:       return f"{s} — regional hub feel."
-        return "—"
+
 
 if "_why_from_signals" not in globals():
     def _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail) -> str:
-        parts = []
-        own = _safe_str(ownership).lower()
-        if "government" in own or "govt" in own or "central" in own:
-            parts.append("government setup")
-        elif "deemed" in own:
-            parts.append("deemed university environment")
-        elif "private" in own:
-            parts.append("private infrastructure")
-        if pg_quota:
-            parts.append("PG quota available")
-        y = _to_int(bond_years)
-        if y:
-            parts.append(f"{y}-year service bond")
-        if hostel_avail is True:
-            parts.append("hostel available")
-        return "; ".join(parts) if parts else "balanced option for your rank"
+        """
+        Tiny heuristic blurb. Uses only given fields; never invents.
+        """
+        bits = []
+        ow = (ownership or "").strip().lower()
+        if ow:
+            bits.append(ow)
+        if str(pg_quota).strip().lower() in {"yes", "y", "true", "1"}:
+            bits.append("PG exposure")
+        try:
+            by = int(float(bond_years)) if bond_years is not None and str(bond_years).strip() != "" else 0
+        except Exception:
+            by = 0
+        if by > 0:
+            bits.append("bond to consider")
+        if str(hostel_avail).strip().lower() in {"yes", "y", "true", "1"}:
+            bits.append("hostel on campus")
+        if not bits:
+            return "balanced option for your rank"
+        # sentence case, concise
+        text = ", ".join(bits)
+        return text[0].upper() + text[1:] + "."
 
 
 def _norm_meta_key(v: object) -> str:
@@ -3639,50 +3614,7 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True,
     )
 
-try:
-    import inspect  # stdlib
-    _fn = globals().get("_city_vibe_from_row")
-
-    if _fn is None:
-        # define the modern 2-arg version
-        def _city_vibe_from_row(city: str | None, state: str | None) -> str:
-            c = (str(city).strip() if city else "")
-            s = (str(state).strip() if state else "")
-            if c and s: return f"{c}, {s} — typical city–campus mix."
-            if s:       return f"{s} — regional hub feel."
-            return "—"
-        globals()["_city_vibe_from_row"] = _city_vibe_from_row
-
-    else:
-        # if an older 1-arg signature exists, wrap it
-        try:
-            if len(inspect.signature(_fn).parameters) == 1:
-                _old = _fn
-                def _city_vibe_from_row(city: str | None, state: str | None) -> str:
-                    loc = ", ".join([x for x in (city or "", state or "") if str(x).strip()])
-                    return _old(loc)  # delegate to old function
-                globals()["_city_vibe_from_row"] = _city_vibe_from_row
-        except Exception:
-            # if introspection fails, just provide a robust 2-arg fallback
-            def _city_vibe_from_row(city: str | None, state: str | None) -> str:
-                c = (str(city).strip() if city else "")
-                s = (str(state).strip() if state else "")
-                if c and s: return f"{c}, {s} — typical city–campus mix."
-                if s:       return f"{s} — regional hub feel."
-                return "—"
-            globals()["_city_vibe_from_row"] = _city_vibe_from_row
-
-except Exception:
-    # absolute fallback (very defensive)
-    def _city_vibe_from_row(city: str | None, state: str | None) -> str:
-        try:
-            c = (str(city).strip() if city else "")
-            s = (str(state).strip() if state else "")
-            if c and s: return f"{c}, {s} — typical city–campus mix."
-            if s:       return f"{s} — regional hub feel."
-            return "—"
-        except Exception:
-            return "—"
+            
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Deterministic AI-notes style summary for the shortlist stored in user_data.
@@ -3849,26 +3781,23 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     def _is_missing(v):
         try:
-            if v is None: return True
-            if isinstance(v, float) and math.isnan(v): return True
-            return str(v).strip().lower() in NA_STRINGS
+            s = str(v).strip().lower()
         except Exception:
             return True
+        return s in {"", "—", "-", "na", "n/a", "nan", "none"}
 
     def _fmt_money(v):
         try:
-            s = str(v).replace(",", "").strip()
-            if not s or s.lower() in NA_STRINGS: return "—"
-            n = float(s)
+            if _is_missing(v): return "—"
+            n = float(str(v).replace(",", "").strip())
             return f"₹{int(n):,}"
         except Exception:
             return "—"
 
     def _fmt_rank_val(v):
         try:
-            s = str(v).strip()
-            if _is_missing(s): return "—"
-            return f"{int(float(s)):,}"
+            if _is_missing(v): return "—"
+            return f"{int(float(str(v))):,}"
         except Exception:
             return "—"
 
@@ -3898,19 +3827,12 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             parts.append(f"₹{lakhs}L")
         return ", ".join(parts) if parts else "No"
 
-    def _city_vibe_from_row(city: str, state: str) -> str:
-        c = (city or "").strip().lower()
-        s = (state or "").strip().lower()
-        metro = {"delhi", "new delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "pune"}
-        if c in metro:
-            return "Metro pace; higher living costs; English/Hindi widely used"
-        if s in {"kerala", "goa"}:
-            return "Calmer pace; mid living costs; local language common"
-        return "Calmer pace; mid living costs; local language common"
+    
 
     def _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail) -> str:
         own = (ownership or "").lower()
         nm  = (name or "").upper()
+
         if "AIIMS" in nm:
             base = "Central government AIIMS"
         elif "JIPMER" in nm or "PGIMER" in nm:
@@ -3923,16 +3845,18 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             base = "Reputed medical college"
 
         extras = []
-        if _yn(pg_quota) == "Yes":
+        if _truthy(pg_quota):
             extras.append("PG quota available")
+
         try:
             yrs = float(str(bond_years).strip()) if not _is_missing(bond_years) else 0.0
         except Exception:
             yrs = 0.0
         extras.append(f"bond {int(yrs) if yrs and float(yrs).is_integer() else yrs} yrs" if yrs > 0 else "no/low bond")
-        hv = _yn(hostel_avail)
-        if hv in {"Yes", "No"}:
-            extras.append(f"hostel {hv}")
+
+        if _truthy(hostel_avail):
+            extras.append("hostel on campus")
+
         return base + ("; " + "; ".join(extras) if extras else "")
 
     def _resolve_master_row(r, idx_by_code, idx_by_id, idx_by_name):
@@ -4013,11 +3937,13 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             bond_penalty = r.get("bond_penalty_lakhs") if not _is_missing(r.get("bond_penalty_lakhs")) else m.get("bond_penalty_lakhs")
             hostel_avail = r.get("hostel_available") if not _is_missing(r.get("hostel_available")) else m.get("hostel_available")
 
-            header   = f"{i}. {name}" + (f", {place}" if place else "")
+            header   = f"{i}. {name}" + (f", {', '.join([x for x in (city, state) if x])}" if (city or state) else "")
             rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
             fee_ln   = f"Annual Fee: {_fmt_money(fee)}"
             why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail)
-            vibe_ln  = "City & campus vibe: " + _city_vibe_from_row(city, state)
+            vibe_ln  = "City & campus vibe: " + (
+                ((city or state or "—") + " — " + _city_vibe_from_row(city, state))
+            )
             pg_ln    = f"PG Quota: {_yn(pg_quota)}"
             bond_ln  = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
             hostel_ln= f"Hostel: {_yn(hostel_avail)}"
