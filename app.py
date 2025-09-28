@@ -13,52 +13,46 @@ from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update
 from telegram.ext import Application
 
-# ----------------- Config -----------------
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]          # your bot token
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")       # optional; leave blank if not using
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
-# Optional quiz config
 BASE_DIR = Path(__file__).parent
-QUIZ_FILE = Path(os.environ.get("QUIZ_FILE", BASE_DIR / "quiz.json"))  # your new quiz.json
-RANDOM_SEED = os.environ.get("QUIZ_RANDOM_SEED")  # set this for deterministic shuffles (optional)
+QUIZ_FILE = Path(os.environ.get("QUIZ_FILE", BASE_DIR / "quiz.json"))
+RANDOM_SEED = os.environ.get("QUIZ_RANDOM_SEED")
 
-# Basic logging (Render shows stdout)
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 log = logging.getLogger("aceit-bot")
 
-# ----------------- FastAPI app -----------------
 app = FastAPI(title="aceit-bot-webhook")
 
-# CORS (optional)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # restrict if you have a specific frontend
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ----------------- Telegram (PTB) -----------------
-# Create Telegram Application ONCE (we feed it updates manually)
-tg = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
+# Build the Telegram application once
+tg: Application = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
 
-# Import bot hooks (fail fast so errors are visible)
-from bot import register_handlers  # must exist in bot.py
+# Import handler registrars from bot.py and attach them to `tg`
+from bot import register_handlers  # must accept (app: Application)
 register_handlers(tg)
 log.info("✅ Handlers registered")
 
-# Optional: dataset/bootstrap loader (if you added it in bot.py)
+# Optional startup bootstrap from bot.py
 try:
     from bot import on_startup as bot_on_startup  # async def on_startup(app: Application)
 except Exception:
     bot_on_startup = None
 
-# ----------------- Quiz data (new schema) -----------------
+# -------------- quiz pool helpers --------------
 _POOL: List[Dict[str, Any]] = []
-_INDEX: Dict[str, Dict[str, Any]] = {}  # id -> question
+_INDEX: Dict[str, Dict[str, Any]] = {}
 
 def _validate_question(q: Dict[str, Any], i: int) -> Optional[str]:
     if "id" not in q or not q["id"]:
@@ -78,22 +72,18 @@ def _load_pool() -> None:
     global _POOL, _INDEX
     if not QUIZ_FILE.exists():
         raise FileNotFoundError(f"quiz file not found at: {QUIZ_FILE}")
-    with open(QUIZ_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = json.load(QUIZ_FILE.open("r", encoding="utf-8"))
     if not isinstance(data, list):
-        raise ValueError("quiz.json must be a flat JSON array of question objects")
+        raise ValueError("quiz.json must be a flat JSON array")
 
-    seen_ids = set()
-    errors = []
+    seen, errors = set(), []
     for i, q in enumerate(data):
         err = _validate_question(q, i)
         if err:
-            errors.append(err)
-            continue
-        if q["id"] in seen_ids:
-            errors.append(f"duplicate id: {q['id']}")
-            continue
-        seen_ids.add(q["id"])
+            errors.append(err); continue
+        if q["id"] in seen:
+            errors.append(f"duplicate id: {q['id']}"); continue
+        seen.add(q["id"])
 
     if errors:
         raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errors))
@@ -125,40 +115,32 @@ def _pick_questions(
     if tags_any:
         out = [q for q in out if any(t in (q.get("tags") or []) for t in tags_any)]
     if shuffle:
-        out = list(out)
-        random.shuffle(out)
+        out = list(out); random.shuffle(out)
     return out[:count]
 
 def _strip_answers(qs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    sanitized = []
-    for q in qs:
-        sanitized.append({
-            "id": q["id"],
-            "subject": q.get("subject"),
-            "topic": q.get("topic"),
-            "difficulty": q.get("difficulty"),
-            "question": q.get("question"),
-            "options": q.get("options"),
-            "tags": q.get("tags", []),
-            # hide answers/explanations for live quiz
-        })
-    return sanitized
+    return [{
+        "id": q["id"],
+        "subject": q.get("subject"),
+        "topic": q.get("topic"),
+        "difficulty": q.get("difficulty"),
+        "question": q.get("question"),
+        "options": q.get("options"),
+        "tags": q.get("tags", []),
+    } for q in qs]
 
-# ----------------- Lifecycle -----------------
+# -------------- lifecycle --------------
 @app.on_event("startup")
 async def _startup():
-    # Initialize PTB app (required even in manual-webhook mode)
     await tg.initialize()
     await tg.start()
     log.info("✅ Telegram Application started")
 
-    # Load quiz pool once
     try:
         _ensure_loaded()
     except Exception:
         log.exception("❌ Failed loading quiz.json")
 
-    # Run your dataset/bootstrap logic once (optional)
     if bot_on_startup is not None:
         try:
             await bot_on_startup(tg)
@@ -172,21 +154,20 @@ async def _shutdown():
     await tg.shutdown()
     log.info("🛑 Telegram Application stopped")
 
-# ----------------- Telegram webhook -----------------
+# -------------- webhook --------------
 @app.post("/telegram")
 async def telegram_webhook(
     req: Request,
-    x_telegram_bot_api_secret_token: str | None = Header(default=None),
+    x_telegram_bot_api_secret_token: Optional[str] = Header(default=None),
 ):
     if WEBHOOK_SECRET and (x_telegram_bot_api_secret_token != WEBHOOK_SECRET):
         raise HTTPException(status_code=403, detail="Bad secret header")
-
     data = await req.json()
     update = Update.de_json(data, tg.bot)
     await tg.process_update(update)
     return {"ok": True}
 
-# ----------------- Quiz API -----------------
+# -------------- quiz endpoints --------------
 @app.get("/quiz")
 async def get_quiz(
     count: int = Query(5, pattern="^(5|10)$"),
@@ -195,46 +176,17 @@ async def get_quiz(
     tags: Optional[str] = Query(default=None, description="comma separated"),
     reveal: Optional[int] = Query(default=0, ge=0, le=1),
 ):
-    """
-    Returns a randomized set of questions.
-
-    Query params:
-      count=5|10
-      subject=Physics|Chemistry|Zoology|Botany
-      difficulty=1|2|3
-      tags=tag1,tag2         (matches ANY)
-      reveal=1               (optional) include answer_index & explanation (for testing)
-    """
     try:
         _ensure_loaded()
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
     tags_any = [t.strip() for t in tags.split(",")] if tags else None
-    qs = _pick_questions(
-        _POOL,
-        subject=subject,
-        difficulty=difficulty,
-        tags_any=tags_any,
-        count=count,
-        shuffle=True,
-    )
-
-    if reveal == 1:
-        return JSONResponse(content=qs)
-    return JSONResponse(content=_strip_answers(qs))
+    qs = _pick_questions(_POOL, subject=subject, difficulty=difficulty, tags_any=tags_any, count=count, shuffle=True)
+    return JSONResponse(content=qs if reveal == 1 else _strip_answers(qs))
 
 @app.post("/grade")
 async def grade_quiz(payload: Dict[str, Any]):
-    """
-    Body:
-    {
-      "responses": [
-        { "id": "<question_id>", "answer_index": 2 },
-        ...
-      ]
-    }
-    """
     try:
         _ensure_loaded()
     except Exception as e:
@@ -243,20 +195,13 @@ async def grade_quiz(payload: Dict[str, Any]):
     if not payload or "responses" not in payload or not isinstance(payload["responses"], list):
         raise HTTPException(status_code=400, detail="Body must include 'responses' array")
 
-    responses = payload["responses"]
-    score = 0
-    details = []
-
-    for item in responses:
+    score, details = 0, []
+    for item in payload["responses"]:
         qid = item.get("id")
         user_ai = item.get("answer_index")
         q = _INDEX.get(qid)
         if not q:
-            details.append({
-                "id": qid,
-                "correct": False,
-                "error": "unknown question id",
-            })
+            details.append({"id": qid, "correct": False, "error": "unknown question id"})
             continue
         correct_ai = q["answer_index"]
         is_correct = (user_ai == correct_ai)
@@ -271,13 +216,9 @@ async def grade_quiz(payload: Dict[str, Any]):
             "topic": q.get("topic"),
         })
 
-    return JSONResponse(content={
-        "score": score,
-        "total": len(responses),
-        "details": details
-    })
+    return JSONResponse(content={"score": score, "total": len(payload["responses"]), "details": details})
 
-# ----------------- Health & Home -----------------
+# -------------- health/home --------------
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
