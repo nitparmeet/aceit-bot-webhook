@@ -107,6 +107,8 @@ _CATEGORY_ALIASES = {
 
 NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
 
+
+
 def _safe_str(v, default: str = "") -> str:
     try:
         if v is None: return default
@@ -3030,6 +3032,111 @@ def update_user_profile(update: Update, **kwargs):
 
 
 # --- name resolution helpers (paste near other small helpers) ---
+
+if "NA_STRINGS" not in globals():
+    NA_STRINGS = {"", "—", "na", "n/a", "nan", "none", "null"}
+
+if "_is_missing" not in globals():
+    def _is_missing(v) -> bool:
+        try:
+            s = str(v).strip().lower()
+        except Exception:
+            return True
+        return s in NA_STRINGS
+
+if "_safe_str" not in globals():
+    def _safe_str(v, default: str = "") -> str:
+        try:
+            if v is None:
+                return default
+            if isinstance(v, float) and v != v:  # NaN
+                return default
+            s = str(v).strip()
+            return default if s.lower() in NA_STRINGS else s
+        except Exception:
+            return default
+
+if "_pick" not in globals():
+    def _pick(d: dict, *keys):
+        for k in keys:
+            if d is None:
+                break
+            val = d.get(k)
+            if not _is_missing(val):
+                return val
+        return None
+
+if "_to_int" not in globals():
+    def _to_int(v):
+        try:
+            return int(float(str(v).replace(",", "").strip()))
+        except Exception:
+            return None
+
+if "_fmt_rank_val" not in globals():
+    def _fmt_rank_val(v) -> str:
+        n = _to_int(v)
+        return f"{n:,}" if n is not None else "—"
+
+if "_fmt_money" not in globals():
+    def _fmt_money(v) -> str:
+        try:
+            if _is_missing(v):
+                return "—"
+            n = float(str(v).replace(",", "").strip())
+            return f"₹{int(n):,}"
+        except Exception:
+            return "—"
+
+if "_yn" not in globals():
+    def _yn(v) -> str:
+        if v is True:  return "Yes"
+        if v is False: return "No"
+        return "—"
+
+if "_fmt_bond_line" not in globals():
+    def _fmt_bond_line(years, penalty_lakhs) -> str:
+        y = _to_int(years)
+        try:
+            p = float(str(penalty_lakhs).replace(",", "").strip())
+        except Exception:
+            p = None
+        if y and p is not None:
+            return f"{y} yrs / ₹{int(p):,}L"
+        if y:
+            return f"{y} yrs"
+        if p is not None:
+            return f"₹{int(p):,}L"
+        return "—"
+
+if "_city_vibe_from_row" not in globals():
+    def _city_vibe_from_row(city: str | None, state: str | None) -> str:
+        c = _safe_str(city)
+        s = _safe_str(state)
+        if c and s: return f"{c}, {s} — typical city–campus mix."
+        if s:       return f"{s} — regional hub feel."
+        return "—"
+
+if "_why_from_signals" not in globals():
+    def _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail) -> str:
+        parts = []
+        own = _safe_str(ownership).lower()
+        if "government" in own or "govt" in own or "central" in own:
+            parts.append("government setup")
+        elif "deemed" in own:
+            parts.append("deemed university environment")
+        elif "private" in own:
+            parts.append("private infrastructure")
+        if pg_quota:
+            parts.append("PG quota available")
+        y = _to_int(bond_years)
+        if y:
+            parts.append(f"{y}-year service bond")
+        if hostel_avail is True:
+            parts.append("hostel available")
+        return "; ".join(parts) if parts else "balanced option for your rank"
+
+
 def _norm_meta_key(v: object) -> str:
     """Uppercase A–Z/0–9 only; same normalization used for COLLEGE_META_INDEX keys."""
     return re.sub(r"[^A-Z0-9]+", "", str(v or "").upper())
