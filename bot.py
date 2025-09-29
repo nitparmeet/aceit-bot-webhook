@@ -48,7 +48,12 @@ QUIZ_POOL: List[Dict[str, Any]] = []
 QUIZ_INDEX: Dict[str, Dict[str, Any]] = {} 
 QUIZ_BY_ID: dict[str, dict] = {}    # built from QUIZ_POOL after load
 QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
-QUIZ_STATE_PATH = Path(os.environ.get("QUIZ_STATE_PATH", "/tmp/quiz_sessions.json"))
+
+
+QUIZ_STATE_PATH = "/tmp/quiz_sessions.json"
+QUIZ_SESSION_TTL_SECS = 6 * 60 * 60  # 6 hours
+
+
 
 _SUBJECT_ALIASES = {
     "physics": {"physics", "mechanics", "waves", "optics", "semiconductors",
@@ -61,7 +66,12 @@ _SUBJECT_ALIASES = {
     "biology": {"biology", "bio"},  # umbrella → will allow zoology & botany too
 }
 
-
+SUBJECT_MAP = {
+    "Physics": "physics",
+    "Chemistry": "chemistry",
+    "Botany": "botany",
+    "Zoology": "zoology",
+}
 
 
 from dataclasses import dataclass
@@ -86,24 +96,21 @@ def _norm(s: str | None) -> str:
     return (s or "").strip().lower()
 
 def _question_subject(q: dict) -> str:
-    """Best-effort subject extraction from common fields or tags/topic text."""
-    # direct fields commonly seen across banks
-    for k in ("subject", "subj", "subject_name", "stream"):
+    for k in ("subject","subj","subject_name","stream"):
         v = _norm(q.get(k))
         if v:
             return v
-    # tags may contain the subject
     for t in (q.get("tags") or []):
         t = _norm(t if isinstance(t, str) else "")
-        if t in ("physics", "chemistry", "zoology", "botany", "biology"):
+        if t in {"physics","chemistry","zoology","botany","biology"}:
             return t
-    # infer from topic/chapter/category text
     topic = _norm(q.get("topic") or q.get("chapter") or q.get("category"))
     if topic:
         for key, aliases in _SUBJECT_ALIASES.items():
             if any(a in topic for a in aliases):
                 return key
-    return ""  # unknown
+    return ""
+
 
 def _pick_qs(pool: list[dict], *,
              subject: str | None = None,
@@ -111,9 +118,8 @@ def _pick_qs(pool: list[dict], *,
              tags_any: list[str] | None = None,
              count: int = 5,
              shuffle: bool = True) -> list[dict]:
-    """Filter by subject/difficulty/tags, then (optionally) shuffle & slice."""
     want = _norm(subject)
-    tags_lower = { _norm(t) for t in (tags_any or []) if _norm(t) }
+    tags_lower = {_norm(t) for t in (tags_any or []) if _norm(t)}
 
     def ok_subject(q: dict) -> bool:
         if not want:
@@ -122,10 +128,9 @@ def _pick_qs(pool: list[dict], *,
         if not got:
             return False
         if want == "biology":
-            return got in ("biology", "zoology", "botany")
+            return got in {"biology","zoology","botany"}
         if got == want:
             return True
-        # fuzzy match via topic aliases (helps when bank stores only chapter names)
         aliases = _SUBJECT_ALIASES.get(want, set())
         topic = _norm(q.get("topic") or q.get("chapter") or q.get("category"))
         return any(a in topic for a in aliases)
@@ -133,22 +138,21 @@ def _pick_qs(pool: list[dict], *,
     def ok_difficulty(q: dict) -> bool:
         if difficulty is None:
             return True
-        qdiff = q.get("difficulty")
-        if isinstance(qdiff, str) and qdiff.isdigit():
-            qdiff = int(qdiff)
-        return (qdiff == difficulty)
+        qd = q.get("difficulty")
+        if isinstance(qd, str) and qd.isdigit():
+            qd = int(qd)
+        return qd == difficulty
 
     def ok_tags(q: dict) -> bool:
         if not tags_lower:
             return True
-        qtags = { _norm(t) for t in (q.get("tags") or []) if isinstance(t, str) }
+        qtags = {_norm(t) for t in (q.get("tags") or []) if isinstance(t, str)}
         return bool(qtags & tags_lower)
 
-    filtered = [q for q in pool if ok_subject(q) and ok_difficulty(q) and ok_tags(q)]
+    out = [q for q in pool if ok_subject(q) and ok_difficulty(q) and ok_tags(q)]
     if shuffle:
-        import random
-        random.shuffle(filtered)
-    return filtered[:count]
+        import random; random.shuffle(out)
+    return out[:count]
                  
 
 def _build_quiz_index() -> None:
@@ -160,43 +164,37 @@ def _build_quiz_index() -> None:
             QUIZ_BY_ID[qid] = q
 
 def _save_quiz_state() -> None:
-    """Persist only lightweight fields: qids, answers, index."""
-    try:
-        payload = {}
-        for uid, sess in QUIZ_SESSIONS.items():
-            qids = [q.get("id") for q in sess.get("questions", []) if q.get("id")]
-            payload[str(uid)] = {
-                "qids": qids,
-                "answers": sess.get("answers", {}),
-                "index": int(sess.get("index", 0)),
-                "ts": int(time.time()),
-            }
-        QUIZ_STATE_PATH.write_text(json.dumps(payload))
-    except Exception:
-        pass  # best-effort
+    import json, os, time, tempfile
+    now = int(time.time())
+    # add a timestamp to each session
+    to_dump = {}
+    for uid, sess in QUIZ_SESSIONS.items():
+        s = dict(sess)
+        s["ts"] = sess.get("ts", now)
+        to_dump[str(uid)] = s
+    tmp = f"{QUIZ_STATE_PATH}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(to_dump, f)
+    os.replace(tmp, QUIZ_STATE_PATH)
 
 def _load_quiz_state() -> None:
-    """Load sessions from disk and rebuild full question objects."""
+    import json, os, time
+    if not os.path.exists(QUIZ_STATE_PATH):
+        return
     try:
-        if not QUIZ_STATE_PATH.exists():
-            return
-        data = json.loads(QUIZ_STATE_PATH.read_text() or "{}")
-        restored = 0
-        for uid_str, s in data.items():
-            qids = s.get("qids") or []
-            qs = [QUIZ_BY_ID[qid] for qid in qids if qid in QUIZ_BY_ID]
-            if not qs:
-                continue
-            QUIZ_SESSIONS[int(uid_str)] = {
-                "questions": qs,
-                "answers": s.get("answers", {}),
-                "index": int(s.get("index", 0)),
-            }
-            restored += 1
-        if restored:
-            log.info("✅ Restored %d quiz session(s) from %s", restored, QUIZ_STATE_PATH)
+        with open(QUIZ_STATE_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
     except Exception:
-        log.exception("Failed to load quiz state")
+        return
+    now = int(time.time())
+    restored = 0
+    for k, v in (raw or {}).items():
+        ts = int(v.get("ts", now))
+        if now - ts <= QUIZ_SESSION_TTL_SECS and "questions" in v and "index" in v:
+            QUIZ_SESSIONS[int(k)] = v
+            restored += 1
+    if restored:
+        log.info("✅ Restored %d quiz session(s) from %s", restored, QUIZ_STATE_PATH)
         
 def _opt_text(options, idx):
     try:
@@ -2100,38 +2098,26 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             sess["inflight"] = False
 
 
-async def _start_quiz(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    count: int,
-    subject: Optional[str] = None,
-    difficulty: Optional[int] = None,
-    tags_any: Optional[List[str]] = None,
-) -> None:
-    """Initialize a quiz session and send the first question (exactly once)."""
+async def _start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, *,
+                      count: int, subject: str | None = None,
+                      difficulty: int | None = None,
+                      tags_any: Optional[List[str]] = None) -> None:
     ensure_quiz_ready()
-
-    qs = _pick_qs(
-        QUIZ_POOL,
-        subject=subject,
-        difficulty=difficulty,
-        tags_any=tags_any,
-        count=count,
-        shuffle=True,
-    )
-
-    target = update.effective_message or (update.callback_query.message if getattr(update, "callback_query", None) else None)
+    qs = _pick_qs(QUIZ_POOL, subject=subject, difficulty=difficulty, tags_any=tags_any,
+                  count=count, shuffle=True)
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
     if not qs:
         if target:
             await target.reply_text("No questions match those filters. Try again.")
         return
-
-    user_id = update.effective_user.id
-    QUIZ_SESSIONS[user_id] = {"questions": qs, "answers": {}, "index": 0}
-    _save_quiz_state()  # persist immediately
-
-    # Send Q1
+    QUIZ_SESSIONS[update.effective_user.id] = {
+        "questions": qs,
+        "answers": {},
+        "index": 0,
+        "subject": subject or "",
+        "ts": __import__("time").time(),
+    }
+    _save_quiz_state()
     await _send_next(update, context)
         
 # public commands
@@ -2147,19 +2133,22 @@ async def next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await _send_next(update, context)
 
 async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Abort the active quiz and clean up the session."""
     q = getattr(update, "callback_query", None)
     if q:
         await q.answer()
-        await _safe_clear_kb(q)
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         chat_id = q.message.chat.id
     else:
         chat_id = update.effective_chat.id
 
     user_id = update.effective_user.id
-    had_session = bool(QUIZ_SESSIONS.pop(user_id, None))
+    had = bool(QUIZ_SESSIONS.pop(user_id, None))
+    _save_quiz_state()
 
-    msg = "❌ Quiz cancelled." if had_session else "No active quiz."
+    msg = "❌ Quiz cancelled." if had else "No active quiz."
     try:
         if q:
             await context.bot.send_message(chat_id=chat_id, text=msg)
@@ -2183,99 +2172,73 @@ async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 # button click handler
 #Answer handler (stale-press safe + no duplicate sending)
+
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
+    await _safe_clear_kb(query)
 
-    # Best-effort: remove keyboard (ignore if already removed)
-    try:
-        await query.edit_message_reply_markup(reply_markup=None)
-    except BadRequest:
-        pass
-    except Exception:
-        pass
-
-    data = (query.data or "")
+    data = query.data or ""
     if not data.startswith("ans:"):
         return
     try:
         _, qid, idx_str = data.split(":")
         chosen = int(idx_str)
     except Exception:
-        # Edit text only if it will actually change; otherwise send a new message
+        # avoid "Message is not modified" by only editing if text actually changes
         try:
             await query.edit_message_text("Invalid answer payload.")
-        except BadRequest:
-            await context.bot.send_message(chat_id=query.message.chat.id, text="Invalid answer payload.")
+        except Exception:
+            pass
         return
 
     user_id = update.effective_user.id
-
-    # Recover session if memory was wiped (process restart)
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
-        # Try loading from disk (in case we restarted moments ago)
-        _load_quiz_state()
-        sess = QUIZ_SESSIONS.get(user_id)
-
-    if not sess:
-        # Don’t edit to the same text (avoids “Message is not modified”)
         try:
             await query.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
-        except BadRequest:
-            await context.bot.send_message(chat_id=query.message.chat.id, text="Session expired. Use /quiz5 or /quiz10.")
+        except Exception:
+            pass
         return
 
     qs: List[Dict[str, Any]] = sess["questions"]
-    i = sess.get("index", 0)
+    i = sess["index"]
     if i >= len(qs):
-        # Finished already; avoid duplicate grading
         try:
             await query.edit_message_text("Already finished. Use /quiz5 to start again.")
-        except BadRequest:
-            await context.bot.send_message(chat_id=query.message.chat.id, text="Already finished. Use /quiz5 to start again.")
+        except Exception:
+            pass
         return
 
     q = qs[i]
     if q.get("id") != qid:
-        # Stale press from an older message; just ignore politely
-        await query.answer("That question already moved on.", show_alert=False)
+        # stale press
+        await query.answer("That question moved on.", show_alert=False)
         return
 
-    # Record answer
     sess["answers"][qid] = chosen
     sess["index"] = i + 1
-    _save_quiz_state()  # persist after every answer
+    sess["ts"] = __import__("time").time()
+    _save_quiz_state()
 
-    # Optional immediate feedback (avoid edit errors)
     ca = q["answer_index"]
-    try:
-        user_txt = q["options"][chosen]
-    except Exception:
-        user_txt = "—"
-    cor_txt = q["options"][ca]
-
+    user_txt = q["options"][chosen]
+    cor_txt  = q["options"][ca]
     fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
-    msg_text = f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
 
+    # best-effort edit; ignore 400 "message not modified"
     try:
-        # Only attempt to edit the same message once
-        await query.edit_message_text(msg_text)
-    except BadRequest:
-        # If content matches or message is gone, post a fresh message
-        await context.bot.send_message(chat_id=query.message.chat.id, text=msg_text)
+        await query.edit_message_text(
+            f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
+        )
     except Exception:
-        pass
+        try:
+            await query.message.reply_text(fb)
+        except Exception:
+            pass
 
-    # Proceed to next question (will grade at end)
     await _send_next(update, context)
-# small diag command
-async def quizdiag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        ensure_quiz_ready()
-        await update.message.reply_text(f"Pool size: {len(QUIZ_POOL)}. First id: {QUIZ_POOL[0]['id'] if QUIZ_POOL else '—'}")
-    except Exception as e:
-        await update.message.reply_text(f"Quiz load error: {e}")
+    
 # ===== END SIMPLE QUIZ =====
 
 # ===== END NEW QUIZ INTEGRATION =====
@@ -3642,68 +3605,76 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
-    data = q.data if q else ""
+    if not q:
+        return
+    data = q.data or ""
     await q.answer()
 
-    # 5-Q quick quiz
-    if data == "quiz:mini5":
-        try:
-            return await quiz5(update, context)  # your existing handler
-        except NameError:
-            pass
-        return await q.message.reply_text("Mini Quiz (5) isn’t wired to a handler.")
+    # clear old inline keyboard to avoid duplicate presses
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
-    # Subject chooser for 10-Q
+    # 5-Q quick quiz (no subject filter)
+    if data == "quiz:mini5":
+        return await _start_quiz(update, context, count=5)
+
+    # Subject picker for 10-Q
     if data == "quiz:mini10":
         subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
-        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}") ] for s in subjects]
-        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu_quiz")])
+        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}:10")] for s in subjects]
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu:back")])
         kb = InlineKeyboardMarkup(rows)
         try:
             await q.message.edit_text("Pick a subject for 10 questions:", reply_markup=kb)
         except Exception:
-            await q.message.edit_reply_markup(reply_markup=kb)
+            try:
+                await q.message.edit_reply_markup(reply_markup=kb)
+            except Exception:
+                pass
         return
 
-    # Subjected 10-Q
+    # Start subject-locked quiz: quiz:sub:<HumanLabel>[:count]
     if data.startswith("quiz:sub:"):
-        subject = data.split("quiz:sub:", 1)[1]
-
-        # Prefer subject-specific functions if you already have them:
-        try:
-            if subject.lower() == "physics" and "quiz10physics" in globals():
-                return await quiz10physics(update, context)
-        except NameError:
-            pass
-
-        # Otherwise call your generic 10-Q function with subject support if you have it
-        try:
-            return await quiz10(update, context, subject=subject)  # if you implemented signature
-        except TypeError:
-            # Fallback: generic 10 without subject (still better than hanging)
+        parts = data.split(":")  # ["quiz","sub","<HumanLabel>","<count?>"]
+        human = parts[2] if len(parts) >= 3 else ""
+        count = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 10
+        subject = SUBJECT_MAP.get(human, "").strip()
+        if not subject:
             try:
-                return await quiz10(update, context)
-            except NameError:
-                return await q.message.reply_text(f"Subject quiz for {subject} isn’t wired to a handler.")
+                await q.message.reply_text("Unknown subject. Please pick again.")
+            except Exception:
+                pass
+            return
+        return await _start_quiz(update, context, count=count, subject=subject)
 
-    # Optional extras
+    # Streaks
     if data == "quiz:streaks":
         try:
             return await quiz_show_streaks(update, context)
         except NameError:
-            return await q.message.reply_text("Streaks isn’t implemented yet.")
+            try:
+                return await q.message.reply_text("Streaks isn’t implemented yet.")
+            except Exception:
+                return
 
+    # Leaderboard
     if data == "quiz:leaderboard":
         try:
             return await quiz_leaderboard(update, context)
         except NameError:
-            return await q.message.reply_text("Leaderboard isn’t implemented yet.")
+            try:
+                return await q.message.reply_text("Leaderboard isn’t implemented yet.")
+            except Exception:
+                return
 
+    # Back to main menu
     if data == "menu:back":
         try:
             return await show_menu(update, context)
-        except NameError:
-            return await q.message.reply_text("Main menu isn’t available right now.")
+        except Exception:
+            return
     
 
 async def menu_back(update, context):
