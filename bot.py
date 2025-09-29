@@ -3675,6 +3675,11 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
  #       return await predict_start(update, context)
  #   if data in {"menu_mock_predict", "menu_predict_mock"}:
  #       return await predict_mockrank_start(update, context)
+    if data in {"menu_mock_predict", "menu_predict_mock"}:
+    # Let the ConversationHandler entry_point handle this callback.
+    # We just acknowledge the press and return.
+        await q.answer()
+        return
     if data == "menu_ask":
         return await ask_start(update, context)
     if data == "menu_profile":
