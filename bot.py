@@ -92,38 +92,36 @@ _openai_client: Optional["OpenAI"] = None
 
 _client_singleton = None
 
-def _subject_of(q: dict) -> str:
+def _subject_of(q: dict) -> str | None:
     """
-    Return the subject of a question in lowercase, robust to key names/casing.
-    Tries common keys, any '*subject*' key, then scans all string values.
+    Return canonical lowercase subject for a question dict, or None.
+    Looks across multiple possible fields and tags.
     """
-    if not isinstance(q, dict):
-        return ""
+    # Common field names
+    for key in ("subject", "Subject", "category", "topic"):
+        val = q.get(key)
+        if isinstance(val, str) and val.strip():
+            lc = val.strip().lower()
+            if lc in SUBJECT_CANON:
+                return lc
 
-    # 1) common keys
-    for key in ("subject", "Subject", "subject_name", "SubjectName",
-                "topic", "Topic", "category", "Category"):
-        v = q.get(key)
-        if isinstance(v, str):
-            s = v.strip().lower()
-            if s in _SUBJECT_CANON:
-                return s
+    # Tags may be a list or a comma/pipe separated string
+    tags = q.get("tags") or q.get("Tags") or []
+    if isinstance(tags, str):
+        parts = [t.strip().lower() for t in re.split(r"[,\|/]", tags) if t.strip()]
+    else:
+        parts = [str(t).strip().lower() for t in tags if str(t).strip()]
+    for t in parts:
+        if t in SUBJECT_CANON:
+            return t
 
-    # 2) any key containing 'subject'
-    for k, v in q.items():
-        if isinstance(k, str) and "subject" in k.lower() and isinstance(v, str):
-            s = v.strip().lower()
-            if s in _SUBJECT_CANON:
-                return s
+    # As a last resort, try to read it from the question text itself
+    text = q.get("question") or ""
+    m = re.search(r"\b(physics|chemistry|botany|zoology)\b", text, re.I)
+    if m:
+        return m.group(1).lower()
 
-    # 3) scan all string values
-    for v in q.values():
-        if isinstance(v, str):
-            s = v.strip().lower()
-            if s in _SUBJECT_CANON:
-                return s
-
-    return ""
+    return None
 
 
 def _norm(s: str) -> str:
@@ -2012,7 +2010,7 @@ def _read_array_or_questions_node(data) -> list[dict]:
 
 
 def ensure_quiz_ready() -> None:
-    """Load quiz.json (flat array) once."""
+    """Load quiz.json (flat array) once and normalize subjects."""
     global QUIZ_POOL, QUIZ_INDEX, QUIZ_BY_ID
     if QUIZ_POOL:
         return
@@ -2022,7 +2020,7 @@ def ensure_quiz_ready() -> None:
     if not isinstance(data, list):
         raise ValueError("quiz.json must be a flat array of question objects")
 
-    # minimal validation
+    # Minimal validation
     for i, q in enumerate(data):
         if "id" not in q or "question" not in q or "options" not in q or "answer_index" not in q:
             raise ValueError(f"Bad question at index {i}: missing keys")
@@ -2031,18 +2029,23 @@ def ensure_quiz_ready() -> None:
         if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
             raise ValueError(f"Bad answer_index at qid={q.get('id')}")
 
+    # Normalize & index
+    for q in data:
+        q["subject_norm"] = _subject_of(q)  # <-- critical
+
     QUIZ_POOL = data
     QUIZ_INDEX = {q["id"]: q for q in QUIZ_POOL}
-    QUIZ_BY_ID = QUIZ_INDEX  # reuse for persistence/restore
-    log.info("✅ Loaded %d quiz items (simple loader)", len(QUIZ_POOL))
+    QUIZ_BY_ID = QUIZ_INDEX  # used by persistence/restore
 
     try:
-        subj_seen = sorted({_subject_of(q) for q in QUIZ_POOL if _subject_of(q)})
+        subj_seen = sorted({q["subject_norm"] for q in QUIZ_POOL if q.get("subject_norm")})
         log.info("✅ Subjects detected in quiz.json: %s", subj_seen)
     except Exception:
         pass
 
-    _load_quiz_state()  # now uses QUIZ_BY_ID
+    _load_quiz_state()
+
+ 
 
 def _pick_qs(
     pool: List[Dict[str, Any]],
@@ -2054,15 +2057,44 @@ def _pick_qs(
     shuffle: bool = True,
 ) -> List[Dict[str, Any]]:
     out = pool
+
     if subject:
-        out = [q for q in out if q.get("subject") == subject]
-    if difficulty:
-        out = [q for q in out if q.get("difficulty") == difficulty]
+        subj_l = subject.strip().lower()
+        out = [q for q in out if q.get("subject_norm") == subj_l]
+
+    if difficulty is not None:
+        try:
+            d = int(difficulty)
+            out = [q for q in out if int(q.get("difficulty", -1)) == d]
+        except Exception:
+            out = []  # invalid difficulty given
+
     if tags_any:
-        out = [q for q in out if any(t in (q.get("tags") or []) for t in tags_any)]
+        tags_lc = {str(t).strip().lower() for t in tags_any if str(t).strip()}
+        def has_any_tag(q: dict) -> bool:
+            qt = q.get("tags") or q.get("Tags") or []
+            if isinstance(qt, str):
+                qparts = {t.strip().lower() for t in re.split(r"[,\|/]", qt) if t.strip()}
+            else:
+                qparts = {str(t).strip().lower() for t in qt if str(t).strip()}
+            return not tags_lc.isdisjoint(qparts)
+        out = [q for q in out if has_any_tag(q)]
+
     if shuffle:
         out = list(out)
         random.shuffle(out)
+
+    # Helpful debug if empty
+    if not out:
+        # Count by subject to see what’s available
+        from collections import Counter
+        cnt = Counter(q.get("subject_norm") for q in pool)
+        log.warning(
+            "[_pick_qs] No matches. Requested subject=%r, difficulty=%r, tags_any=%r. "
+            "Available by subject: %s",
+            subject, difficulty, tags_any, dict(cnt)
+        )
+
     return out[:count]
 
 def _format_question(q: Dict[str, Any], index: int, total: int) -> str:
