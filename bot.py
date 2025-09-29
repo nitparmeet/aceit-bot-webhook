@@ -50,6 +50,19 @@ QUIZ_BY_ID: dict[str, dict] = {}    # built from QUIZ_POOL after load
 QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
 QUIZ_STATE_PATH = Path(os.environ.get("QUIZ_STATE_PATH", "/tmp/quiz_sessions.json"))
 
+_SUBJECT_ALIASES = {
+    "physics": {"physics", "mechanics", "waves", "optics", "semiconductors",
+                "thermal", "electricity", "magnetism", "modern"},
+    "chemistry": {"chemistry", "organic", "inorganic", "physical"},
+    "zoology": {"zoology", "human", "animal", "physiology", "genetics",
+                "reproduction", "evolution", "ecology"},
+    "botany": {"botany", "plant", "photosynthesis", "morphology", "anatomy",
+               "transport", "growth"},
+    "biology": {"biology", "bio"},  # umbrella → will allow zoology & botany too
+}
+
+
+
 
 from dataclasses import dataclass
 from pydantic import BaseModel, ValidationError, Field
@@ -68,6 +81,75 @@ _openai_client: Optional["OpenAI"] = None
 
 
 _client_singleton = None
+
+def _norm(s: str | None) -> str:
+    return (s or "").strip().lower()
+
+def _question_subject(q: dict) -> str:
+    """Best-effort subject extraction from common fields or tags/topic text."""
+    # direct fields commonly seen across banks
+    for k in ("subject", "subj", "subject_name", "stream"):
+        v = _norm(q.get(k))
+        if v:
+            return v
+    # tags may contain the subject
+    for t in (q.get("tags") or []):
+        t = _norm(t if isinstance(t, str) else "")
+        if t in ("physics", "chemistry", "zoology", "botany", "biology"):
+            return t
+    # infer from topic/chapter/category text
+    topic = _norm(q.get("topic") or q.get("chapter") or q.get("category"))
+    if topic:
+        for key, aliases in _SUBJECT_ALIASES.items():
+            if any(a in topic for a in aliases):
+                return key
+    return ""  # unknown
+
+def _pick_qs(pool: list[dict], *,
+             subject: str | None = None,
+             difficulty: int | None = None,
+             tags_any: list[str] | None = None,
+             count: int = 5,
+             shuffle: bool = True) -> list[dict]:
+    """Filter by subject/difficulty/tags, then (optionally) shuffle & slice."""
+    want = _norm(subject)
+    tags_lower = { _norm(t) for t in (tags_any or []) if _norm(t) }
+
+    def ok_subject(q: dict) -> bool:
+        if not want:
+            return True
+        got = _question_subject(q)
+        if not got:
+            return False
+        if want == "biology":
+            return got in ("biology", "zoology", "botany")
+        if got == want:
+            return True
+        # fuzzy match via topic aliases (helps when bank stores only chapter names)
+        aliases = _SUBJECT_ALIASES.get(want, set())
+        topic = _norm(q.get("topic") or q.get("chapter") or q.get("category"))
+        return any(a in topic for a in aliases)
+
+    def ok_difficulty(q: dict) -> bool:
+        if difficulty is None:
+            return True
+        qdiff = q.get("difficulty")
+        if isinstance(qdiff, str) and qdiff.isdigit():
+            qdiff = int(qdiff)
+        return (qdiff == difficulty)
+
+    def ok_tags(q: dict) -> bool:
+        if not tags_lower:
+            return True
+        qtags = { _norm(t) for t in (q.get("tags") or []) if isinstance(t, str) }
+        return bool(qtags & tags_lower)
+
+    filtered = [q for q in pool if ok_subject(q) and ok_difficulty(q) and ok_tags(q)]
+    if shuffle:
+        import random
+        random.shuffle(filtered)
+    return filtered[:count]
+                 
 
 def _build_quiz_index() -> None:
     """Build id -> question map from QUIZ_POOL."""
