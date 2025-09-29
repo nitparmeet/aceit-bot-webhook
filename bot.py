@@ -137,8 +137,7 @@ def _pick_qs(
     want = (subject or "").strip().lower()
     want_tags = { (t or "").strip().lower() for t in (tags_any or []) }
     
-    if subject:
-    log.info("[quiz] filtering for subject=%r (lower=%r)", subject, want)
+    
     
     picked: list[dict] = []
     for q in pool:
