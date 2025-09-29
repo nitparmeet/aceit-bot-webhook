@@ -55,15 +55,11 @@ QUIZ_SESSION_TTL_SECS = 6 * 60 * 60  # 6 hours
 
 
 
-_SUBJECT_ALIASES = {
-    "physics": {"physics", "mechanics", "waves", "optics", "semiconductors",
-                "thermal", "electricity", "magnetism", "modern"},
-    "chemistry": {"chemistry", "organic", "inorganic", "physical"},
-    "zoology": {"zoology", "human", "animal", "physiology", "genetics",
-                "reproduction", "evolution", "ecology"},
-    "botany": {"botany", "plant", "photosynthesis", "morphology", "anatomy",
-               "transport", "growth"},
-    "biology": {"biology", "bio"},  # umbrella → will allow zoology & botany too
+SUBJECT_ALIASES = {
+    "physics":   {"physics", "phy"},
+    "chemistry": {"chemistry", "chem"},
+    "botany":    {"botany"},
+    "zoology":   {"zoology"},
 }
 
 SUBJECT_MAP = {
@@ -92,8 +88,25 @@ _openai_client: Optional["OpenAI"] = None
 
 _client_singleton = None
 
-def _norm(s: str | None) -> str:
+def _norm(s: str) -> str:
     return (s or "").strip().lower()
+
+
+def _q_subject_value(q: dict) -> str:
+    # try common key names; fall back to tag-like fields
+    for k in ("subject", "Subject", "domain", "topic", "subject_name"):
+        if isinstance(q.get(k), str):
+            return _norm(q[k])
+    # also allow subject embedded in tags
+    for k in ("tags", "Tags"):
+        t = q.get(k)
+        if isinstance(t, str):
+            return _norm(t)
+        if isinstance(t, list):
+            for x in t:
+                if isinstance(x, str):
+                    return _norm(x)
+    return ""
 
 def _question_subject(q: dict) -> str:
     for k in ("subject","subj","subject_name","stream"):
@@ -112,47 +125,59 @@ def _question_subject(q: dict) -> str:
     return ""
 
 
-def _pick_qs(pool: list[dict], *,
-             subject: str | None = None,
-             difficulty: int | None = None,
-             tags_any: list[str] | None = None,
-             count: int = 5,
-             shuffle: bool = True) -> list[dict]:
-    want = _norm(subject)
-    tags_lower = {_norm(t) for t in (tags_any or []) if _norm(t)}
+def _pick_qs(
+    pool: list,
+    *,
+    subject: str | None = None,
+    difficulty: int | None = None,
+    tags_any: list[str] | None = None,
+    count: int = 5,
+    shuffle: bool = True,
+) -> list:
+    """Return up to `count` questions matching filters (case/alias tolerant)."""
+    cand = list(pool)
 
-    def ok_subject(q: dict) -> bool:
-        if not want:
-            return True
-        got = _question_subject(q)
-        if not got:
+    # subject filter (case-insensitive + alias-aware; matches 'subject' or tags)
+    if subject:
+        want = _norm(subject)
+        alias_set = SUBJECT_ALIASES.get(want, {want})
+        def _has_subject(q: dict) -> bool:
+            qs = _q_subject_value(q)
+            if not qs:
+                return False
+            # match exact alias token OR token in a tag list
+            if qs in alias_set:
+                return True
+            # when subject stored inside tags list, check all tags
+            for k in ("tags", "Tags"):
+                t = q.get(k)
+                if isinstance(t, str) and _norm(t) in alias_set:
+                    return True
+                if isinstance(t, list) and any(_norm(x) in alias_set for x in t if isinstance(x, str)):
+                    return True
             return False
-        if want == "biology":
-            return got in {"biology","zoology","botany"}
-        if got == want:
-            return True
-        aliases = _SUBJECT_ALIASES.get(want, set())
-        topic = _norm(q.get("topic") or q.get("chapter") or q.get("category"))
-        return any(a in topic for a in aliases)
+        cand = [q for q in cand if _has_subject(q)]
 
-    def ok_difficulty(q: dict) -> bool:
-        if difficulty is None:
-            return True
-        qd = q.get("difficulty")
-        if isinstance(qd, str) and qd.isdigit():
-            qd = int(qd)
-        return qd == difficulty
+    # difficulty (if present in data; tolerant to str/int)
+    if difficulty is not None:
+        dnorm = str(difficulty).strip()
+        cand = [q for q in cand if str(q.get("difficulty", "")).strip() == dnorm]
 
-    def ok_tags(q: dict) -> bool:
-        if not tags_lower:
-            return True
-        qtags = {_norm(t) for t in (q.get("tags") or []) if isinstance(t, str)}
-        return bool(qtags & tags_lower)
+    # tags_any: at least one tag must match (case-insensitive)
+    if tags_any:
+        want = { _norm(t) for t in tags_any }
+        def _has_tag(q: dict) -> bool:
+            t = q.get("tags") or q.get("Tags") or []
+            if isinstance(t, str):
+                t = [t]
+            return any(isinstance(x, str) and _norm(x) in want for x in t)
+        cand = [q for q in cand if _has_tag(q)]
 
-    out = [q for q in pool if ok_subject(q) and ok_difficulty(q) and ok_tags(q)]
     if shuffle:
-        import random; random.shuffle(out)
-    return out[:count]
+        import random
+        random.shuffle(cand)
+
+    return cand[: max(0, count)]
                  
 
 def _build_quiz_index() -> None:
@@ -2073,6 +2098,7 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
             # Cleanup finished session
             QUIZ_SESSIONS.pop(user_id, None)
+            _save_quiz_state()
             return
 
         # Otherwise, send question i
@@ -2117,6 +2143,7 @@ async def _start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, *,
         "subject": subject or "",
         "ts": __import__("time").time(),
     }
+                          
     _save_quiz_state()
     await _send_next(update, context)
         
