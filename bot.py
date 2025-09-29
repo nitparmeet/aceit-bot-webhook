@@ -3648,10 +3648,10 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     data = q.data if q else ""
     await q.answer()
 
-    if data == "menu_predict":
-        return await predict_start(update, context)
-    if data in {"menu_mock_predict", "menu_predict_mock"}:
-        return await predict_mockrank_start(update, context)
+ #   if data == "menu_predict":
+ #       return await predict_start(update, context)
+ #   if data in {"menu_mock_predict", "menu_predict_mock"}:
+ #       return await predict_mockrank_start(update, context)
     if data == "menu_ask":
         return await ask_start(update, context)
     if data == "menu_profile":
@@ -7526,8 +7526,8 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     _add(CallbackQueryHandler(
         menu_router,
-        pattern=r"^menu_(predict|mock_predict|ask|profile|coach|quiz)$"
-    ), group=0)
+        pattern=r"^menu_(ask|profile|coach|quiz)$"
+    ), group=1)
 
     # -------------------------------
     # Error handler (optional)
