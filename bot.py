@@ -62,6 +62,8 @@ SUBJECT_ALIASES = {
     "zoology":   {"zoology"},
 }
 
+_SUBJECT_CANON = {"physics", "chemistry", "botany", "zoology"}
+
 SUBJECT_MAP = {
     "Physics": "physics",
     "Chemistry": "chemistry",
@@ -87,6 +89,40 @@ _openai_client: Optional["OpenAI"] = None
 
 
 _client_singleton = None
+
+def _subject_of(q: dict) -> str:
+    """
+    Return the subject of a question in lowercase, robust to key names/casing.
+    Tries common keys, any '*subject*' key, then scans all string values.
+    """
+    if not isinstance(q, dict):
+        return ""
+
+    # 1) common keys
+    for key in ("subject", "Subject", "subject_name", "SubjectName",
+                "topic", "Topic", "category", "Category"):
+        v = q.get(key)
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in _SUBJECT_CANON:
+                return s
+
+    # 2) any key containing 'subject'
+    for k, v in q.items():
+        if isinstance(k, str) and "subject" in k.lower() and isinstance(v, str):
+            s = v.strip().lower()
+            if s in _SUBJECT_CANON:
+                return s
+
+    # 3) scan all string values
+    for v in q.values():
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in _SUBJECT_CANON:
+                return s
+
+    return ""
+
 
 def _norm(s: str) -> str:
     return (s or "").strip().lower()
@@ -126,33 +162,31 @@ def _question_subject(q: dict) -> str:
 
 
 def _pick_qs(
-    pool: list[dict],
+    pool: List[Dict[str, Any]],
     *,
-    subject: str | None = None,
-    difficulty: int | None = None,
-    tags_any: list[str] | None = None,
+    subject: Optional[str] = None,
+    difficulty: Optional[int] = None,
+    tags_any: Optional[List[str]] = None,
     count: int = 10,
     shuffle: bool = True,
-) -> list[dict]:
+) -> List[Dict[str, Any]]:
     want = (subject or "").strip().lower()
     want_tags = { (t or "").strip().lower() for t in (tags_any or []) }
-    
-    
-    
-    picked: list[dict] = []
-    for q in pool:
-        # --- subject (exact, tolerant to case/whitespace) ---
-        qsubj = str(q.get("subject") or q.get("Subject") or "").strip().lower()
-        if want and qsubj != want:
-            continue  # not this subject
 
-        # --- difficulty (optional, skip if not stored) ---
+    picked: List[Dict[str, Any]] = []
+    for q in pool:
+        # --- subject (robust) ---
+        qsubj = _subject_of(q)
+        if want and qsubj != want:
+            continue
+
+        # --- difficulty (optional exact match if present) ---
         if difficulty is not None:
             qdiff = q.get("difficulty") or q.get("Difficulty")
             if not isinstance(qdiff, int) or qdiff != difficulty:
                 continue
 
-        # --- tags any-of (optional, skip if not stored) ---
+        # --- tags any-of (optional) ---
         if want_tags:
             qtags = q.get("tags") or q.get("Tags") or []
             qtagset = { str(t).strip().lower() for t in qtags } if isinstance(qtags, (list, tuple)) else set()
@@ -1990,6 +2024,12 @@ def ensure_quiz_ready() -> None:
     QUIZ_INDEX = {q["id"]: q for q in QUIZ_POOL}
     QUIZ_BY_ID = QUIZ_INDEX  # reuse for persistence/restore
     log.info("✅ Loaded %d quiz items (simple loader)", len(QUIZ_POOL))
+
+    try:
+        subj_seen = sorted({ _subject_of(q) for q in QUIZ_POOL if _subject_of(q) })
+        log.info("✅ Subjects detected in quiz.json: %s", subj_seen)
+    except Exception:
+        pass
 
     _load_quiz_state()  # now uses QUIZ_BY_ID
 
