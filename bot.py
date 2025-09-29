@@ -3606,10 +3606,10 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏫 Find Your NEET College 🎯", callback_data="menu_predict")],
-        [InlineKeyboardButton("📈 Mock Test Rank → College 🎓", callback_data="menu_mock_predict")],
+        [InlineKeyboardButton("📈 Mock Test Rank → College 🎓", callback_data="menu_predict_mock")],
         [InlineKeyboardButton("✏️ Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
-        [InlineKeyboardButton("💬 Clear Your NEET Doubts 🤔", callback_data="menu_ask")],
-        [InlineKeyboardButton("⚙️ Setup Your Profile 🧾", callback_data="menu_profile")],
+        [InlineKeyboardButton("💬 Clear your NEET Doubts 🤔", callback_data="menu_ask")],
+        [InlineKeyboardButton("⚙️ Setup your profile 🧾", callback_data="menu_profile")],
     ])
 
 async def show_menu(
@@ -3618,33 +3618,28 @@ async def show_menu(
     text: str = "Choose an option:",
 ) -> None:
     """Show the main menu (can be called from /menu or any callback)."""
-    # Pick a message target safely (works for both message and callback contexts)
     tgt = update.effective_message
     if tgt is None:
-        # last-ditch fallback to chat_id if available
-        chat_id = (update.effective_chat.id if update.effective_chat else None)
+        chat_id = update.effective_chat.id if update.effective_chat else None
         if chat_id:
             await context.bot.send_message(chat_id=chat_id, text="Hi! 👋")
         return
 
     explanation = (
         "📋 *Menu Options*\n\n"
-        "🏫 *Find Your NEET College* – 👉 Predict your MBBS seat based on your NEET AIR” 
-        "based on last year's cutoffs, plus get quick AI notes for shortlisted colleges.\n\n"
-        "🎯 *Mock Test Rank → College* – 👉 Check which colleges match your mock test rank.\n\n"
-        "📝 *Daily Quiz (Exam Mode)* – 👉 Practice 5 quick NEET questions (random subjects) or 10 quick NEET questions (selected subject) daily & track streaks”.\n\n"
-        "💬 *Clear your NEET Doubts* – 👉 Ask questions, get instant explanations.\n\n"
-        "⚙️ *Setup your profile* – 👉 Save category, quota & state for better predictions."
+        "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
+        "Get quick AI notes for shortlisted colleges.\n\n"
+        "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
+        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (random) or 10 by subject, and track streaks.\n\n"
+        "💬 *Clear your NEET Doubts* — Ask questions, get instant explanations.\n\n"
+        "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
 
-    # Send explanation and the actual menu keyboard
     try:
         await tgt.reply_text(explanation, parse_mode="Markdown", disable_web_page_preview=True)
     except Exception:
-        # If Markdown fails for any reason, degrade gracefully
         await tgt.reply_text(explanation, disable_web_page_preview=True)
 
-    # main_menu_markup() must return an InlineKeyboardMarkup with your top-level buttons
     await tgt.reply_text(text, reply_markup=main_menu_markup())
 
 
