@@ -921,6 +921,22 @@ async def _safe_clear_kb(query) -> None:
     except Exception:
         pass
 
+async def safe_edit_text(msg, text: str, **kwargs):
+    try:
+        return await msg.edit_text(text=text, **kwargs)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            return None
+        raise
+
+async def safe_edit_reply_markup(msg, reply_markup=None, **kwargs):
+    try:
+        return await msg.edit_reply_markup(reply_markup=reply_markup, **kwargs)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            return None
+        raise
+        
 async def _safe_set_kb(q, kb):
     """
     Replace the inline keyboard on the message that triggered this callback.
@@ -936,34 +952,41 @@ async def _safe_set_kb(q, kb):
         log.warning("editMessageReplyMarkup(set) failed: %s", msg)
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from telegram.error import BadRequest  # local import so you don't have to change imports elsewhere
+
     q = update.callback_query
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
+        [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
+        [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
+        [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
+    ])
+
     if q:
         await q.answer()
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
-            [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
-            [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
-            [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
-        ])
-        # Edit the same message (avoid sending a duplicate "Choose a quiz mode")
+        # Try to change both the text and the buttons
         try:
             await q.message.edit_text("Choose a quiz mode:", reply_markup=kb)
-        except Exception:
-            # If edit fails (e.g., no change), just set markup
-            await q.message.edit_reply_markup(reply_markup=kb)
+        except BadRequest as e:
+            # If the text is identical, Telegram throws "Message is not modified".
+            if "Message is not modified" in str(e):
+                # In that case, just try updating only the markup.
+                try:
+                    await q.message.edit_reply_markup(reply_markup=kb)
+                except BadRequest as e2:
+                    # If even the markup is identical, ignore silently.
+                    if "Message is not modified" not in str(e2):
+                        raise
+            else:
+                # Different BadRequest -> bubble up
+                raise
         return
 
-    # If triggered via /menu or directly:
+    # If triggered via /menu or directly (no callback query)
     await update.effective_chat.send_message(
         "Choose a quiz mode:",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
-            [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
-            [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
-            [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
-            [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
-        ])
+        reply_markup=kb
     )
         
 async def _send_quiz_report(update, context, score: int, total: int, details: list[dict]):
