@@ -4248,9 +4248,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await menu_quiz_handler(update, context)
         return
 
-    if data == "menu_predict":
-        await q.message.reply_text("Predictor coming right up. Use /predict to start.")
-        return
+   
 
     if data == "menu_mock_predict":
         await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
