@@ -6001,6 +6001,33 @@ async def cutdiag(update, context):
     )
     await update.effective_chat.send_message(msg)
 
+async def predict_mockrank_collect_size_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    try:
+        await q.answer()
+    except Exception:
+        pass
+
+    # parse size from callback data "mock:size:<N>"
+    try:
+        size = int((q.data or "").split(":")[-1])
+    except Exception:
+        size = None
+
+    if not size or size <= 0:
+        try:
+            await q.message.reply_text("Pick a valid list size.")
+        except Exception:
+            pass
+        return ASK_MOCK_SIZE
+
+    context.user_data["mock_size"] = size
+
+    # (continue exactly like your text-size handler does)
+    # Example: ask the next question in flow, or call your compute/predict
+    return await predict_mockrank_next_step(update, context)  # <-- or whatever your next step is
+    
+
 async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
