@@ -2072,7 +2072,7 @@ async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _start_quiz(update, context, count=5, difficulty=2)
 
 # button click handler
-Answer handler (stale-press safe + no duplicate sending)
+#Answer handler (stale-press safe + no duplicate sending)
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Record the user's answer, give brief feedback, then advance."""
     query = update.callback_query
