@@ -4,28 +4,12 @@
 import os
 import re
 import secrets
-
 _HANDLERS_WIRED = False
-
-
-
 from telegram.ext import Application
-
-
-
-
-from pathlib import Path   # <-- add this line
-
-
-
-
+from pathlib import Path   
 import contextlib
-
-
 import httpx
 from telegram.error import BadRequest
-
-
 import json
 import logging
 import html
@@ -62,7 +46,10 @@ QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}
 from dataclasses import dataclass
 QUIZ_POOL: List[Dict[str, Any]] = []  
 QUIZ_INDEX: Dict[str, Dict[str, Any]] = {} 
+QUIZ_BY_ID: dict[str, dict] = {}    # built from QUIZ_POOL after load
 QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
+QUIZ_STATE_PATH = Path(os.environ.get("QUIZ_STATE_PATH", "/tmp/quiz_sessions.json"))
+
 
 from dataclasses import dataclass
 from pydantic import BaseModel, ValidationError, Field
@@ -82,7 +69,53 @@ _openai_client: Optional["OpenAI"] = None
 
 _client_singleton = None
 
+def _build_quiz_index() -> None:
+    """Build id -> question map from QUIZ_POOL."""
+    QUIZ_BY_ID.clear()
+    for q in QUIZ_POOL:
+        qid = q.get("id")
+        if qid:
+            QUIZ_BY_ID[qid] = q
 
+def _save_quiz_state() -> None:
+    """Persist only lightweight fields: qids, answers, index."""
+    try:
+        payload = {}
+        for uid, sess in QUIZ_SESSIONS.items():
+            qids = [q.get("id") for q in sess.get("questions", []) if q.get("id")]
+            payload[str(uid)] = {
+                "qids": qids,
+                "answers": sess.get("answers", {}),
+                "index": int(sess.get("index", 0)),
+                "ts": int(time.time()),
+            }
+        QUIZ_STATE_PATH.write_text(json.dumps(payload))
+    except Exception:
+        pass  # best-effort
+
+def _load_quiz_state() -> None:
+    """Load sessions from disk and rebuild full question objects."""
+    try:
+        if not QUIZ_STATE_PATH.exists():
+            return
+        data = json.loads(QUIZ_STATE_PATH.read_text() or "{}")
+        restored = 0
+        for uid_str, s in data.items():
+            qids = s.get("qids") or []
+            qs = [QUIZ_BY_ID[qid] for qid in qids if qid in QUIZ_BY_ID]
+            if not qs:
+                continue
+            QUIZ_SESSIONS[int(uid_str)] = {
+                "questions": qs,
+                "answers": s.get("answers", {}),
+                "index": int(s.get("index", 0)),
+            }
+            restored += 1
+        if restored:
+            log.info("✅ Restored %d quiz session(s) from %s", restored, QUIZ_STATE_PATH)
+    except Exception:
+        log.exception("Failed to load quiz state")
+        
 def _opt_text(options, idx):
     try:
         if isinstance(idx, int) and options and 0 <= idx < len(options):
@@ -1843,13 +1876,15 @@ def _read_array_or_questions_node(data) -> list[dict]:
 
 def ensure_quiz_ready() -> None:
     """Load quiz.json (flat array) once."""
-    global QUIZ_POOL, QUIZ_INDEX
+    global QUIZ_POOL, QUIZ_INDEX, QUIZ_BY_ID
     if QUIZ_POOL:
         return
+
     with open(QUIZ_FILE_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, list):
         raise ValueError("quiz.json must be a flat array of question objects")
+
     # minimal validation
     for i, q in enumerate(data):
         if "id" not in q or "question" not in q or "options" not in q or "answer_index" not in q:
@@ -1858,9 +1893,13 @@ def ensure_quiz_ready() -> None:
             raise ValueError(f"Bad options at qid={q.get('id')}")
         if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
             raise ValueError(f"Bad answer_index at qid={q.get('id')}")
+
     QUIZ_POOL = data
     QUIZ_INDEX = {q["id"]: q for q in QUIZ_POOL}
+    QUIZ_BY_ID = QUIZ_INDEX  # reuse for persistence/restore
     log.info("✅ Loaded %d quiz items (simple loader)", len(QUIZ_POOL))
+
+    _load_quiz_state()  # now uses QUIZ_BY_ID
 
 def _pick_qs(
     pool: List[Dict[str, Any]],
@@ -1988,8 +2027,7 @@ async def _start_quiz(
     difficulty: Optional[int] = None,
     tags_any: Optional[List[str]] = None,
 ) -> None:
-    """Initialize a fresh quiz session and send the first question exactly once."""
-    import time
+    """Initialize a quiz session and send the first question (exactly once)."""
     ensure_quiz_ready()
 
     qs = _pick_qs(
@@ -2001,28 +2039,18 @@ async def _start_quiz(
         shuffle=True,
     )
 
-    target_msg = getattr(update, "effective_message", None)
+    target = update.effective_message or (update.callback_query.message if getattr(update, "callback_query", None) else None)
     if not qs:
-        if target_msg:
-            await target_msg.reply_text("No questions match those filters. Try again.")
+        if target:
+            await target.reply_text("No questions match those filters. Try again.")
         return
 
     user_id = update.effective_user.id
-    # Overwrite any prior/stale session with a lock-aware shape.
-    QUIZ_SESSIONS[user_id] = {
-        "questions": qs,
-        "answers": {},        # qid -> user_index
-        "index": 0,
-        "inflight": False,    # sending/grading guard (used by _send_next and on_answer)
-        "last_msg_id": None,  # last question message id we sent
-        "created_at": time.time(),
-    }
+    QUIZ_SESSIONS[user_id] = {"questions": qs, "answers": {}, "index": 0}
+    _save_quiz_state()  # persist immediately
 
-    try:
-        await _send_next(update, context)
-    except Exception:
-        QUIZ_SESSIONS.pop(user_id, None)
-        raise
+    # Send Q1
+    await _send_next(update, context)
         
 # public commands
 
@@ -2074,78 +2102,90 @@ async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # button click handler
 #Answer handler (stale-press safe + no duplicate sending)
 async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Record the user's answer, give brief feedback, then advance."""
     query = update.callback_query
     await query.answer()
-    await _safe_clear_kb(query)
 
-    data = query.data or ""
+    # Best-effort: remove keyboard (ignore if already removed)
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except BadRequest:
+        pass
+    except Exception:
+        pass
+
+    data = (query.data or "")
     if not data.startswith("ans:"):
         return
-
     try:
         _, qid, idx_str = data.split(":")
         chosen = int(idx_str)
     except Exception:
-        await query.edit_message_text("Invalid answer payload.")
+        # Edit text only if it will actually change; otherwise send a new message
+        try:
+            await query.edit_message_text("Invalid answer payload.")
+        except BadRequest:
+            await context.bot.send_message(chat_id=query.message.chat.id, text="Invalid answer payload.")
         return
 
     user_id = update.effective_user.id
+
+    # Recover session if memory was wiped (process restart)
     sess = QUIZ_SESSIONS.get(user_id)
     if not sess:
-        await query.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
+        # Try loading from disk (in case we restarted moments ago)
+        _load_quiz_state()
+        sess = QUIZ_SESSIONS.get(user_id)
+
+    if not sess:
+        # Don’t edit to the same text (avoids “Message is not modified”)
+        try:
+            await query.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
+        except BadRequest:
+            await context.bot.send_message(chat_id=query.message.chat.id, text="Session expired. Use /quiz5 or /quiz10.")
         return
 
-    # Lock to prevent race with _send_next
-    if sess.get("inflight"):
-        # Someone else is sending; ignore this press
+    qs: List[Dict[str, Any]] = sess["questions"]
+    i = sess.get("index", 0)
+    if i >= len(qs):
+        # Finished already; avoid duplicate grading
+        try:
+            await query.edit_message_text("Already finished. Use /quiz5 to start again.")
+        except BadRequest:
+            await context.bot.send_message(chat_id=query.message.chat.id, text="Already finished. Use /quiz5 to start again.")
         return
-    sess["inflight"] = True
+
+    q = qs[i]
+    if q.get("id") != qid:
+        # Stale press from an older message; just ignore politely
+        await query.answer("That question already moved on.", show_alert=False)
+        return
+
+    # Record answer
+    sess["answers"][qid] = chosen
+    sess["index"] = i + 1
+    _save_quiz_state()  # persist after every answer
+
+    # Optional immediate feedback (avoid edit errors)
+    ca = q["answer_index"]
+    try:
+        user_txt = q["options"][chosen]
+    except Exception:
+        user_txt = "—"
+    cor_txt = q["options"][ca]
+
+    fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
+    msg_text = f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
 
     try:
-        qs: List[Dict[str, Any]] = sess["questions"]
-        i = int(sess.get("index", 0))
+        # Only attempt to edit the same message once
+        await query.edit_message_text(msg_text)
+    except BadRequest:
+        # If content matches or message is gone, post a fresh message
+        await context.bot.send_message(chat_id=query.message.chat.id, text=msg_text)
+    except Exception:
+        pass
 
-        if i >= len(qs):
-            await query.edit_message_text("Already finished. Use /quiz5 to start again.")
-            return
-
-        q = qs[i]
-        if q.get("id") != qid:
-            # stale press on an older message
-            try:
-                await query.answer("That question has moved on.", show_alert=False)
-            except Exception:
-                pass
-            return
-
-        # Save answer & advance index
-        sess["answers"][qid] = chosen
-        sess["index"] = i + 1
-
-        # Immediate feedback on the same message
-        ca = q.get("answer_index", -1)
-        opts = q.get("options", [])
-        user_txt = opts[chosen] if 0 <= chosen < len(opts) else "—"
-        cor_txt  = opts[ca] if 0 <= ca < len(opts) else "—"
-        fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
-
-        try:
-            await query.edit_message_text(
-                f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
-            )
-        except Exception:
-            try:
-                await query.message.reply_text(fb)
-            except Exception:
-                pass
-    finally:
-        # Unlock before calling _send_next so it can proceed
-        sess = QUIZ_SESSIONS.get(user_id)
-        if sess:
-            sess["inflight"] = False
-
-    # Now send the next question (guarded on its own)
+    # Proceed to next question (will grade at end)
     await _send_next(update, context)
 # small diag command
 async def quizdiag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
