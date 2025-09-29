@@ -3649,25 +3649,48 @@ async def show_menu(
 
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Routes top-level menu button presses. Called from callback queries.
+    - Clears previous inline keyboards to prevent duplicate presses
+    - Directly invokes the target flow (no extra 'Use /predict' message)
+    """
     q = update.callback_query
-    data = q.data if q else ""
+    if not q:
+        # If someone somehow calls this without a callback, just ignore.
+        return
+
+    data = q.data or ""
     await q.answer()
+
+    # Try to clear the old inline keyboard (safe if already cleared)
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
     if data == "menu_predict":
         return await predict_start(update, context)
+
     if data in {"menu_mock_predict", "menu_predict_mock"}:
         return await predict_mockrank_start(update, context)
+
     if data == "menu_ask":
         return await ask_start(update, context)
+
     if data == "menu_profile":
         return await setup_profile(update, context)
+
     if data == "menu_coach":
         return await coach_router(update, context)
+
     if data == "menu_quiz":
         return await menu_quiz_handler(update, context)
 
     # Catch-all so unknown menu_* never hangs
-    await q.message.reply_text("That menu item isn’t set up yet.")
+    try:
+        await q.message.reply_text("That menu item isn’t set up yet.")
+    except Exception:
+        return
 
 async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
@@ -6057,22 +6080,39 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
 
 
 async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enter the predictor flow and immediately ask for AIR."""
+    # prevent concurrent flows
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
         if tgt:
             await tgt.reply_text(
                 f"You're currently in *{blocked}* flow. Send /cancel to exit it first.",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
         return ConversationHandler.END
 
-    for k in ("r", "category", "weights", "require_pg_quota", "avoid_bond", "domicile_state", "quota", "rank_air"):
+    # wipe predictor-specific state
+    for k in (
+        "r",
+        "category",
+        "weights",
+        "require_pg_quota",
+        "avoid_bond",
+        "domicile_state",
+        "quota",
+        "rank_air",
+    ):
         context.user_data.pop(k, None)
 
+    # prompt for AIR directly (no extra “Use /predict …” line)
     tgt = _target(update)
-    await tgt.reply_text("Send your NEET All India Rank (AIR) as a number (e.g., 15234).",
-                         reply_markup=ReplyKeyboardRemove())
+    if tgt:
+        await tgt.reply_text(
+            "Send your NEET All India Rank (AIR) as a number (e.g., 15234).",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+
     return ASK_AIR
 
     
