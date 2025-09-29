@@ -3630,7 +3630,7 @@ async def show_menu(
         "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
         "Get quick AI notes for shortlisted colleges.\n\n"
         "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
-        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (random) or 10 by subject, and track streaks.\n\n"
+        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
         "💬 *Clear your NEET Doubts* — Ask questions, get instant explanations.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
