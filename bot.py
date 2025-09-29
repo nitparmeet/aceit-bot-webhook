@@ -3605,11 +3605,11 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
 
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Daily Quiz (Exam Mode)", callback_data="menu_quiz")],
-        [InlineKeyboardButton("🏫 NEET College Predictor", callback_data="menu_predict")],
-        [InlineKeyboardButton("📈 Predict from Mock Rank", callback_data="menu_mock_predict")],
-        [InlineKeyboardButton("💬 Clear your NEET Doubts", callback_data="menu_ask")],
-        [InlineKeyboardButton("⚙️ Setup your profile", callback_data="menu_profile")],
+        [InlineKeyboardButton("🏫 Find Your NEET College 🎯", callback_data="menu_predict")],
+        [InlineKeyboardButton("📈 Mock Test Rank → College 🎓", callback_data="menu_mock_predict")],
+        [InlineKeyboardButton("✏️ Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
+        [InlineKeyboardButton("💬 Clear Your NEET Doubts 🤔", callback_data="menu_ask")],
+        [InlineKeyboardButton("⚙️ Setup Your Profile 🧾", callback_data="menu_profile")],
     ])
 
 async def show_menu(
@@ -3629,12 +3629,12 @@ async def show_menu(
 
     explanation = (
         "📋 *Menu Options*\n\n"
-        "🏫 *NEET College Predictor* – Uses your AIR & category and predicts a list of colleges you might get "
-        "based on last year's cutoffs, plus quick AI notes.\n\n"
-        "🎯 *Predict from Mock Rank* – Use your mock All-India rank to get a college list.\n\n"
-        "📝 *Daily Quiz (Exam Mode)* – Timed quiz/test. Choose 5 random (mini) or 10 by subject.\n\n"
-        "💬 *Clear your NEET Doubts* – Send text/photo for a structured solution.\n\n"
-        "⚙️ *Setup your profile* – Save Name, Contact, Email, Category, Domicile."
+        "🏫 *Find Your NEET College* – 👉 Predict your MBBS seat based on your NEET AIR” 
+        "based on last year's cutoffs, plus get quick AI notes for shortlisted colleges.\n\n"
+        "🎯 *Mock Test Rank → College* – 👉 Check which colleges match your mock test rank.\n\n"
+        "📝 *Daily Quiz (Exam Mode)* – 👉 Practice 5 quick NEET questions (random subjects) or 10 quick NEET questions (selected subject) daily & track streaks”.\n\n"
+        "💬 *Clear your NEET Doubts* – 👉 Ask questions, get instant explanations.\n\n"
+        "⚙️ *Setup your profile* – 👉 Save category, quota & state for better predictions."
     )
 
     # Send explanation and the actual menu keyboard
