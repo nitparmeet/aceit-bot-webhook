@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+v#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
@@ -126,58 +126,46 @@ def _question_subject(q: dict) -> str:
 
 
 def _pick_qs(
-    pool: list,
+    pool: list[dict],
     *,
     subject: str | None = None,
     difficulty: int | None = None,
     tags_any: list[str] | None = None,
-    count: int = 5,
+    count: int = 10,
     shuffle: bool = True,
-) -> list:
-    """Return up to `count` questions matching filters (case/alias tolerant)."""
-    cand = list(pool)
-
-    # subject filter (case-insensitive + alias-aware; matches 'subject' or tags)
+) -> list[dict]:
+    want = (subject or "").strip().lower()
+    want_tags = { (t or "").strip().lower() for t in (tags_any or []) }
+    
     if subject:
-        want = _norm(subject)
-        alias_set = SUBJECT_ALIASES.get(want, {want})
-        def _has_subject(q: dict) -> bool:
-            qs = _q_subject_value(q)
-            if not qs:
-                return False
-            # match exact alias token OR token in a tag list
-            if qs in alias_set:
-                return True
-            # when subject stored inside tags list, check all tags
-            for k in ("tags", "Tags"):
-                t = q.get(k)
-                if isinstance(t, str) and _norm(t) in alias_set:
-                    return True
-                if isinstance(t, list) and any(_norm(x) in alias_set for x in t if isinstance(x, str)):
-                    return True
-            return False
-        cand = [q for q in cand if _has_subject(q)]
+    log.info("[quiz] filtering for subject=%r (lower=%r)", subject, want)
+    
+    picked: list[dict] = []
+    for q in pool:
+        # --- subject (exact, tolerant to case/whitespace) ---
+        qsubj = str(q.get("subject") or q.get("Subject") or "").strip().lower()
+        if want and qsubj != want:
+            continue  # not this subject
 
-    # difficulty (if present in data; tolerant to str/int)
-    if difficulty is not None:
-        dnorm = str(difficulty).strip()
-        cand = [q for q in cand if str(q.get("difficulty", "")).strip() == dnorm]
+        # --- difficulty (optional, skip if not stored) ---
+        if difficulty is not None:
+            qdiff = q.get("difficulty") or q.get("Difficulty")
+            if not isinstance(qdiff, int) or qdiff != difficulty:
+                continue
 
-    # tags_any: at least one tag must match (case-insensitive)
-    if tags_any:
-        want = { _norm(t) for t in tags_any }
-        def _has_tag(q: dict) -> bool:
-            t = q.get("tags") or q.get("Tags") or []
-            if isinstance(t, str):
-                t = [t]
-            return any(isinstance(x, str) and _norm(x) in want for x in t)
-        cand = [q for q in cand if _has_tag(q)]
+        # --- tags any-of (optional, skip if not stored) ---
+        if want_tags:
+            qtags = q.get("tags") or q.get("Tags") or []
+            qtagset = { str(t).strip().lower() for t in qtags } if isinstance(qtags, (list, tuple)) else set()
+            if not (want_tags & qtagset):
+                continue
+
+        picked.append(q)
 
     if shuffle:
         import random
-        random.shuffle(cand)
-
-    return cand[: max(0, count)]
+        random.shuffle(picked)
+    return picked[:count]
                  
 
 def _build_quiz_index() -> None:
@@ -2100,7 +2088,6 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             QUIZ_SESSIONS.pop(user_id, None)
             _save_quiz_state()
             return
-
         # Otherwise, send question i
         q = qs[i]
         text = _format_question(q, i, total)
@@ -2137,15 +2124,16 @@ async def _start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, *,
             await target.reply_text("No questions match those filters. Try again.")
         return
     QUIZ_SESSIONS[update.effective_user.id] = {
-        "questions": qs,
-        "answers": {},
-        "index": 0,
-        "subject": subject or "",
-        "ts": __import__("time").time(),
-    }
-                          
+        "questions": qs, 
+        "answers": {}, 
+        "index": 0, 
+        "subject": subject}
+
     _save_quiz_state()
-    await _send_next(update, context)
+    await _send_next(update, context) 
+
+                          
+    
         
 # public commands
 
@@ -2188,8 +2176,8 @@ async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5)
 
-async def quiz10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _start_quiz(update, context, count=10)
+async def quiz10(update: Update, context: ContextTypes.DEFAULT_TYPE, subject: str | None = None) -> None:
+    await _start_quiz(update, context, count=10, subject=subject)
 
 async def quiz10physics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=10, subject="Physics")
