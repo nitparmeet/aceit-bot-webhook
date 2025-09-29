@@ -28,6 +28,8 @@ import pandas as pd
 from dotenv import load_dotenv
 from unidecode import unidecode
 from telegram import Update
+from collections import Counter
+
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 _HANDLERS_ATTACHED = False
 
@@ -173,27 +175,36 @@ def _pick_qs(
     want = (subject or "").strip().lower()
     want_tags = { (t or "").strip().lower() for t in (tags_any or []) }
 
+    log.debug("[_pick_qs] want_subject=%r difficulty=%r want_tags=%r pool=%d",
+              want, difficulty, sorted(want_tags), len(pool))
+
     picked: List[Dict[str, Any]] = []
     for q in pool:
-        # --- subject (robust) ---
-        qsubj = _subject_of(q)
+        qsubj = _subject_of(q)                   # robust subject
         if want and qsubj != want:
             continue
 
-        # --- difficulty (optional exact match if present) ---
         if difficulty is not None:
             qdiff = q.get("difficulty") or q.get("Difficulty")
             if not isinstance(qdiff, int) or qdiff != difficulty:
                 continue
 
-        # --- tags any-of (optional) ---
         if want_tags:
             qtags = q.get("tags") or q.get("Tags") or []
-            qtagset = { str(t).strip().lower() for t in qtags } if isinstance(qtags, (list, tuple)) else set()
+            if isinstance(qtags, (list, tuple)):
+                qtagset = { str(t).strip().lower() for t in qtags }
+            else:
+                qtagset = set()
             if not (want_tags & qtagset):
                 continue
 
         picked.append(q)
+
+    if not picked:
+        # Helpful diagnostics in logs
+        subj_counts = Counter(_subject_of(q) for q in pool)
+        log.warning("[_pick_qs] No matches. want=%r diff=%r tags=%r | available_by_subject=%s",
+                    want, difficulty, sorted(want_tags), dict(subj_counts))
 
     if shuffle:
         import random
@@ -2026,7 +2037,7 @@ def ensure_quiz_ready() -> None:
     log.info("✅ Loaded %d quiz items (simple loader)", len(QUIZ_POOL))
 
     try:
-        subj_seen = sorted({ _subject_of(q) for q in QUIZ_POOL if _subject_of(q) })
+        subj_seen = sorted({_subject_of(q) for q in QUIZ_POOL if _subject_of(q)})
         log.info("✅ Subjects detected in quiz.json: %s", subj_seen)
     except Exception:
         pass
@@ -2150,24 +2161,37 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             sess["inflight"] = False
 
 
-async def _start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE, *,
-                      count: int, subject: str | None = None,
-                      difficulty: int | None = None,
-                      tags_any: Optional[List[str]] = None) -> None:
+async def _start_quiz(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    count: int,
+    subject: Optional[str] = None,
+    difficulty: Optional[int] = None,
+    tags_any: Optional[List[str]] = None,
+) -> None:
     ensure_quiz_ready()
-    qs = _pick_qs(QUIZ_POOL, subject=subject, difficulty=difficulty, tags_any=tags_any,
-                  count=count, shuffle=True)
-    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    qs = _pick_qs(
+        QUIZ_POOL,
+        subject=subject,          # already lowercase from router
+        difficulty=difficulty,
+        tags_any=tags_any,
+        count=count,
+        shuffle=True,
+    )
+    target = update.effective_message or (update.callback_query.message if getattr(update, "callback_query", None) else None)
     if not qs:
         if target:
-            await target.reply_text("No questions match those filters. Try again.")
+            await target.reply_text(f"No questions match those filters.")
         return
-    QUIZ_SESSIONS[update.effective_user.id] = {
-        "questions": qs, 
-        "answers": {}, 
-        "index": 0, 
-        "subject": subject}
 
+    QUIZ_SESSIONS[update.effective_user.id] = {
+        "questions": qs,
+        "answers": {},
+        "index": 0,
+        "subject": subject,       # store it for resume/debug
+        "started_at": time.time()
+    }
     _save_quiz_state()
     await _send_next(update, context) 
 
@@ -3664,7 +3688,7 @@ async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     data = q.data or ""
     await q.answer()
 
-    # clear old inline keyboard to avoid duplicate presses
+    # Best-effort: clear previous inline keyboard to prevent double presses
     try:
         await q.edit_message_reply_markup(reply_markup=None)
     except Exception:
@@ -3694,13 +3718,17 @@ async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         parts = data.split(":")  # ["quiz","sub","<HumanLabel>","<count?>"]
         human = parts[2] if len(parts) >= 3 else ""
         count = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 10
-        subject = SUBJECT_MAP.get(human, "").strip()
+
+        # Normalize subject (map the human label to lowercase canonical)
+        subject = SUBJECT_MAP.get(human) or (human.strip().lower() if human else "")
         if not subject:
             try:
                 await q.message.reply_text("Unknown subject. Please pick again.")
             except Exception:
                 pass
             return
+
+        log.info("[quiz_menu_router] starting subject quiz: human=%r subject=%r count=%d", human, subject, count)
         return await _start_quiz(update, context, count=count, subject=subject)
 
     # Streaks
