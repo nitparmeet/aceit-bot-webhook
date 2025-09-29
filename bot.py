@@ -7347,6 +7347,7 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
+    _add(CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"), group=0)
 
   
 
@@ -7427,7 +7428,10 @@ def register_handlers(app: Application) -> None:
         states={
             ASK_AIR: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
             ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-            ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+            ASK_MOCK_SIZE: [
+                CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
+            ],
             ASK_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
             ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
             ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
