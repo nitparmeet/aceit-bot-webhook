@@ -225,6 +225,7 @@ def _save_quiz_state() -> None:
         json.dump(to_dump, f)
     os.replace(tmp, QUIZ_STATE_PATH)
 
+    
 def _load_quiz_state() -> None:
     import json, os, time
     if not os.path.exists(QUIZ_STATE_PATH):
@@ -320,6 +321,17 @@ def format_quiz_report(score: int, total: int, details: list[dict]) -> str:
         lines.append("")  # blank line between items
 
     return "\n".join(lines).strip()
+
+def extract_fee(col: dict, meta: dict | None = None):
+    meta = meta or {}
+    return (
+        meta.get("total_fee")
+        or col.get("annual_fee")
+        or col.get("tuition_fee")
+        or col.get("fee")
+        or None
+)
+
 
 def _new_token(n=8) -> str:
     # 8 hex chars, upper → short but unique per session
@@ -1295,8 +1307,16 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
             round_ui, quota, category,
             df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
         )
+    meta = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
+    fee  = (
+        meta.get("total_fee")
+        or col.get("annual_fee")
+        or col.get("tuition_fee")
+        or col.get("fee")
+        or None
+    )
 
-    fee = _pick(r, "total_fee", "Fee")
+    
 
     header = f"{name}" + (f", {place}" if place else "")
     cr_ln  = f"Closing Rank { _fmt_rank_val(closing) }"
@@ -2665,6 +2685,8 @@ def load_colleges_dataset(
         return pd.DataFrame()
 
     # Helper to pick columns forgivingly
+    
+    
     def _pick(cols, *cands):
         cols = [str(c) for c in cols]
         norm = {c.lower().strip(): c for c in cols}
