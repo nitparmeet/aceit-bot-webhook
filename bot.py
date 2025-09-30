@@ -3963,6 +3963,12 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if data == "menu_quiz":
             await menu_quiz_handler(update, context); return
 
+        if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
+            return
+
+        if data == "menu_ask":
+            return
+
         # Predictor buttons — do NOT start flows here.
         # Just return so the ConversationHandler entry_points can catch them.
         if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
@@ -7378,7 +7384,7 @@ def _resolve_excel_path() -> str:
         ask_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("ask", ask_start),
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
+                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
             ],
             states={
                 ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
@@ -7429,11 +7435,10 @@ def _resolve_excel_path() -> str:
         predict_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("predict", predict_start),
-            # handle all predict menu buttons via callback query
-                CallbackQueryHandler(predict_start, pattern=r"^(menu_predict|menu_predict_mock|menu_mock_predict)$"),
+                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$", block=True),  # add block=True
                 CommandHandler("mockpredict", predict_mockrank_start),
-            ],
-            states={
+                ],
+                states={
                 ASK_AIR:       [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
                 ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
                 ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
@@ -7878,11 +7883,14 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     # Top-level menu router (catch-all for menu_* buttons) — keep after specifics
     # -------------------------------
+    
     _add(CallbackQueryHandler(
         menu_router,
-        pattern=r"^(?:menu:(?:back|.*)|menu_(?:ask|profile|coach|quiz|.*))$"
-    ), group=0)
-
+        pattern=r"^(?:menu:(?:back|.*)|menu_(?:ask|profile|coach|quiz|.*))$",
+        block=True,          # NEW
+    ), group=10) 
+    
+    
     # -------------------------------
     # Error handler (optional)
     # -------------------------------
