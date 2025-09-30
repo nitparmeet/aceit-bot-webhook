@@ -356,7 +356,7 @@ _CATEGORY_ALIASES = {
 
 NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
 
-
+ASK_MOCK_RANK = 1001  # or your existing constant
 
 def _safe_str(v, default: str = "") -> str:
     try:
@@ -3907,7 +3907,6 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         await q.edit_message_reply_markup(reply_markup=None)
     except BadRequest as e:
-        # ignore "Message is not modified"
         if "Message is not modified" not in str(e):
             pass
     except Exception:
@@ -3932,12 +3931,13 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await menu_quiz_handler(update, context)
             return
 
-        # Predictor (mock rank → college); support multiple button ids
+        # Predictor buttons: let ConversationHandler entry_points handle these
         if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
-            await predict_mockrank_start(update, context)
+            # Do NOT call predict_* here. Just return so the ConversationHandler
+            # with matching CallbackQueryHandler patterns can start the flow.
             return
 
-        # Ask/coach/profile (use the functions you already have)
+        # Ask / Coach / Profile
         if data == "menu_ask":
             await ask_start(update, context)
             return
@@ -3946,17 +3946,16 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             await coach_router(update, context)
             return
 
-        # If you have a dedicated profile UI:
         if data == "menu_profile":
-            # choose the one you actually use
             try:
-                await profile_menu(update, context)      # if you implemented profile_menu(update, context)
+                await profile_menu(update, context)
             except NameError:
-                await setup_profile(update, context)     # else fall back to setup_profile(update, context)
+                await setup_profile(update, context)
             return
 
         # Unknown/coming soon
         await q.message.reply_text("That menu item isn’t set up yet.")
+
     except Exception as e:
         log.exception("menu_router failed: %s", e)
         try:
@@ -6291,14 +6290,31 @@ def _is_spammy(context, key: str, ttl: float = 2.0) -> bool:
 PREDICT_PROMPT = "Send your NEET All India Rank (AIR) as a number (e.g., 15234)."
 
 async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Dedupe fast double-clicks / retries
+    """
+    Entry point for the Mock-Rank → College predictor.
+    Prompts the user for their mock test All-India Rank (integer).
+    """
+    # Dedupe fast double-taps
     if _is_spammy(context, "mockrank_enter", ttl=2.0):
         return ASK_MOCK_RANK
 
     # Best-effort: keep user profile fresh
     await _safe("upsert_user", upsert_user(update.effective_user))
 
-    # Flow guard (your existing mechanism)
+    # If we came via a callback button, just acknowledge it
+    q = getattr(update, "callback_query", None)
+    if q:
+        try:
+            await q.answer()
+            # Optional: clear old inline keyboard to reduce double-taps
+            try:
+                await q.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    # Flow guard
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
@@ -6309,14 +6325,21 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
             )
         return ConversationHandler.END
 
-    # Single, clean prompt (no extra “coming right up” line)
+    # Mark this predictor mode explicitly so downstream handlers can branch
+    ud = context.user_data
+    ud["predict_mode"] = "mock"
+    # Optional: clear any stale shortlist to avoid "random" AI notes later
+    ud.pop("LAST_SHORTLIST", None)
+    ud.pop("last_shortlist", None)
+    ud.pop("last_predict_shortlist", None)
+
+    # Single, clean prompt
     tgt = _target(update)
     if tgt:
-        prompt = "Send your NEET All India Rank (AIR) as a number (e.g., 15234)."
-        # Optional: avoid re-sending the same prompt back-to-back
-        if context.user_data.get("last_prompt_text") != prompt:
-            context.user_data["last_prompt_text"] = prompt
-            await tgt.reply_text(prompt)
+        prompt = "Enter your *mock test All-India Rank* (integer):"
+        if ud.get("last_prompt_text") != prompt:
+            ud["last_prompt_text"] = prompt
+            await tgt.reply_text(prompt, parse_mode="Markdown")
 
     return ASK_MOCK_RANK
 
@@ -7368,27 +7391,40 @@ def _resolve_excel_path() -> str:
     # --- Predictor conversation ---
     if _has("predict_start", "on_air", "on_quota", "on_category",
             "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
-            "on_pref", "cancel_predict"):
+            "on_pref", "cancel_predict", "predict_mockrank_start",
+            "predict_mockrank_collect_rank", "predict_mockrank_collect_size"):
         predict_conv = ConversationHandler(
             entry_points=[
+                # /predict → AIR flow
                 CommandHandler("predict", predict_start),
+                # Main “Predict” button → AIR flow
                 CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
+
+                # /mockpredict → mock-rank flow
                 CommandHandler("mockpredict", predict_mockrank_start),
+                # Menu buttons for mock-rank → mock-rank flow
+                CallbackQueryHandler(
+                    predict_mockrank_start,
+                    pattern=r"^menu_(?:predict_mock|mock_predict)$"
+                ),
             ],
             states={
-                ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-                ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-                ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-                ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-                ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-                ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+                # AIR flow
+                ASK_AIR:       [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+                ASK_QUOTA:     [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+                ASK_CATEGORY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+                ASK_DOMICILE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+
+            # mock-rank flow
+                ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+                ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
             },
             fallbacks=[CommandHandler("cancel", cancel_predict)],
             name="predict_conv",
             persistent=False,
             per_message=False,
         )
-        _add(predict_conv, group=3)
+    _add(predict_conv, group=3)
     
     # --- Profile conversation ---
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
