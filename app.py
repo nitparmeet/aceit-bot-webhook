@@ -5,6 +5,7 @@ import random
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from db import init_db, close_db  
 
 from fastapi import FastAPI, Request, HTTPException, Header, Query
 from fastapi.responses import JSONResponse
