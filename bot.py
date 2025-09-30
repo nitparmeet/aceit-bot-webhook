@@ -1392,7 +1392,7 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
 
     header = f"{name}" + (f", {place}" if place else "")
     cr_ln  = f"Closing Rank { _fmt_rank_val(closing) }"
-    fee_ln = f"Annual Fee { _fmt_money(fee) }"
+    fee_ln = f"Annual Fee {_fmt_money(fee_raw)}"
     return "\n".join([header, cr_ln, fee_ln])
 
 
