@@ -3938,55 +3938,41 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     data = (q.data or "").strip()
 
-    # Best-effort: keep profile fresh
+    # keep profile fresh
     await _safe("upsert_user", upsert_user(update.effective_user))
 
-    # Acknowledge tap & try to clear old inline keyboard (prevents double-taps)
-    try:
-        await q.answer()
-    except Exception:
-        pass
-    try:
-        await q.edit_message_reply_markup(reply_markup=None)
+    # ack tap; try clearing old keyboard (ignore benign errors)
+    try: await q.answer()
+    except Exception: pass
+    try: await q.edit_message_reply_markup(reply_markup=None)
     except BadRequest as e:
-        if "Message is not modified" not in str(e):
-            pass
-    except Exception:
-        pass
+        if "Message is not modified" not in str(e): pass
+    except Exception: pass
 
-    # Are we navigating away from a running quiz? If yes, finalize it.
+    # leaving a running quiz?
     def _is_quiz_route(d: str) -> bool:
         return d.startswith("quiz:") or d == "menu_quiz"
-
     if context.user_data.get("session_id") and not _is_quiz_route(data):
         await _finalize_active_session(update, context)
 
-    # ---- Routing ----
+    # ---- routing (IMPORTANT: let ConversationHandler handle predict buttons) ----
     try:
-        # Back to main menu
         if data == "menu:back":
-            await show_menu(update, context)
-            return
+            await show_menu(update, context); return
 
-        # Quiz submenu
         if data == "menu_quiz":
-            await menu_quiz_handler(update, context)
-            return
+            await menu_quiz_handler(update, context); return
 
-        # Predictor buttons: let ConversationHandler entry_points handle these
+        # Predictor buttons — do NOT start flows here.
+        # Just return so the ConversationHandler entry_points can catch them.
         if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
-            # Do NOT call predict_* here. Just return so the ConversationHandler
-            # with matching CallbackQueryHandler patterns can start the flow.
             return
 
-        # Ask / Coach / Profile
         if data == "menu_ask":
-            await ask_start(update, context)
-            return
+            await ask_start(update, context); return
 
         if data == "menu_coach":
-            await coach_router(update, context)
-            return
+            await coach_router(update, context); return
 
         if data == "menu_profile":
             try:
@@ -3995,9 +3981,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await setup_profile(update, context)
             return
 
-        # Unknown/coming soon
         await q.message.reply_text("That menu item isn’t set up yet.")
-
     except Exception as e:
         log.exception("menu_router failed: %s", e)
         try:
@@ -7437,35 +7421,26 @@ def _resolve_excel_path() -> str:
             "predict_mockrank_collect_rank", "predict_mockrank_collect_size"):
         predict_conv = ConversationHandler(
             entry_points=[
-                # /predict → AIR flow
-                CommandHandler("predict", predict_start),
-                # Main “Predict” button → AIR flow
-                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
-
-                # /mockpredict → mock-rank flow
-                CommandHandler("mockpredict", predict_mockrank_start),
-                # Menu buttons for mock-rank → mock-rank flow
-                CallbackQueryHandler(
-                    predict_mockrank_start,
-                    pattern=r"^menu_(?:predict_mock|mock_predict)$"
-                ),
-            ],
-            states={
-                # AIR flow
-                ASK_AIR:       [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-                ASK_QUOTA:     [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-                ASK_CATEGORY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-                ASK_DOMICILE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
-
-            # mock-rank flow
-                ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-                ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel_predict)],
-            name="predict_conv",
-            persistent=False,
-            per_message=False,
-        )
+            # slash commands
+            CommandHandler("predict", predict_start),
+            CommandHandler("mockpredict", predict_mockrank_start),
+            # menu buttons (callback queries)
+            CallbackQueryHandler(predict_start,              pattern=r"^menu_predict$"),
+            CallbackQueryHandler(predict_mockrank_start,     pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
+        ],
+        states={
+            ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+            ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+            ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+            ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+            ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+            ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_predict)],
+        name="predict_conv",
+        persistent=False,
+        per_message=True,   # <- important for reliable CallbackQuery handling
+    )
     _add(predict_conv, group=3)
     
     # --- Profile conversation ---
