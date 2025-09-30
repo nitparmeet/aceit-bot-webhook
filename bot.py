@@ -577,6 +577,56 @@ def _inst_type_from_row(r: dict) -> str:
         return "Government medical college"
     return own or "Medical college"
 
+def _college_key_from_row(row: dict) -> str:
+    """Prefer code; else normalized name."""
+    code = (row.get("college_code") or row.get("Code") or row.get("College Code") or "").strip().upper()
+    if code:
+        return code
+    nm = row.get("college_name") or row.get("College Name") or ""
+    return _name_key(str(nm))
+
+def _extract_fee(row: dict, key: str | None = None):
+    """Return a numeric/str fee or None, merging row data with COLLEGE_META_INDEX."""
+    if key is None:
+        key = _college_key_from_row(row)
+    meta = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
+    return (
+        meta.get("total_fee")    # set in build_code_to_name_index
+        or row.get("annual_fee")
+        or row.get("tuition_fee")
+        or row.get("fee")
+        or None
+    )
+    
+def _val(v, dash="—"):
+    return dash if (v is None or v == "" or str(v).lower() == "nan") else str(v)
+
+def render_college_note(col: dict) -> str:
+    """Safe, markdown-friendly summary for a college row."""
+    key   = _college_key_from_row(col)
+    meta  = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
+
+    name  = meta.get("college_name") or col.get("college_name") or col.get("College Name") or "College"
+    city  = meta.get("city")         or col.get("city")         or col.get("City")
+    state = meta.get("state")        or col.get("state")        or col.get("State")
+
+    fee   = _extract_fee(col, key)
+    seats = (
+        col.get("seats_total") or col.get("seats") or col.get("intake")
+        or meta.get("seats_total")
+    )
+    closing_air = (
+        col.get("closing_air") or col.get("closing_rank") or col.get("last_allotted_air")
+        or col.get("ClosingRank") or col.get("rank")
+    )
+
+    title_ln = f"🏥 *{_val(name)}* ({_val(city)}, {_val(state)})"
+    fee_ln   = f"💰 Annual Fee: {_fmt_money(fee)}"
+    seats_ln = f"🪑 Seats: {_val(seats)}"
+    air_ln   = f"📉 Last AIR (prev yr): {_val(closing_air)}"
+
+    return "\n".join([title_ln, fee_ln, seats_ln, air_ln])
+
 def _city_vibe_from_row(city: str, state: str) -> str:
     c = (city or "").strip().lower()
     s = (state or "").strip().lower()
@@ -3676,23 +3726,17 @@ def _yn(v):
     return "unknown"
 
 if "_fmt_bond_line" not in globals():
-    def _fmt_bond_line(bond_years, bond_penalty):
-        if _is_missing(bond_years) and _is_missing(bond_penalty):
+    def _fmt_bond_line(bond_years, bond_penalty_lakhs):
+        y = _to_int_or_none(bond_years)
+        p = _to_int_or_none(bond_penalty_lakhs)
+        if y is None and p is None:
             return "—"
         parts = []
-        if not _is_missing(bond_years):
-            try:
-                y = float(str(bond_years).strip())
-                parts.append(f"{int(y) if y.is_integer() else y} yrs")
-            except Exception:
-                parts.append(str(bond_years))
-        if not _is_missing(bond_penalty):
-            try:
-                p = float(str(bond_penalty).replace(",", "").strip())
-                parts.append(f"₹{int(p*100000):,}")  # if stored in lakhs
-            except Exception:
-                parts.append(str(bond_penalty))
-        return " + ".join(parts) if parts else "—"
+        if y is not None:
+            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
+        if p is not None:
+            parts.append(f"₹{p:,}k")  # penalty in lakhs → e.g. 50k
+        return " / ".join(parts) if parts else "—"
 
 
 
@@ -4611,15 +4655,15 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
             header   = f"{i}. {name}" + (f", {', '.join([x for x in (city, state) if x])}" if (city or state) else "")
             rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
+            fee = _pick(r, "total_fee", "Fee", "Total Fee") or _pick(m, "total_fee", "Fee", "Total Fee")
             fee_ln   = f"Annual Fee: {_fmt_money(fee)}"
-            why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail)
+            why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool)
             vibe_ln  = "City & campus vibe: " + (
-                ((city or state or "—") + " — " + _city_vibe_from_row(city, state))
+            ((city or state or "—") + " — " + _city_vibe_from_row(city, state))
             )
-            pg_ln    = f"PG Quota: {_yn(pg_quota)}"
+            pg_ln    = f"PG Quota: {_yn(pg_quota_bool)}"
             bond_ln  = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
-            hostel_ln= f"Hostel: {_yn(hostel_avail)}"
-
+            hostel_ln= f"Hostel: {_yn(hostel_bool)}"
             blocks.append("\n".join([header, rank_ln, fee_ln, why_ln, vibe_ln, pg_ln, bond_ln, hostel_ln]))
 
         # Always send the rich offline text (predictable format)
