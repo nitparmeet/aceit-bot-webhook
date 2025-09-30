@@ -1341,58 +1341,100 @@ def _extract_fee(row: dict, key: str | None = None):
     )
     
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
-    """Name, place; then Closing Rank and Annual Fee each on its own line. No 'm' fallbacks here."""
-    # NaN/None safe strings
-    name  = _safe_str(_pick(r, "college_name", "College Name")) or "—"
-    city  = _safe_str(_pick(r, "city", "City"))
-    state = _safe_str(_pick(r, "state", "State"))
+    """
+    Name, place; then Closing Rank and Annual Fee each on its own line.
+    Robust to missing fields and avoids undefined vars.
+    """
+    r = r or {}
+    user = user or {}
+
+    # --- tiny helpers ---
+    def _is_missing(v) -> bool:
+        try:
+            s = str(v).strip().lower()
+        except Exception:
+            return True
+        return s in {"", "—", "-", "na", "n/a", "nan", "none", "null"}
+
+    def _first(*vals):
+        for v in vals:
+            if not _is_missing(v):
+                return v
+        return None
+
+    def _s(v, default=""):
+        try:
+            if _is_missing(v):
+                return default
+            return str(v).strip()
+        except Exception:
+            return default
+
+    # --- fields from row ---
+    name  = _s(_first(r.get("college_name"), r.get("College Name")), "—")
+    city  = _s(_first(r.get("city"), r.get("City")))
+    state = _s(_first(r.get("state"), r.get("State")))
     place = ", ".join([x for x in (city, state) if x])
 
-    # rank lookup context
-    round_ui = (user or {}).get("cutoff_round") or (user or {}).get("round") or "2025_R1"
-    quota    = (user or {}).get("quota") or "AIQ"
-    category = (user or {}).get("category") or "General"
+    # --- cutoff context ---
+    round_ui = _s(_first((user or {}).get("cutoff_round"), (user or {}).get("round")), "2025_R1")
+    quota    = _s((user or {}).get("quota"), "AIQ")
+    category = _s((user or {}).get("category"), "General")
 
-    # allow a pre-attached df lookup
+    # --- allow pre-attached df_lookup ---
     try:
         df_lookup = r.get("_df_lookup") or df_lookup
     except Exception:
         pass
 
-    # closing rank: prefer inline fields, else compute from identifiers
-    closing = r.get("ClosingRank") or r.get("closing") or r.get("rank")
+    # --- closing rank (prefer in-row, else compute by identifiers) ---
+    closing = _first(r.get("ClosingRank"), r.get("closing"), r.get("closing_rank"), r.get("rank"))
     if _is_missing(closing):
-        ids = [
+        id_candidates = [
             r.get("college_code"), r.get("code"),
-            r.get("college_id"), r.get("institute_code"),
-            _pick(r, "college_name", "College Name"),
+            r.get("college_id"),   r.get("institute_code"),
+            name,  # last resort: match by display name
         ]
-        closing = _closing_rank_for_identifiers(
-            [x for x in ids if not _is_missing(x)],
-            round_ui, quota, category,
-            df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
+        ids = [ _s(x) for x in id_candidates if not _is_missing(x) ]
+        try:
+            closing = _closing_rank_for_identifiers(
+                ids, round_ui, quota, category,
+                df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
+            )
+        except Exception:
+            closing = None
+
+    # --- fee: look in row first, then meta index (if present) ---
+    fee_raw = _first(r.get("total_fee"), r.get("Total Fee"), r.get("Fee"), r.get("Tuition Fee"))
+    if _is_missing(fee_raw):
+        # Try meta index by either code/id or normalized name key
+        meta = {}
+        try:
+            code = _s(_first(r.get("college_code"), r.get("code")))
+            cid  = _s(_first(r.get("college_id"),   r.get("institute_code")))
+            key_name = _s(name).lower()
+            if 'COLLEGE_META_INDEX' in globals():
+                if code and code in COLLEGE_META_INDEX:
+                    meta = COLLEGE_META_INDEX.get(code, {})
+                elif cid and cid in COLLEGE_META_INDEX:
+                    meta = COLLEGE_META_INDEX.get(cid, {})
+                elif key_name and key_name in COLLEGE_META_INDEX:
+                    meta = COLLEGE_META_INDEX.get(key_name, {})
+        except Exception:
+            meta = {}
+        fee_raw = _first(
+            fee_raw,
+            (meta or {}).get("total_fee"),
+            (meta or {}).get("annual_fee"),
+            (meta or {}).get("tuition_fee"),
+            (meta or {}).get("fee"),
         )
 
-    # ---- FIX: derive key for meta lookup and compute fee safely ----
-    # build a key: prefer explicit code; else normalized name
-    code = (r.get("college_code") or r.get("code") or r.get("College Code") or "").strip().upper()
-    nm   = _pick(r, "college_name", "College Name")
-    key  = code if code else _name_key(str(nm or ""))
-
-    meta = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
-
-    fee = (
-        meta.get("total_fee")           # from build_code_to_name_index
-        or r.get("annual_fee")
-        or r.get("tuition_fee")
-        or r.get("fee")
-        or None
-    )
-    # ---- end FIX ----
-
+    # --- build lines ---
     header = f"{name}" + (f", {place}" if place else "")
-    cr_ln  = f"Closing Rank { _fmt_rank_val(closing) }"
-    fee_ln = f"Annual Fee {_fmt_money(fee_raw)}"
+    cr_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
+    fee_ln = f"Annual Fee: {_fmt_money(fee_raw)}"
+
     return "\n".join([header, cr_ln, fee_ln])
 
 
