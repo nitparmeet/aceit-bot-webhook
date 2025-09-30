@@ -3969,7 +3969,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         if data == "menu_ask":
-            await ask_start(update, context); return
+            return
 
         if data == "menu_coach":
             await coach_router(update, context); return
