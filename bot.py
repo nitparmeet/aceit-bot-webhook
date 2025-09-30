@@ -7372,7 +7372,7 @@ def _resolve_excel_path() -> str:
         ask_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("ask", ask_start),
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
+                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
             ],
             states={
                 ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
