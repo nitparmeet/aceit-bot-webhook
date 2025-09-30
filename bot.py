@@ -7435,7 +7435,7 @@ def _resolve_excel_path() -> str:
                 CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
             ],
             states={
-                ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
+                ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
                 ASK_WAIT: [
                     CallbackQueryHandler(ask_followup, pattern=r"^ask_(?:more:.*|back|cancel)$", block=True),
                     MessageHandler(filters.PHOTO, ask_receive_photo),
