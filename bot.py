@@ -668,11 +668,12 @@ def _to_int(x):
     except Exception:
         return None
 
-def _to_int_or_none(x):
+def _to_int_or_none(v):
     try:
-        if x is None: return None
-        s = str(x).strip()
-        if s == "" or s.lower() in {"na","n/a","nan","—","-"}:
+        if v is None:
+            return None
+        s = str(v).strip().replace(",", "")
+        if s == "":
             return None
         return int(float(s))
     except Exception:
@@ -3727,16 +3728,16 @@ def _yn(v):
 
 if "_fmt_bond_line" not in globals():
     def _fmt_bond_line(bond_years, bond_penalty_lakhs):
-        y = _to_int_or_none(bond_years)
-        p = _to_int_or_none(bond_penalty_lakhs)
-        if y is None and p is None:
-            return "—"
-        parts = []
-        if y is not None:
-            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
-        if p is not None:
-            parts.append(f"₹{p:,}k")  # penalty in lakhs → e.g. 50k
-        return " / ".join(parts) if parts else "—"
+    y = _to_int_or_none(bond_years)
+    p = _to_int_or_none(bond_penalty_lakhs)
+    if y is None and p is None:
+        return "—"
+    parts = []
+    if y is not None:
+        parts.append(f"{y} yr" + ("" if y == 1 else "s"))
+    if p is not None:
+        parts.append(f"₹{p:,}k")  # penalty in lakhs → e.g. 50k
+    return " / ".join(parts) if parts else "—"
 
 
 
@@ -4522,18 +4523,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if s in {"no", "n", "false", "0", "not available"}: return "No"
         return str(v)
 
-    def _fmt_bond_line(bond_years, bond_penalty_lakhs):
-        y = _to_int_or_none(years)
-        p = _to_int_or_none(penalty_lakh)
-        if y is None and p is None:
-            return "—"
-        parts = []
-        if y is not None:
-            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
-        if p is not None:
-            parts.append(f"₹{p:,}k")  # penalty in lakhs → print as e.g. 50k
-        return " / ".join(parts) if parts else "—"
-
+    
     
 
     def _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail) -> str:
