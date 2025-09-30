@@ -5371,6 +5371,12 @@ def tri_inline(prefix: str) -> InlineKeyboardMarkup:
 
 
 async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    now = time.time()
+    last = context.user_data.get("_ask_last_ts", 0)
+    if now - last < 1.0:
+        # suppress the duplicate
+        return
+    context.user_data["_ask_last_ts"] = now
     ok = await guard_or_block(update, context, "ask")
     if not ok:
         return ConversationHandler.END
