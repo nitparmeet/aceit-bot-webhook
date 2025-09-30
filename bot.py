@@ -51,7 +51,7 @@ QUIZ_INDEX: Dict[str, Dict[str, Any]] = {}
 QUIZ_BY_ID: dict[str, dict] = {}    # built from QUIZ_POOL after load
 QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
 
-
+PROFILE_MENU = 1001  # or use Enum
 QUIZ_STATE_PATH = "/tmp/quiz_sessions.json"
 QUIZ_SESSION_TTL_SECS = 6 * 60 * 60  # 6 hours
 
