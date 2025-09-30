@@ -917,6 +917,16 @@ def _trim(s: str, n: int = 140) -> str:
     s = str(s or "")
     return s if len(s) <= n else s[: n - 1] + "…"
 
+
+
+async def _safe(label: str, aw):
+    try:
+        return await aw
+    except Exception as e:
+        log.exception("%s failed: %s", label, e)
+        return None
+        
+
 async def _safe_clear_kb(query) -> None:
     """Best-effort removal of inline keyboard to avoid double-presses."""
     try:
@@ -955,8 +965,7 @@ async def _safe_set_kb(q, kb):
         log.warning("editMessageReplyMarkup(set) failed: %s", msg)
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        await upsert_user(update.effective_user)
+    await _safe("upsert_user", upsert_user(update.effective_user))
     except Exception as e:
         log.exception("upsert_user failed: %s", e)
     from telegram.error import BadRequest  # local import so you don't have to change imports elsewhere
@@ -3679,8 +3688,7 @@ def main_menu_markup() -> InlineKeyboardMarkup:
     ])
 
 async def show_menu(
-    try:
-        await upsert_user(update.effective_user)
+    await _safe("upsert_user", upsert_user(update.effective_user))
     except Exception as e:
         log.exception("upsert_user failed: %s", e)
     update: Update,
@@ -3747,8 +3755,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     data = (q.data or "").strip()
 
     # Always keep the profile fresh
-    try:
-        await upsert_user(update.effective_user)
+    await _safe("upsert_user", upsert_user(update.effective_user))
     except Exception:
         log.exception("upsert_user@menu_router")
 
@@ -3824,8 +3831,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Greeting + show the menu. Safe for both /start and callbacks."""
     try:
         # 0) Keep the user's profile fresh in DB (safe for /start or callback)
-        try:
-            await upsert_user(update.effective_user)
+        await _safe("upsert_user", upsert_user(update.effective_user))
         except Exception as e:
             log.exception("upsert_user failed: %s", e)
 
@@ -7410,39 +7416,37 @@ async def _start_quiz_common(update: Update, context: ContextTypes.DEFAULT_TYPE,
     """Create a fresh session and send ONLY ONE first question."""
     user_id = update.effective_user.id
 
-    # --- DB: make sure the profile exists/updates ---
-    try:
-        await upsert_user(update.effective_user)
-    except Exception as e:
-        log.exception("upsert_user failed: %s", e)
+    # --- DB: make sure the profile exists/updates (best-effort) ---
+    await _safe("upsert_user", upsert_user(update.effective_user))
 
-    # --- DB: open a new persistent quiz session ---
-    try:
-        mode = f"mini{n}"                              # e.g., mini5 / mini10
-        subject = context.user_data.get("quiz_subject")  # or None if not used
-        # clear any old session id so we don't mix answers
-        context.user_data.pop("session_id", None)
-        db_session_id = await create_session(str(user_id), mode, subject)
-        context.user_data["session_id"] = db_session_id
-    except Exception as e:
-        log.exception("create_session failed: %s", e)
-        await update.effective_chat.send_message("⚠️ Couldn't start a test just now. Please try again.")
-        return
-
-    # --- your existing in-memory session (keep as is) ---
-    qs = load_quiz_questions(n)  # returns list[dict] with keys: id, question, options, answer_index, explanation?
+    # --- Load questions first; only open a DB session if we have questions ---
+    qs = load_quiz_questions(n)  # expects list[dict] with: id, question, options, answer_index, ...
     if not qs:
         await update.effective_message.reply_text("Sorry, quiz questions are unavailable right now.")
         return
 
-    # New session (overwrite any stale one)
+    # --- DB: open a new persistent quiz session (best-effort, with guardrail) ---
+    mode = f"mini{n}"                                  # e.g., mini5 / mini10
+    subject = context.user_data.get("quiz_subject")    # or None if not used
+
+    # clear any old session id so we don't mix answers
+    context.user_data.pop("session_id", None)
+
+    db_session_id = await _safe("create_session", create_session(str(user_id), mode, subject))
+    if not db_session_id:
+        await update.effective_chat.send_message("⚠️ Couldn't start a test just now. Please try again.")
+        return
+    context.user_data["session_id"] = db_session_id
+
+    # --- your existing in-memory session (keep as is) ---
     QUIZ_SESSIONS[user_id] = {
         "questions": qs,
         "index": 0,
         "answers": {},           # qid -> user_index
         "inflight": False,       # sending/grading lock
         "last_msg_id": None,     # last message we sent for the question
-        "created_at": time.time()
+        "created_at": time.time(),
+        "ts": time.time(),       # start timer for Q1 (used by on_answer for time_ms)
     }
 
     # Send the first question once
