@@ -3696,18 +3696,19 @@ def main_menu_markup() -> InlineKeyboardMarkup:
     ])
 
 async def show_menu(
-    await _safe("upsert_user", upsert_user(update.effective_user))
-    
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     text: str = "Choose an option:",
 ) -> None:
     """Show the main menu (can be called from /menu or any callback)."""
+    # keep the user profile fresh (best-effort)
+    await _safe("upsert_user", upsert_user(update.effective_user))
+
     tgt = update.effective_message
     if tgt is None:
-        chat_id = update.effective_chat.id if update.effective_chat else None
-        if chat_id:
-            await context.bot.send_message(chat_id=chat_id, text="Hi! 👋")
+        chat = update.effective_chat
+        if chat:
+            await context.bot.send_message(chat_id=chat.id, text="Hi! 👋")
         return
 
     explanation = (
