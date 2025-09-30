@@ -1022,16 +1022,82 @@ async def _send_quiz_report(update, context, score: int, total: int, details: li
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
-async def _finalize_active_session(update, context):
-    """Finalize DB session if one is in progress; safe to call multiple times."""
+async def _finalize_active_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sid = context.user_data.pop("session_id", None)
     if not sid:
         return
+    await _safe("finalize_session", finalize_session(sid, str(update.effective_user.id)))
+
+async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+    data = (q.data or "").strip()
+    await q.answer()
+
+    # Keep profile fresh
+    await _safe("upsert_user", upsert_user(update.effective_user))
+
+    # Best-effort clear previous markup
     try:
-        await finalize_session(sid, str(update.effective_user.id))
+        await q.edit_message_reply_markup(reply_markup=None)
     except Exception:
-        log.exception("finalize_session failed")
-        
+        pass
+
+    # Back to main menu → finalize any active quiz
+    if data == "menu:back":
+        await _finalize_active_session(update, context)
+        await show_menu(update, context)
+        return
+
+    # If starting a new quiz, finalize any previous
+    if data.startswith("quiz:"):
+        if context.user_data.get("session_id"):
+            await _finalize_active_session(update, context)
+
+        if data == "quiz:continue":
+            # resume current quiz (if in-memory session exists)
+            await _send_next(update, context)
+            return
+
+        if data == "quiz:mini5":
+            await _start_quiz(update, context, count=5)
+            return
+
+        if data == "quiz:mini10":
+            subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
+            rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}:10")] for s in subjects]
+            rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu:back")])
+            await q.message.edit_text("Pick a subject for 10 questions:", reply_markup=InlineKeyboardMarkup(rows))
+            return
+
+        if data.startswith("quiz:sub:"):
+            parts = data.split(":")  # ["quiz","sub","<HumanLabel>","<count?>"]
+            human = parts[2] if len(parts) >= 3 else ""
+            count = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 10
+            subject = SUBJECT_MAP.get(human) or (human.strip().lower() if human else "")
+            if not subject:
+                await q.message.reply_text("Unknown subject. Please pick again.")
+                return
+            context.user_data["quiz_subject"] = subject
+            await _start_quiz(update, context, count=count, subject=subject)
+            return
+
+        if data == "quiz:streaks":
+            try:
+                await quiz_show_streaks(update, context)
+            except NameError:
+                await q.message.reply_text("Streaks isn’t implemented yet.")
+            return
+
+        if data == "quiz:leaderboard":
+            try:
+                await quiz_leaderboard(update, context)
+            except NameError:
+                await q.message.reply_text("Leaderboard isn’t implemented yet.")
+            return
+
+
 async def _safe_clear_markup(query):
     try:
         await query.edit_message_reply_markup(None)
@@ -7478,15 +7544,12 @@ def register_handlers(app: Application) -> None:
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
-
-    # 2) Quiz submenu router (now includes `continue`)
     _add(CallbackQueryHandler(
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:[^:]+(?::\d+)?|streaks|leaderboard|continue)|menu:back)$"
     ), group=0)
-
-    # 3) Entry to the quiz menu
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+
 
     # -------------------------------
     # Ask (Doubt) conversation
