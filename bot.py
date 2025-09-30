@@ -77,6 +77,7 @@ SUBJECT_MAP = {
     "Zoology": "zoology",
 }
 
+
 from dataclasses import dataclass
 from pydantic import BaseModel, ValidationError, Field
 CUTOFF_LOOKUP: dict = {}
@@ -4367,8 +4368,13 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     if data == "menu_predict":
-        await q.message.reply_text("Predictor coming right up. Use /predict to start.")
-        return
+        await q.answer()
+        # optional: clear old inline keyboard to prevent double taps
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return await predict_mockrank_start(update, context)
 
     if data == "menu_mock_predict":
         await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
@@ -6173,19 +6179,41 @@ async def predict_mockrank_collect_size_cb(update: Update, context: ContextTypes
     # Example: ask the next question in flow, or call your compute/predict
     return await predict_mockrank_next_step(update, context)  # <-- or whatever your next step is
     
+def _is_spammy(context, key: str, ttl: float = 2.0) -> bool:
+    now = time.time(); last = context.user_data.get(key)
+    if last and now - last < ttl: return True
+    context.user_data[key] = now; return False
+
+PREDICT_PROMPT = "Send your NEET All India Rank (AIR) as a number (e.g., 15234)."
 
 async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Dedupe fast double-clicks / retries
+    if _is_spammy(context, "mockrank_enter", ttl=2.0):
+        return ASK_MOCK_RANK
+
+    # Best-effort: keep user profile fresh
+    await _safe("upsert_user", upsert_user(update.effective_user))
+
+    # Flow guard (your existing mechanism)
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
         if tgt:
             await tgt.reply_text(
                 f"You're currently in *{blocked}* flow. Send /cancel to exit it first.",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
         return ConversationHandler.END
+
+    # Single, clean prompt (no extra “coming right up” line)
     tgt = _target(update)
-    await tgt.reply_text("Enter your *mock test All-India Rank* (integer):", parse_mode="Markdown")
+    if tgt:
+        prompt = "Send your NEET All India Rank (AIR) as a number (e.g., 15234)."
+        # Optional: avoid re-sending the same prompt back-to-back
+        if context.user_data.get("last_prompt_text") != prompt:
+            context.user_data["last_prompt_text"] = prompt
+            await tgt.reply_text(prompt)
+
     return ASK_MOCK_RANK
 
 async def predict_mockrank_collect_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7242,7 +7270,6 @@ def _resolve_excel_path() -> str:
                 CommandHandler("predict", predict_start),
                 CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
                 CommandHandler("mockpredict", predict_mockrank_start),
-                CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
             ],
             states={
                 ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
