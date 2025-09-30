@@ -965,19 +965,27 @@ async def _safe_set_kb(q, kb):
         log.warning("editMessageReplyMarkup(set) failed: %s", msg)
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Keep profile fresh (best-effort)
     await _safe("upsert_user", upsert_user(update.effective_user))
-    except Exception as e:
-        log.exception("upsert_user failed: %s", e)
-    from telegram.error import BadRequest  # local import so you don't have to change imports elsewhere
 
     q = update.callback_query
-    kb = InlineKeyboardMarkup([
+
+    # Detect if user has an in-memory quiz session (so we can offer "Continue")
+    user_id = update.effective_user.id
+    has_active = bool(context.user_data.get("session_id")) and bool(QUIZ_SESSIONS.get(user_id))
+
+    rows = []
+    if has_active:
+        rows.append([InlineKeyboardButton("▶️ Continue current quiz", callback_data="quiz:continue")])
+
+    rows.extend([
         [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
         [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
         [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
         [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
     ])
+    kb = InlineKeyboardMarkup(rows)
 
     if q:
         await q.answer()
@@ -991,7 +999,7 @@ async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 try:
                     await q.message.edit_reply_markup(reply_markup=kb)
                 except BadRequest as e2:
-                    # If even the markup is identical, ignore silently.
+                    # If even the markup is identical, ignore silently unless it's a different error.
                     if "Message is not modified" not in str(e2):
                         raise
             else:
@@ -3689,8 +3697,7 @@ def main_menu_markup() -> InlineKeyboardMarkup:
 
 async def show_menu(
     await _safe("upsert_user", upsert_user(update.effective_user))
-    except Exception as e:
-        log.exception("upsert_user failed: %s", e)
+    
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     text: str = "Choose an option:",
@@ -3756,8 +3763,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Always keep the profile fresh
     await _safe("upsert_user", upsert_user(update.effective_user))
-    except Exception:
-        log.exception("upsert_user@menu_router")
+   
 
     # Determine if we're leaving a quiz flow
     def _is_quiz_route(d: str) -> bool:
@@ -3832,9 +3838,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         # 0) Keep the user's profile fresh in DB (safe for /start or callback)
         await _safe("upsert_user", upsert_user(update.effective_user))
-        except Exception as e:
-            log.exception("upsert_user failed: %s", e)
-
+        
         # 1) Optional friendly hello on first /start
         if update.message:
             await update.message.reply_text("Hi! 👋 Welcome to ACEit.")
@@ -7472,12 +7476,16 @@ def register_handlers(app: Application) -> None:
   
 
     # --- QUIZ: menu + router + answers ---
-    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+
+    # 2) Quiz submenu router (now includes `continue`)
     _add(CallbackQueryHandler(
         quiz_menu_router,
-        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
+        pattern=r"^(quiz:(mini5|mini10|sub:[^:]+(?::\d+)?|streaks|leaderboard|continue)|menu:back)$"
     ), group=0)
-    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+
+    # 3) Entry to the quiz menu
+    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
 
     # -------------------------------
     # Ask (Doubt) conversation
