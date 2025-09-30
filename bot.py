@@ -4234,13 +4234,13 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Deterministic AI-notes summary that enriches shortlist rows with master COLLEGES
-    metadata before printing. Uses cached master indexes for speed. Falls back to
-    cutoff table to resolve Closing Rank when missing.
+    Summarize the current shortlist. Does NOT fabricate a shortlist if none exists.
+    Enriches with master COLLEGES metadata and falls back to cutoff table for missing closing ranks.
     """
     try:
         if update.callback_query:
             await update.callback_query.answer()
+
         chat_id = update.effective_chat.id
         status = await context.bot.send_message(chat_id=chat_id, text="🧠 Preparing notes…")
 
@@ -4259,7 +4259,6 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
         round_ui = ud.get("cutoff_round") or ud.get("round") or "2025_R1"
         quota    = ud.get("quota") or "AIQ"
         category = ud.get("category") or "General"
-        # light normalization for common aliases
         QUOTA_MAP = {"All India": "AIQ", "All-India": "AIQ", "AI": "AIQ"}
         CAT_MAP   = {"UR": "General", "Open": "General", "GN": "General"}
         quota    = QUOTA_MAP.get(quota, quota)
@@ -4332,12 +4331,12 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
         for i, r in enumerate(items[:10], 1):
             m = _resolve_master_row(r)
 
-            name   = _safe_str(_pick2(r, m, "college_name", "College Name"), "Unknown college")
+            name   = _safe_str(_pick2(r, m, "college_name", "College Name")) or "Unknown college"
             state  = _safe_str(_pick2(r, m, "state", "State"))
             city   = _safe_str(_pick2(r, m, "city",  "City"))
             place  = ", ".join([x for x in (city, state) if x])
 
-            # closing with robust fallback to cutoffs
+            # Closing rank with robust fallback
             closing = _pick2(r, m, "ClosingRank", "closing", "closing_rank", "rank")
             if _is_missing(closing):
                 id_candidates = [
@@ -4363,7 +4362,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             bond_penalty = _pick2(r, m, "bond_penalty_lakhs")
             hostel_raw   = _pick2(r, m, "hostel_available")
 
-            # normalize boolean-ish fields (handles yes/no/emoji/etc.)
+            # normalize boolean-ish fields
             pg_quota_bool = _truthy_or_none(pg_quota_raw)
             hostel_bool   = _truthy_or_none(hostel_raw)
 
@@ -4440,37 +4439,72 @@ async def quiz_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes main menu buttons. Finalizes any active quiz if user leaves quiz."""
+    from telegram.error import BadRequest  # local import so this compiles regardless of your global imports
+
     q = update.callback_query
-    await q.answer()
+    if not q:
+        return
     data = (q.data or "").strip()
 
-    if data == "menu_quiz":
-        await menu_quiz_handler(update, context)
-        return
+    # Best-effort: keep profile fresh (don't crash if DB hiccups)
+    await _safe("upsert_user", upsert_user(update.effective_user))
 
-    if data == "menu_predict":
+    # Acknowledge tap & try to clear old inline keyboard (prevents double-taps)
+    try:
         await q.answer()
-        # optional: clear old inline keyboard to prevent double taps
+    except Exception:
+        pass
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except BadRequest as e:
+        # ignore "Message is not modified"
+        if "Message is not modified" not in str(e):
+            pass
+    except Exception:
+        pass
+
+    # If navigating away from an active quiz, finalize it
+    def _is_quiz_route(d: str) -> bool:
+        return d.startswith("quiz:") or d == "menu_quiz"
+
+    if context.user_data.get("session_id") and not _is_quiz_route(data):
+        await _finalize_active_session(update, context)
+
+    # ---- Routing ----
+    try:
+        if data == "menu:back":
+            await show_menu(update, context);                      return
+
+        if data == "menu_quiz":
+            await menu_quiz_handler(update, context);              return
+
+        # Predictor (mock rank → college); support multiple button ids
+        if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
+            await predict_mockrank_start(update, context);         return
+
+        if data == "menu_ask":
+            await ask_start(update, context);                      return
+
+        if data == "menu_coach":
+            await coach_router(update, context);                   return
+
+        if data == "menu_profile":
+            # Call whichever exists in your codebase
+            try:
+                await profile_menu(update, context)
+            except NameError:
+                await setup_profile(update, context)
+            return
+
+        # Unknown/coming soon
+        await q.message.reply_text("That menu item isn’t set up yet.")
+    except Exception as e:
+        log.exception("menu_router failed: %s", e)
         try:
-            await q.edit_message_reply_markup(reply_markup=None)
+            await q.message.reply_text("Something went wrong. Please try again from /menu.")
         except Exception:
             pass
-        return await predict_mockrank_start(update, context)
-
-    if data == "menu_mock_predict":
-        await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
-        return
-
-    if data == "menu_ask":
-        await q.message.reply_text("Ask your NEET doubt with /ask.")
-        return
-
-    if data == "menu_profile":
-        await q.message.reply_text("Open profile with /profile.")
-        return
-
-    # fallback
-    await q.message.reply_text("Unknown menu item.")
     
 #----------------------------New Quiz end
     # ---------------- small helpers ----------------
