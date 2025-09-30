@@ -7538,7 +7538,7 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    _add(CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"), group=0)
+    
 
   
 
