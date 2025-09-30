@@ -9,3 +9,4 @@ pandas
 numpy
 openpyxl  
 Unidecode
+asyncpg>=0.29
