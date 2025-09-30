@@ -133,6 +133,7 @@ def _strip_answers(qs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 # -------------- lifecycle --------------
 @app.on_event("startup")
 async def _startup():
+    await init_db()  
     await tg.initialize()
     await tg.start()
     log.info("✅ Telegram Application started")
@@ -154,6 +155,8 @@ async def _shutdown():
     await tg.stop()
     await tg.shutdown()
     log.info("🛑 Telegram Application stopped")
+
+    await close_db()   
 
 # -------------- webhook --------------
 @app.post("/telegram")
