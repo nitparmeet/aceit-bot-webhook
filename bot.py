@@ -1275,6 +1275,20 @@ def _pick(d: dict, *keys):
             return d.get(k)
     return None
 
+def _extract_fee(row: dict, key: str | None = None):
+    if key is None:
+        code = (row.get("college_code") or row.get("code") or row.get("College Code") or "").strip().upper()
+        nm   = row.get("college_name") or row.get("College Name")
+        key  = code if code else _name_key(str(nm or ""))
+    meta = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
+    return (
+        meta.get("total_fee")
+        or row.get("annual_fee")
+        or row.get("tuition_fee")
+        or row.get("fee")
+        or None
+    )
+    
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
     """Name, place; then Closing Rank and Annual Fee each on its own line. No 'm' fallbacks here."""
     # NaN/None safe strings
@@ -1307,21 +1321,30 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
             round_ui, quota, category,
             df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
         )
+
+    # ---- FIX: derive key for meta lookup and compute fee safely ----
+    # build a key: prefer explicit code; else normalized name
+    code = (r.get("college_code") or r.get("code") or r.get("College Code") or "").strip().upper()
+    nm   = _pick(r, "college_name", "College Name")
+    key  = code if code else _name_key(str(nm or ""))
+
     meta = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
-    fee  = (
-        meta.get("total_fee")
-        or col.get("annual_fee")
-        or col.get("tuition_fee")
-        or col.get("fee")
+
+    fee = (
+        meta.get("total_fee")           # from build_code_to_name_index
+        or r.get("annual_fee")
+        or r.get("tuition_fee")
+        or r.get("fee")
         or None
     )
-
-    
+    # ---- end FIX ----
 
     header = f"{name}" + (f", {place}" if place else "")
     cr_ln  = f"Closing Rank { _fmt_rank_val(closing) }"
     fee_ln = f"Annual Fee { _fmt_money(fee) }"
     return "\n".join([header, cr_ln, fee_ln])
+
+
 
 def _deemed_only(rows):
     out = []
