@@ -7384,11 +7384,12 @@ def _resolve_excel_path() -> str:
         ask_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("ask", ask_start),
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
+                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),  # <- add block
             ],
             states={
                 ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
                 ASK_WAIT: [
+                    CallbackQueryHandler(ask_followup, pattern=r"^ask_(?:more:.*|back|cancel)$", block=True),
                     MessageHandler(filters.PHOTO, ask_receive_photo),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
                 ],
@@ -7435,16 +7436,17 @@ def _resolve_excel_path() -> str:
         predict_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("predict", predict_start),
-                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$", block=True),  # add block=True
+                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$", block=True),
+                CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_(?:predict_mock|mock_predict)$", block=True),
                 CommandHandler("mockpredict", predict_mockrank_start),
                 ],
                 states={
-                ASK_AIR:       [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-                ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-                ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-                ASK_QUOTA:     [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-                ASK_CATEGORY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-                ASK_DOMICILE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+                ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+                ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+                ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+                ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+                ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+                ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
             },
             fallbacks=[CommandHandler("cancel", cancel_predict)],
             name="predict_conv",
@@ -7887,8 +7889,8 @@ def register_handlers(app: Application) -> None:
     _add(CallbackQueryHandler(
         menu_router,
         pattern=r"^(?:menu:(?:back|.*)|menu_(?:ask|profile|coach|quiz|.*))$",
-        block=True,          # NEW
-    ), group=10) 
+        block=True,              # don't let this fall-through to other handlers
+    ), group=10)  
     
     
     # -------------------------------
