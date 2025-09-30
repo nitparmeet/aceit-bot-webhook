@@ -955,8 +955,10 @@ async def _safe_set_kb(q, kb):
         log.warning("editMessageReplyMarkup(set) failed: %s", msg)
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try: await upsert_user(update.effective_user)
-    except Exception: log.exception("upsert_user@menu")
+    try:
+        await upsert_user(update.effective_user)
+    except Exception as e:
+        log.exception("upsert_user failed: %s", e)
     from telegram.error import BadRequest  # local import so you don't have to change imports elsewhere
 
     q = update.callback_query
@@ -3677,8 +3679,10 @@ def main_menu_markup() -> InlineKeyboardMarkup:
     ])
 
 async def show_menu(
-    try: await upsert_user(update.effective_user)
-    except Exception: log.exception("upsert_user@menu")
+    try:
+        await upsert_user(update.effective_user)
+    except Exception as e:
+        log.exception("upsert_user failed: %s", e)
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     text: str = "Choose an option:",
