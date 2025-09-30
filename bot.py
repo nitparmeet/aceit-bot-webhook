@@ -3728,17 +3728,17 @@ def _yn(v):
 
 if "_fmt_bond_line" not in globals():
     def _fmt_bond_line(bond_years, bond_penalty_lakhs):
-    y = _to_int_or_none(bond_years)
-    p = _to_int_or_none(bond_penalty_lakhs)
-    if y is None and p is None:
-        return "—"
-    parts = []
-    if y is not None:
-        parts.append(f"{y} yr" + ("" if y == 1 else "s"))
-    if p is not None:
-        parts.append(f"₹{p:,}k")  # penalty in lakhs → e.g. 50k
-    return " / ".join(parts) if parts else "—"
-
+        """Return a friendly bond string like '2 yrs / ₹50k' or '—' if unknown."""
+        y = _to_int_or_none(bond_years)
+        p = _to_int_or_none(bond_penalty_lakhs)
+        if y is None and p is None:
+            return "—"
+        parts = []
+        if y is not None:
+            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
+        if p is not None:
+            parts.append(f"₹{p:,}k")
+        return " / ".join(parts) if parts else "—"
 
 
 if "_why_from_signals" not in globals():
