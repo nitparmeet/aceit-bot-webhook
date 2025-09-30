@@ -7426,16 +7426,17 @@ def _resolve_excel_path() -> str:
             _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
 
     # --- Predictor conversation ---
-    if _has("predict_start", "on_air", "on_quota", "on_category",
-            "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
-            "on_pref", "cancel_predict", "predict_mockrank_start",
-            "predict_mockrank_collect_rank", "predict_mockrank_collect_size"):
+    if _has(
+        "predict_start", "on_air", "on_quota", "on_category",
+        "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb",
+        "on_bond_avoid", "on_pref", "cancel_predict"
+    ):
         predict_conv = ConversationHandler(
             entry_points=[
-            CommandHandler("predict", predict_start),
-            # catch all menu predict variants
-            CallbackQueryHandler(predict_start, pattern=r"^(menu_predict|menu_predict_mock|menu_mock_predict)$"),
-            CommandHandler("mockpredict", predict_mockrank_start),
+                CommandHandler("predict", predict_start),
+            # handle all predict menu buttons via callback query
+                CallbackQueryHandler(predict_start, pattern=r"^(menu_predict|menu_predict_mock|menu_mock_predict)$"),
+                CommandHandler("mockpredict", predict_mockrank_start),
             ],
             states={
                 ASK_AIR:       [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
@@ -7448,9 +7449,9 @@ def _resolve_excel_path() -> str:
             fallbacks=[CommandHandler("cancel", cancel_predict)],
             name="predict_conv",
             persistent=False,
-            per_message=False, 
-            )
-            _add(predict_conv, group=3)
+            per_message=False,
+        )
+        _add(predict_conv, group=3)
     
     # --- Profile conversation ---
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
