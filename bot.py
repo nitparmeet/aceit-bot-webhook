@@ -3818,31 +3818,8 @@ async def show_menu(
     await tgt.reply_text(text, reply_markup=main_menu_markup())
 
 
-async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    q = update.callback_query
-    data = q.data if q else ""
-    await q.answer()
-
- #   if data == "menu_predict":
- #       return await predict_start(update, context)
- #   if data in {"menu_mock_predict", "menu_predict_mock"}:
- #       return await predict_mockrank_start(update, context)
-    if data in {"menu_mock_predict", "menu_predict_mock"}:
-    # Let the ConversationHandler entry_point handle this callback.
-    # We just acknowledge the press and return.
-        await q.answer()
-        return
-    if data == "menu_ask":
-        return await ask_start(update, context)
-    if data == "menu_profile":
-        return await setup_profile(update, context)
-    if data == "menu_coach":
-        return await coach_router(update, context)
-    if data == "menu_quiz":
-        return await menu_quiz_handler(update, context)
-
-    # Catch-all so unknown menu_* never hangs
-    await q.message.reply_text("That menu item isn’t set up yet.")
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.error import BadRequest
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Routes main menu buttons. Finalizes any active quiz if user leaves quiz."""
@@ -3851,53 +3828,67 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     data = (q.data or "").strip()
 
-    # Always keep the profile fresh
+    # Best-effort: keep profile fresh
     await _safe("upsert_user", upsert_user(update.effective_user))
-   
 
-    # Determine if we're leaving a quiz flow
+    # Acknowledge tap & try to clear old inline keyboard (prevents double-taps)
+    try:
+        await q.answer()
+    except Exception:
+        pass
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except BadRequest as e:
+        # ignore "Message is not modified"
+        if "Message is not modified" not in str(e):
+            pass
+    except Exception:
+        pass
+
+    # Are we navigating away from a running quiz? If yes, finalize it.
     def _is_quiz_route(d: str) -> bool:
-        # Anything that starts or continues quiz
         return d.startswith("quiz:") or d == "menu_quiz"
 
-    in_quiz = context.user_data.get("session_id") is not None
-    going_to_quiz = _is_quiz_route(data)
-
-    # If we were in a quiz and are navigating to a non-quiz feature, finalize it
-    if in_quiz and not going_to_quiz:
+    if context.user_data.get("session_id") and not _is_quiz_route(data):
         await _finalize_active_session(update, context)
 
-    # Now route to the correct feature
+    # ---- Routing ----
     try:
+        # Back to main menu
         if data == "menu:back":
-            # back to main menu
             await show_menu(update, context)
             return
 
-        elif data == "menu_quiz":
-            # open quiz submenu
+        # Quiz submenu
+        if data == "menu_quiz":
             await menu_quiz_handler(update, context)
             return
 
-        elif data == "menu_predict_mock":
-            # your existing predictor entry
+        # Predictor (mock rank → college); support multiple button ids
+        if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
             await predict_mockrank_start(update, context)
             return
 
-        elif data == "menu_profile":
-            # your profile menu entry (if you have one)
-            await profile_menu(update, context)
+        # Ask/coach/profile (use the functions you already have)
+        if data == "menu_ask":
+            await ask_start(update, context)
             return
 
-        # Add any other top-level menu items here:
-        # elif data == "menu_streaks": ...
-        # elif data == "menu_leaderboard": ...
-
-        else:
-            # Unknown/coming soon
-            await q.answer("Coming soon", show_alert=False)
+        if data == "menu_coach":
+            await coach_router(update, context)
             return
 
+        # If you have a dedicated profile UI:
+        if data == "menu_profile":
+            # choose the one you actually use
+            try:
+                await profile_menu(update, context)      # if you implemented profile_menu(update, context)
+            except NameError:
+                await setup_profile(update, context)     # else fall back to setup_profile(update, context)
+            return
+
+        # Unknown/coming soon
+        await q.message.reply_text("That menu item isn’t set up yet.")
     except Exception as e:
         log.exception("menu_router failed: %s", e)
         try:
