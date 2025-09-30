@@ -3969,8 +3969,13 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         if data == "menu_ask":
+            try:
+                await q.answer()
+                await q.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
             return
-
+            
         if data == "menu_coach":
             await coach_router(update, context); return
 
