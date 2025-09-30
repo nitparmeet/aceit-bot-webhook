@@ -3969,11 +3969,6 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         if data == "menu_ask":
-            try:
-                await q.answer()
-                await q.edit_message_reply_markup(reply_markup=None)
-            except Exception:
-                pass
             return
             
         if data == "menu_coach":
@@ -7383,7 +7378,7 @@ def _resolve_excel_path() -> str:
         ask_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("ask", ask_start),
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
+                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
             ],
             states={
                 ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
@@ -7397,7 +7392,7 @@ def _resolve_excel_path() -> str:
             persistent=False,
             per_message=False,
         )
-        _add(ask_conv, group=1)
+        _add(ask_conv, group=0)
 
     # --- Quiz conversation ---
     if _has("quiz_start", "quiz_subject", "quiz_difficulty", "quiz_size", "cancel"):
