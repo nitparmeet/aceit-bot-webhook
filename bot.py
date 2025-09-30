@@ -23,6 +23,9 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram import ReplyKeyboardMarkup
 from telegram.constants import ChatAction
 from typing import Dict, Any, List, Optional, Tuple, Iterable
+from db import upsert_user, create_session, save_answer, finalize_session
+from db import save_answer
+from db import finalize_session 
 from telegram import Bot
 import pandas as pd
 from dotenv import load_dotenv
@@ -952,6 +955,8 @@ async def _safe_set_kb(q, kb):
         log.warning("editMessageReplyMarkup(set) failed: %s", msg)
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try: await upsert_user(update.effective_user)
+    except Exception: log.exception("upsert_user@menu")
     from telegram.error import BadRequest  # local import so you don't have to change imports elsewhere
 
     q = update.callback_query
@@ -998,6 +1003,16 @@ async def _send_quiz_report(update, context, score: int, total: int, details: li
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
+async def _finalize_active_session(update, context):
+    """Finalize DB session if one is in progress; safe to call multiple times."""
+    sid = context.user_data.pop("session_id", None)
+    if not sid:
+        return
+    try:
+        await finalize_session(sid, str(update.effective_user.id))
+    except Exception:
+        log.exception("finalize_session failed")
+        
 async def _safe_clear_markup(query):
     try:
         await query.edit_message_reply_markup(None)
@@ -1252,9 +1267,9 @@ def _norm_row_for_cache(r: dict) -> dict:
     }
 
 
-async def start(update, context):
-    await update.message.reply_text("Hello from Aceit!")
-
+from db import upsert_user  # (and later you'll import create_session/save_answer/finalize_session for other handlers)
+import logging
+log = logging.getLogger("aceit-bot")
 
 
 async def _debug_unknown_callback(update, context):
@@ -2136,6 +2151,16 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
             report_html = format_quiz_report(score, total, details)
 
+            # --- DB: finalize persistent session before cleanup ---
+            session_id = context.user_data.get("session_id")
+            if session_id:
+                try:
+                    await finalize_session(session_id, str(user_id))
+                except Exception as e:
+                    log.exception("finalize_session failed: %s", e)
+                finally:
+                    context.user_data.pop("session_id", None)
+
             chat_id = update.effective_chat.id
             for j in range(0, len(report_html), 3800):
                 await context.bot.send_message(
@@ -2149,16 +2174,12 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             QUIZ_SESSIONS.pop(user_id, None)
             _save_quiz_state()
             return
+
         # Otherwise, send question i
         q = qs[i]
         text = _format_question(q, i, total)
         kb = _keyboard_for(q)
 
-        # Avoid duplicate question sends: if we just sent the same text, skip.
-        # (Rarely, TG edits/latency can cause re-entry.)
-        last_id = sess.get("last_msg_id")
-        # We still send the message; the guard is primarily the inflight flag.
-        # Keep it simple and send once per step:
         sent = await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=text,
@@ -2166,11 +2187,13 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         sess["last_msg_id"] = sent.message_id
 
+        # start a per-question timer so on_answer can compute time_ms
+        sess["ts"] = time.time()
+
     finally:
         sess = QUIZ_SESSIONS.get(user_id)
         if sess:
             sess["inflight"] = False
-
 
 async def _start_quiz(
     update: Update,
@@ -2305,15 +2328,32 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.answer("That question moved on.", show_alert=False)
         return
 
+    # ----- persist answer to memory + compute timing -----
+    # If you were storing question-start time in sess["ts"] when you sent the question,
+    # use it to compute time_ms. Then refresh it for the NEXT question.
+    prev_ts = sess.get("ts")
+    now_ts = time.time()
+    time_ms = int((now_ts - prev_ts) * 1000) if isinstance(prev_ts, (int, float)) else None
+
     sess["answers"][qid] = chosen
     sess["index"] = i + 1
-    sess["ts"] = __import__("time").time()
+    sess["ts"] = now_ts            # set "start" for NEXT question
     _save_quiz_state()
 
+    # ----- correctness & feedback -----
     ca = q["answer_index"]
     user_txt = q["options"][chosen]
     cor_txt  = q["options"][ca]
-    fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
+    is_correct = (chosen == ca)
+    fb = "✅ Correct!" if is_correct else f"❌ Incorrect. Correct: {cor_txt}"
+
+    # ----- DB: save this answer (best-effort; do not break UX) -----
+    session_id = context.user_data.get("session_id")
+    if session_id:
+        try:
+            await save_answer(session_id, qid, str(chosen), bool(is_correct), time_ms)
+        except Exception as e:
+            log.exception("save_answer failed: %s", e)
 
     # best-effort edit; ignore 400 "message not modified"
     try:
@@ -2326,6 +2366,7 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception:
             pass
 
+    # Send next question or finish
     await _send_next(update, context)
     
 # ===== END SIMPLE QUIZ =====
@@ -3636,6 +3677,8 @@ def main_menu_markup() -> InlineKeyboardMarkup:
     ])
 
 async def show_menu(
+    try: await upsert_user(update.effective_user)
+    except Exception: log.exception("upsert_user@menu")
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     text: str = "Choose an option:",
@@ -3692,82 +3735,68 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     # Catch-all so unknown menu_* never hangs
     await q.message.reply_text("That menu item isn’t set up yet.")
 
-async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes main menu buttons. Finalizes any active quiz if user leaves quiz."""
     q = update.callback_query
     if not q:
         return
-    data = q.data or ""
-    await q.answer()
+    data = (q.data or "").strip()
 
-    # Best-effort: clear previous inline keyboard to prevent double presses
+    # Always keep the profile fresh
     try:
-        await q.edit_message_reply_markup(reply_markup=None)
+        await upsert_user(update.effective_user)
     except Exception:
-        pass
+        log.exception("upsert_user@menu_router")
 
-    # 5-Q quick quiz (no subject filter)
-    if data == "quiz:mini5":
-        return await _start_quiz(update, context, count=5)
+    # Determine if we're leaving a quiz flow
+    def _is_quiz_route(d: str) -> bool:
+        # Anything that starts or continues quiz
+        return d.startswith("quiz:") or d == "menu_quiz"
 
-    # Subject picker for 10-Q
-    if data == "quiz:mini10":
-        subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
-        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}:10")] for s in subjects]
-        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu:back")])
-        kb = InlineKeyboardMarkup(rows)
-        try:
-            await q.message.edit_text("Pick a subject for 10 questions:", reply_markup=kb)
-        except Exception:
-            try:
-                await q.message.edit_reply_markup(reply_markup=kb)
-            except Exception:
-                pass
-        return
+    in_quiz = context.user_data.get("session_id") is not None
+    going_to_quiz = _is_quiz_route(data)
 
-    # Start subject-locked quiz: quiz:sub:<HumanLabel>[:count]
-    if data.startswith("quiz:sub:"):
-        parts = data.split(":")  # ["quiz","sub","<HumanLabel>","<count?>"]
-        human = parts[2] if len(parts) >= 3 else ""
-        count = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 10
+    # If we were in a quiz and are navigating to a non-quiz feature, finalize it
+    if in_quiz and not going_to_quiz:
+        await _finalize_active_session(update, context)
 
-        # Normalize subject (map the human label to lowercase canonical)
-        subject = SUBJECT_MAP.get(human) or (human.strip().lower() if human else "")
-        if not subject:
-            try:
-                await q.message.reply_text("Unknown subject. Please pick again.")
-            except Exception:
-                pass
+    # Now route to the correct feature
+    try:
+        if data == "menu:back":
+            # back to main menu
+            await show_menu(update, context)
             return
 
-        log.info("[quiz_menu_router] starting subject quiz: human=%r subject=%r count=%d", human, subject, count)
-        return await _start_quiz(update, context, count=count, subject=subject)
-
-    # Streaks
-    if data == "quiz:streaks":
-        try:
-            return await quiz_show_streaks(update, context)
-        except NameError:
-            try:
-                return await q.message.reply_text("Streaks isn’t implemented yet.")
-            except Exception:
-                return
-
-    # Leaderboard
-    if data == "quiz:leaderboard":
-        try:
-            return await quiz_leaderboard(update, context)
-        except NameError:
-            try:
-                return await q.message.reply_text("Leaderboard isn’t implemented yet.")
-            except Exception:
-                return
-
-    # Back to main menu
-    if data == "menu:back":
-        try:
-            return await show_menu(update, context)
-        except Exception:
+        elif data == "menu_quiz":
+            # open quiz submenu
+            await menu_quiz_handler(update, context)
             return
+
+        elif data == "menu_predict_mock":
+            # your existing predictor entry
+            await predict_mockrank_start(update, context)
+            return
+
+        elif data == "menu_profile":
+            # your profile menu entry (if you have one)
+            await profile_menu(update, context)
+            return
+
+        # Add any other top-level menu items here:
+        # elif data == "menu_streaks": ...
+        # elif data == "menu_leaderboard": ...
+
+        else:
+            # Unknown/coming soon
+            await q.answer("Coming soon", show_alert=False)
+            return
+
+    except Exception as e:
+        log.exception("menu_router failed: %s", e)
+        try:
+            await q.message.reply_text("Something went wrong. Please try again from /menu.")
+        except Exception:
+            pass
     
 
 async def menu_back(update, context):
@@ -3790,13 +3819,19 @@ PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROF
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Greeting + show the menu. Safe for both /start and callbacks."""
     try:
-        # Optional friendly hello on first /start
+        # 0) Keep the user's profile fresh in DB (safe for /start or callback)
+        try:
+            await upsert_user(update.effective_user)
+        except Exception as e:
+            log.exception("upsert_user failed: %s", e)
+
+        # 1) Optional friendly hello on first /start
         if update.message:
             await update.message.reply_text("Hi! 👋 Welcome to ACEit.")
         elif update.callback_query:
             await update.callback_query.answer()
 
-        # Always show the menu
+        # 2) Always show the main menu
         await show_menu(update, context)
 
     except Exception as e:
@@ -3804,7 +3839,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Try to inform the user without crashing
         tgt = update.effective_message
         if tgt:
-            await tgt.reply_text("Something went wrong while opening the menu. Please try /menu again.")
+            await tgt.reply_text(
+                "Something went wrong while opening the menu. Please try /menu again."
+            )
 
 
 async def reset_lock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7369,6 +7406,26 @@ async def _start_quiz_common(update: Update, context: ContextTypes.DEFAULT_TYPE,
     """Create a fresh session and send ONLY ONE first question."""
     user_id = update.effective_user.id
 
+    # --- DB: make sure the profile exists/updates ---
+    try:
+        await upsert_user(update.effective_user)
+    except Exception as e:
+        log.exception("upsert_user failed: %s", e)
+
+    # --- DB: open a new persistent quiz session ---
+    try:
+        mode = f"mini{n}"                              # e.g., mini5 / mini10
+        subject = context.user_data.get("quiz_subject")  # or None if not used
+        # clear any old session id so we don't mix answers
+        context.user_data.pop("session_id", None)
+        db_session_id = await create_session(str(user_id), mode, subject)
+        context.user_data["session_id"] = db_session_id
+    except Exception as e:
+        log.exception("create_session failed: %s", e)
+        await update.effective_chat.send_message("⚠️ Couldn't start a test just now. Please try again.")
+        return
+
+    # --- your existing in-memory session (keep as is) ---
     qs = load_quiz_questions(n)  # returns list[dict] with keys: id, question, options, answer_index, explanation?
     if not qs:
         await update.effective_message.reply_text("Sorry, quiz questions are unavailable right now.")
@@ -7554,8 +7611,8 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     _add(CallbackQueryHandler(
         menu_router,
-        pattern=r"^menu_(ask|profile|coach|quiz)$"
-    ), group=1)
+        pattern=r"^(?:menu:(?:back|.*)|menu_(?:ask|profile|coach|quiz|.*))$"
+    ), group=0)
 
     # -------------------------------
     # Error handler (optional)
