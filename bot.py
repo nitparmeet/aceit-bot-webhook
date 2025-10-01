@@ -23,9 +23,6 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram import ReplyKeyboardMarkup
 from telegram.constants import ChatAction
 from typing import Dict, Any, List, Optional, Tuple, Iterable
-from db import upsert_user, create_session, save_answer, finalize_session
-from db import save_answer
-from db import finalize_session 
 from telegram import Bot
 import pandas as pd
 from dotenv import load_dotenv
@@ -76,7 +73,6 @@ SUBJECT_MAP = {
     "Botany": "botany",
     "Zoology": "zoology",
 }
-
 
 from dataclasses import dataclass
 from pydantic import BaseModel, ValidationError, Field
@@ -225,7 +221,6 @@ def _save_quiz_state() -> None:
         json.dump(to_dump, f)
     os.replace(tmp, QUIZ_STATE_PATH)
 
-    
 def _load_quiz_state() -> None:
     import json, os, time
     if not os.path.exists(QUIZ_STATE_PATH):
@@ -322,17 +317,6 @@ def format_quiz_report(score: int, total: int, details: list[dict]) -> str:
 
     return "\n".join(lines).strip()
 
-def extract_fee(col: dict, meta: dict | None = None):
-    meta = meta or {}
-    return (
-        meta.get("total_fee")
-        or col.get("annual_fee")
-        or col.get("tuition_fee")
-        or col.get("fee")
-        or None
-)
-
-
 def _new_token(n=8) -> str:
     # 8 hex chars, upper → short but unique per session
     return secrets.token_hex(n//2).upper()
@@ -356,7 +340,7 @@ _CATEGORY_ALIASES = {
 
 NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
 
-ASK_MOCK_RANK = 1001  # or your existing constant
+
 
 def _safe_str(v, default: str = "") -> str:
     try:
@@ -577,56 +561,6 @@ def _inst_type_from_row(r: dict) -> str:
         return "Government medical college"
     return own or "Medical college"
 
-def _college_key_from_row(row: dict) -> str:
-    """Prefer code; else normalized name."""
-    code = (row.get("college_code") or row.get("Code") or row.get("College Code") or "").strip().upper()
-    if code:
-        return code
-    nm = row.get("college_name") or row.get("College Name") or ""
-    return _name_key(str(nm))
-
-def _extract_fee(row: dict, key: str | None = None):
-    """Return a numeric/str fee or None, merging row data with COLLEGE_META_INDEX."""
-    if key is None:
-        key = _college_key_from_row(row)
-    meta = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
-    return (
-        meta.get("total_fee")    # set in build_code_to_name_index
-        or row.get("annual_fee")
-        or row.get("tuition_fee")
-        or row.get("fee")
-        or None
-    )
-    
-def _val(v, dash="—"):
-    return dash if (v is None or v == "" or str(v).lower() == "nan") else str(v)
-
-def render_college_note(col: dict) -> str:
-    """Safe, markdown-friendly summary for a college row."""
-    key   = _college_key_from_row(col)
-    meta  = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
-
-    name  = meta.get("college_name") or col.get("college_name") or col.get("College Name") or "College"
-    city  = meta.get("city")         or col.get("city")         or col.get("City")
-    state = meta.get("state")        or col.get("state")        or col.get("State")
-
-    fee   = _extract_fee(col, key)
-    seats = (
-        col.get("seats_total") or col.get("seats") or col.get("intake")
-        or meta.get("seats_total")
-    )
-    closing_air = (
-        col.get("closing_air") or col.get("closing_rank") or col.get("last_allotted_air")
-        or col.get("ClosingRank") or col.get("rank")
-    )
-
-    title_ln = f"🏥 *{_val(name)}* ({_val(city)}, {_val(state)})"
-    fee_ln   = f"💰 Annual Fee: {_fmt_money(fee)}"
-    seats_ln = f"🪑 Seats: {_val(seats)}"
-    air_ln   = f"📉 Last AIR (prev yr): {_val(closing_air)}"
-
-    return "\n".join([title_ln, fee_ln, seats_ln, air_ln])
-
 def _city_vibe_from_row(city: str, state: str) -> str:
     c = (city or "").strip().lower()
     s = (state or "").strip().lower()
@@ -668,12 +602,11 @@ def _to_int(x):
     except Exception:
         return None
 
-def _to_int_or_none(v):
+def _to_int_or_none(x):
     try:
-        if v is None:
-            return None
-        s = str(v).strip().replace(",", "")
-        if s == "":
+        if x is None: return None
+        s = str(x).strip()
+        if s == "" or s.lower() in {"na","n/a","nan","—","-"}:
             return None
         return int(float(s))
     except Exception:
@@ -981,16 +914,6 @@ def _trim(s: str, n: int = 140) -> str:
     s = str(s or "")
     return s if len(s) <= n else s[: n - 1] + "…"
 
-
-
-async def _safe(label: str, aw):
-    try:
-        return await aw
-    except Exception as e:
-        log.exception("%s failed: %s", label, e)
-        return None
-        
-
 async def _safe_clear_kb(query) -> None:
     """Best-effort removal of inline keyboard to avoid double-presses."""
     try:
@@ -1029,27 +952,16 @@ async def _safe_set_kb(q, kb):
         log.warning("editMessageReplyMarkup(set) failed: %s", msg)
 
 async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Keep profile fresh (best-effort)
-    await _safe("upsert_user", upsert_user(update.effective_user))
+    from telegram.error import BadRequest  # local import so you don't have to change imports elsewhere
 
     q = update.callback_query
-
-    # Detect if user has an in-memory quiz session (so we can offer "Continue")
-    user_id = update.effective_user.id
-    has_active = bool(context.user_data.get("session_id")) and bool(QUIZ_SESSIONS.get(user_id))
-
-    rows = []
-    if has_active:
-        rows.append([InlineKeyboardButton("▶️ Continue current quiz", callback_data="quiz:continue")])
-
-    rows.extend([
+    kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
         [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
         [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
         [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
         [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
     ])
-    kb = InlineKeyboardMarkup(rows)
 
     if q:
         await q.answer()
@@ -1063,7 +975,7 @@ async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 try:
                     await q.message.edit_reply_markup(reply_markup=kb)
                 except BadRequest as e2:
-                    # If even the markup is identical, ignore silently unless it's a different error.
+                    # If even the markup is identical, ignore silently.
                     if "Message is not modified" not in str(e2):
                         raise
             else:
@@ -1086,82 +998,6 @@ async def _send_quiz_report(update, context, score: int, total: int, details: li
             parse_mode="HTML",
             disable_web_page_preview=True,
         )
-async def _finalize_active_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sid = context.user_data.pop("session_id", None)
-    if not sid:
-        return
-    await _safe("finalize_session", finalize_session(sid, str(update.effective_user.id)))
-
-async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    q = update.callback_query
-    if not q:
-        return
-    data = (q.data or "").strip()
-    await q.answer()
-
-    # Keep profile fresh
-    await _safe("upsert_user", upsert_user(update.effective_user))
-
-    # Best-effort clear previous markup
-    try:
-        await q.edit_message_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-
-    # Back to main menu → finalize any active quiz
-    if data == "menu:back":
-        await _finalize_active_session(update, context)
-        await show_menu(update, context)
-        return
-
-    # If starting a new quiz, finalize any previous
-    if data.startswith("quiz:"):
-        if context.user_data.get("session_id"):
-            await _finalize_active_session(update, context)
-
-        if data == "quiz:continue":
-            # resume current quiz (if in-memory session exists)
-            await _send_next(update, context)
-            return
-
-        if data == "quiz:mini5":
-            await _start_quiz(update, context, count=5)
-            return
-
-        if data == "quiz:mini10":
-            subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
-            rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}:10")] for s in subjects]
-            rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu:back")])
-            await q.message.edit_text("Pick a subject for 10 questions:", reply_markup=InlineKeyboardMarkup(rows))
-            return
-
-        if data.startswith("quiz:sub:"):
-            parts = data.split(":")  # ["quiz","sub","<HumanLabel>","<count?>"]
-            human = parts[2] if len(parts) >= 3 else ""
-            count = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 10
-            subject = SUBJECT_MAP.get(human) or (human.strip().lower() if human else "")
-            if not subject:
-                await q.message.reply_text("Unknown subject. Please pick again.")
-                return
-            context.user_data["quiz_subject"] = subject
-            await _start_quiz(update, context, count=count, subject=subject)
-            return
-
-        if data == "quiz:streaks":
-            try:
-                await quiz_show_streaks(update, context)
-            except NameError:
-                await q.message.reply_text("Streaks isn’t implemented yet.")
-            return
-
-        if data == "quiz:leaderboard":
-            try:
-                await quiz_leaderboard(update, context)
-            except NameError:
-                await q.message.reply_text("Leaderboard isn’t implemented yet.")
-            return
-
-
 async def _safe_clear_markup(query):
     try:
         await query.edit_message_reply_markup(None)
@@ -1326,118 +1162,45 @@ def _pick(d: dict, *keys):
             return d.get(k)
     return None
 
-def _extract_fee(row: dict, key: str | None = None):
-    if key is None:
-        code = (row.get("college_code") or row.get("code") or row.get("College Code") or "").strip().upper()
-        nm   = row.get("college_name") or row.get("College Name")
-        key  = code if code else _name_key(str(nm or ""))
-    meta = COLLEGE_META_INDEX.get(key, {}) if 'COLLEGE_META_INDEX' in globals() else {}
-    return (
-        meta.get("total_fee")
-        or row.get("annual_fee")
-        or row.get("tuition_fee")
-        or row.get("fee")
-        or None
-    )
-    
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
-    """
-    Name, place; then Closing Rank and Annual Fee each on its own line.
-    Robust to missing fields and avoids undefined vars.
-    """
-    r = r or {}
-    user = user or {}
-
-    # --- tiny helpers ---
-    def _is_missing(v) -> bool:
-        try:
-            s = str(v).strip().lower()
-        except Exception:
-            return True
-        return s in {"", "—", "-", "na", "n/a", "nan", "none", "null"}
-
-    def _first(*vals):
-        for v in vals:
-            if not _is_missing(v):
-                return v
-        return None
-
-    def _s(v, default=""):
-        try:
-            if _is_missing(v):
-                return default
-            return str(v).strip()
-        except Exception:
-            return default
-
-    # --- fields from row ---
-    name  = _s(_first(r.get("college_name"), r.get("College Name")), "—")
-    city  = _s(_first(r.get("city"), r.get("City")))
-    state = _s(_first(r.get("state"), r.get("State")))
+    """Name, place; then Closing Rank and Annual Fee each on its own line. No 'm' fallbacks here."""
+    # NaN/None safe strings
+    name  = _safe_str(_pick(r, "college_name", "College Name")) or "—"
+    city  = _safe_str(_pick(r, "city", "City"))
+    state = _safe_str(_pick(r, "state", "State"))
     place = ", ".join([x for x in (city, state) if x])
 
-    # --- cutoff context ---
-    round_ui = _s(_first((user or {}).get("cutoff_round"), (user or {}).get("round")), "2025_R1")
-    quota    = _s((user or {}).get("quota"), "AIQ")
-    category = _s((user or {}).get("category"), "General")
+    # rank lookup context
+    round_ui = (user or {}).get("cutoff_round") or (user or {}).get("round") or "2025_R1"
+    quota    = (user or {}).get("quota") or "AIQ"
+    category = (user or {}).get("category") or "General"
 
-    # --- allow pre-attached df_lookup ---
+    # allow a pre-attached df lookup
     try:
         df_lookup = r.get("_df_lookup") or df_lookup
     except Exception:
         pass
 
-    # --- closing rank (prefer in-row, else compute by identifiers) ---
-    closing = _first(r.get("ClosingRank"), r.get("closing"), r.get("closing_rank"), r.get("rank"))
+    # closing rank: prefer inline fields, else compute from identifiers
+    closing = r.get("ClosingRank") or r.get("closing") or r.get("rank")
     if _is_missing(closing):
-        id_candidates = [
+        ids = [
             r.get("college_code"), r.get("code"),
-            r.get("college_id"),   r.get("institute_code"),
-            name,  # last resort: match by display name
+            r.get("college_id"), r.get("institute_code"),
+            _pick(r, "college_name", "College Name"),
         ]
-        ids = [ _s(x) for x in id_candidates if not _is_missing(x) ]
-        try:
-            closing = _closing_rank_for_identifiers(
-                ids, round_ui, quota, category,
-                df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
-            )
-        except Exception:
-            closing = None
-
-    # --- fee: look in row first, then meta index (if present) ---
-    fee_raw = _first(r.get("total_fee"), r.get("Total Fee"), r.get("Fee"), r.get("Tuition Fee"))
-    if _is_missing(fee_raw):
-        # Try meta index by either code/id or normalized name key
-        meta = {}
-        try:
-            code = _s(_first(r.get("college_code"), r.get("code")))
-            cid  = _s(_first(r.get("college_id"),   r.get("institute_code")))
-            key_name = _s(name).lower()
-            if 'COLLEGE_META_INDEX' in globals():
-                if code and code in COLLEGE_META_INDEX:
-                    meta = COLLEGE_META_INDEX.get(code, {})
-                elif cid and cid in COLLEGE_META_INDEX:
-                    meta = COLLEGE_META_INDEX.get(cid, {})
-                elif key_name and key_name in COLLEGE_META_INDEX:
-                    meta = COLLEGE_META_INDEX.get(key_name, {})
-        except Exception:
-            meta = {}
-        fee_raw = _first(
-            fee_raw,
-            (meta or {}).get("total_fee"),
-            (meta or {}).get("annual_fee"),
-            (meta or {}).get("tuition_fee"),
-            (meta or {}).get("fee"),
+        closing = _closing_rank_for_identifiers(
+            [x for x in ids if not _is_missing(x)],
+            round_ui, quota, category,
+            df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
         )
 
-    # --- build lines ---
+    fee = _pick(r, "total_fee", "Fee")
+
     header = f"{name}" + (f", {place}" if place else "")
-    cr_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
-    fee_ln = f"Annual Fee: {_fmt_money(fee_raw)}"
-
+    cr_ln  = f"Closing Rank { _fmt_rank_val(closing) }"
+    fee_ln = f"Annual Fee { _fmt_money(fee) }"
     return "\n".join([header, cr_ln, fee_ln])
-
-
 
 def _deemed_only(rows):
     out = []
@@ -1489,9 +1252,9 @@ def _norm_row_for_cache(r: dict) -> dict:
     }
 
 
-from db import upsert_user  # (and later you'll import create_session/save_answer/finalize_session for other handlers)
-import logging
-log = logging.getLogger("aceit-bot")
+async def start(update, context):
+    await update.message.reply_text("Hello from Aceit!")
+
 
 
 async def _debug_unknown_callback(update, context):
@@ -2373,16 +2136,6 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
             report_html = format_quiz_report(score, total, details)
 
-            # --- DB: finalize persistent session before cleanup ---
-            session_id = context.user_data.get("session_id")
-            if session_id:
-                try:
-                    await finalize_session(session_id, str(user_id))
-                except Exception as e:
-                    log.exception("finalize_session failed: %s", e)
-                finally:
-                    context.user_data.pop("session_id", None)
-
             chat_id = update.effective_chat.id
             for j in range(0, len(report_html), 3800):
                 await context.bot.send_message(
@@ -2396,12 +2149,16 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             QUIZ_SESSIONS.pop(user_id, None)
             _save_quiz_state()
             return
-
         # Otherwise, send question i
         q = qs[i]
         text = _format_question(q, i, total)
         kb = _keyboard_for(q)
 
+        # Avoid duplicate question sends: if we just sent the same text, skip.
+        # (Rarely, TG edits/latency can cause re-entry.)
+        last_id = sess.get("last_msg_id")
+        # We still send the message; the guard is primarily the inflight flag.
+        # Keep it simple and send once per step:
         sent = await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text=text,
@@ -2409,13 +2166,11 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         sess["last_msg_id"] = sent.message_id
 
-        # start a per-question timer so on_answer can compute time_ms
-        sess["ts"] = time.time()
-
     finally:
         sess = QUIZ_SESSIONS.get(user_id)
         if sess:
             sess["inflight"] = False
+
 
 async def _start_quiz(
     update: Update,
@@ -2550,32 +2305,15 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.answer("That question moved on.", show_alert=False)
         return
 
-    # ----- persist answer to memory + compute timing -----
-    # If you were storing question-start time in sess["ts"] when you sent the question,
-    # use it to compute time_ms. Then refresh it for the NEXT question.
-    prev_ts = sess.get("ts")
-    now_ts = time.time()
-    time_ms = int((now_ts - prev_ts) * 1000) if isinstance(prev_ts, (int, float)) else None
-
     sess["answers"][qid] = chosen
     sess["index"] = i + 1
-    sess["ts"] = now_ts            # set "start" for NEXT question
+    sess["ts"] = __import__("time").time()
     _save_quiz_state()
 
-    # ----- correctness & feedback -----
     ca = q["answer_index"]
     user_txt = q["options"][chosen]
     cor_txt  = q["options"][ca]
-    is_correct = (chosen == ca)
-    fb = "✅ Correct!" if is_correct else f"❌ Incorrect. Correct: {cor_txt}"
-
-    # ----- DB: save this answer (best-effort; do not break UX) -----
-    session_id = context.user_data.get("session_id")
-    if session_id:
-        try:
-            await save_answer(session_id, qid, str(chosen), bool(is_correct), time_ms)
-        except Exception as e:
-            log.exception("save_answer failed: %s", e)
+    fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
 
     # best-effort edit; ignore 400 "message not modified"
     try:
@@ -2588,7 +2326,6 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception:
             pass
 
-    # Send next question or finish
     await _send_next(update, context)
     
 # ===== END SIMPLE QUIZ =====
@@ -2801,8 +2538,6 @@ def load_colleges_dataset(
         return pd.DataFrame()
 
     # Helper to pick columns forgivingly
-    
-    
     def _pick(cols, *cands):
         cols = [str(c) for c in cols]
         norm = {c.lower().strip(): c for c in cols}
@@ -3769,18 +3504,24 @@ def _yn(v):
     return "unknown"
 
 if "_fmt_bond_line" not in globals():
-    def _fmt_bond_line(bond_years, bond_penalty_lakhs):
-        """Return a friendly bond string like '2 yrs / ₹50k' or '—' if unknown."""
-        y = _to_int_or_none(bond_years)
-        p = _to_int_or_none(bond_penalty_lakhs)
-        if y is None and p is None:
+    def _fmt_bond_line(bond_years, bond_penalty):
+        if _is_missing(bond_years) and _is_missing(bond_penalty):
             return "—"
         parts = []
-        if y is not None:
-            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
-        if p is not None:
-            parts.append(f"₹{p:,}k")
-        return " / ".join(parts) if parts else "—"
+        if not _is_missing(bond_years):
+            try:
+                y = float(str(bond_years).strip())
+                parts.append(f"{int(y) if y.is_integer() else y} yrs")
+            except Exception:
+                parts.append(str(bond_years))
+        if not _is_missing(bond_penalty):
+            try:
+                p = float(str(bond_penalty).replace(",", "").strip())
+                parts.append(f"₹{int(p*100000):,}")  # if stored in lakhs
+            except Exception:
+                parts.append(str(bond_penalty))
+        return " + ".join(parts) if parts else "—"
+
 
 
 if "_why_from_signals" not in globals():
@@ -3900,14 +3641,11 @@ async def show_menu(
     text: str = "Choose an option:",
 ) -> None:
     """Show the main menu (can be called from /menu or any callback)."""
-    # keep the user profile fresh (best-effort)
-    await _safe("upsert_user", upsert_user(update.effective_user))
-
     tgt = update.effective_message
     if tgt is None:
-        chat = update.effective_chat
-        if chat:
-            await context.bot.send_message(chat_id=chat.id, text="Hi! 👋")
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text="Hi! 👋")
         return
 
     explanation = (
@@ -3928,66 +3666,108 @@ async def show_menu(
     await tgt.reply_text(text, reply_markup=main_menu_markup())
 
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.error import BadRequest
-
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Routes main menu buttons. Finalizes any active quiz if user leaves quiz."""
+    q = update.callback_query
+    data = q.data if q else ""
+    await q.answer()
+
+ #   if data == "menu_predict":
+ #       return await predict_start(update, context)
+ #   if data in {"menu_mock_predict", "menu_predict_mock"}:
+ #       return await predict_mockrank_start(update, context)
+    if data in {"menu_mock_predict", "menu_predict_mock"}:
+    # Let the ConversationHandler entry_point handle this callback.
+    # We just acknowledge the press and return.
+        await q.answer()
+        return
+    if data == "menu_ask":
+        return await ask_start(update, context)
+    if data == "menu_profile":
+        return await setup_profile(update, context)
+    if data == "menu_coach":
+        return await coach_router(update, context)
+    if data == "menu_quiz":
+        return await menu_quiz_handler(update, context)
+
+    # Catch-all so unknown menu_* never hangs
+    await q.message.reply_text("That menu item isn’t set up yet.")
+
+async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     if not q:
         return
-    data = (q.data or "").strip()
+    data = q.data or ""
+    await q.answer()
 
-    # keep profile fresh
-    await _safe("upsert_user", upsert_user(update.effective_user))
-
-    # ack tap; try clearing old keyboard (ignore benign errors)
-    try: await q.answer()
-    except Exception: pass
-    try: await q.edit_message_reply_markup(reply_markup=None)
-    except BadRequest as e:
-        if "Message is not modified" not in str(e): pass
-    except Exception: pass
-
-    # leaving a running quiz?
-    def _is_quiz_route(d: str) -> bool:
-        return d.startswith("quiz:") or d == "menu_quiz"
-    if context.user_data.get("session_id") and not _is_quiz_route(data):
-        await _finalize_active_session(update, context)
-
-    # ---- routing (IMPORTANT: let ConversationHandler handle predict buttons) ----
+    # Best-effort: clear previous inline keyboard to prevent double presses
     try:
-        if data == "menu:back":
-            await show_menu(update, context); return
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
-        if data == "menu_quiz":
-            await menu_quiz_handler(update, context); return
+    # 5-Q quick quiz (no subject filter)
+    if data == "quiz:mini5":
+        return await _start_quiz(update, context, count=5)
 
-        # Predictor buttons — do NOT start flows here.
-        # Just return so the ConversationHandler entry_points can catch them.
-        if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
-            return
-
-        if data == "menu_ask":
-            await ask_start(update, context); return
-
-        if data == "menu_coach":
-            await coach_router(update, context); return
-
-        if data == "menu_profile":
-            try:
-                await profile_menu(update, context)
-            except NameError:
-                await setup_profile(update, context)
-            return
-
-        await q.message.reply_text("That menu item isn’t set up yet.")
-    except Exception as e:
-        log.exception("menu_router failed: %s", e)
+    # Subject picker for 10-Q
+    if data == "quiz:mini10":
+        subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
+        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}:10")] for s in subjects]
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu:back")])
+        kb = InlineKeyboardMarkup(rows)
         try:
-            await q.message.reply_text("Something went wrong. Please try again from /menu.")
+            await q.message.edit_text("Pick a subject for 10 questions:", reply_markup=kb)
         except Exception:
-            pass
+            try:
+                await q.message.edit_reply_markup(reply_markup=kb)
+            except Exception:
+                pass
+        return
+
+    # Start subject-locked quiz: quiz:sub:<HumanLabel>[:count]
+    if data.startswith("quiz:sub:"):
+        parts = data.split(":")  # ["quiz","sub","<HumanLabel>","<count?>"]
+        human = parts[2] if len(parts) >= 3 else ""
+        count = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 10
+
+        # Normalize subject (map the human label to lowercase canonical)
+        subject = SUBJECT_MAP.get(human) or (human.strip().lower() if human else "")
+        if not subject:
+            try:
+                await q.message.reply_text("Unknown subject. Please pick again.")
+            except Exception:
+                pass
+            return
+
+        log.info("[quiz_menu_router] starting subject quiz: human=%r subject=%r count=%d", human, subject, count)
+        return await _start_quiz(update, context, count=count, subject=subject)
+
+    # Streaks
+    if data == "quiz:streaks":
+        try:
+            return await quiz_show_streaks(update, context)
+        except NameError:
+            try:
+                return await q.message.reply_text("Streaks isn’t implemented yet.")
+            except Exception:
+                return
+
+    # Leaderboard
+    if data == "quiz:leaderboard":
+        try:
+            return await quiz_leaderboard(update, context)
+        except NameError:
+            try:
+                return await q.message.reply_text("Leaderboard isn’t implemented yet.")
+            except Exception:
+                return
+
+    # Back to main menu
+    if data == "menu:back":
+        try:
+            return await show_menu(update, context)
+        except Exception:
+            return
     
 
 async def menu_back(update, context):
@@ -4010,16 +3790,13 @@ PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROF
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Greeting + show the menu. Safe for both /start and callbacks."""
     try:
-        # 0) Keep the user's profile fresh in DB (safe for /start or callback)
-        await _safe("upsert_user", upsert_user(update.effective_user))
-        
-        # 1) Optional friendly hello on first /start
+        # Optional friendly hello on first /start
         if update.message:
             await update.message.reply_text("Hi! 👋 Welcome to ACEit.")
         elif update.callback_query:
             await update.callback_query.answer()
 
-        # 2) Always show the main menu
+        # Always show the menu
         await show_menu(update, context)
 
     except Exception as e:
@@ -4027,9 +3804,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         # Try to inform the user without crashing
         tgt = update.effective_message
         if tgt:
-            await tgt.reply_text(
-                "Something went wrong while opening the menu. Please try /menu again."
-            )
+            await tgt.reply_text("Something went wrong while opening the menu. Please try /menu again.")
 
 
 async def reset_lock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4259,13 +4034,13 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Summarize the current shortlist. Does NOT fabricate a shortlist if none exists.
-    Enriches with master COLLEGES metadata and falls back to cutoff table for missing closing ranks.
+    Deterministic AI-notes summary that enriches shortlist rows with master COLLEGES
+    metadata before printing. Uses cached master indexes for speed. Falls back to
+    cutoff table to resolve Closing Rank when missing.
     """
     try:
         if update.callback_query:
             await update.callback_query.answer()
-
         chat_id = update.effective_chat.id
         status = await context.bot.send_message(chat_id=chat_id, text="🧠 Preparing notes…")
 
@@ -4284,6 +4059,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
         round_ui = ud.get("cutoff_round") or ud.get("round") or "2025_R1"
         quota    = ud.get("quota") or "AIQ"
         category = ud.get("category") or "General"
+        # light normalization for common aliases
         QUOTA_MAP = {"All India": "AIQ", "All-India": "AIQ", "AI": "AIQ"}
         CAT_MAP   = {"UR": "General", "Open": "General", "GN": "General"}
         quota    = QUOTA_MAP.get(quota, quota)
@@ -4356,12 +4132,12 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
         for i, r in enumerate(items[:10], 1):
             m = _resolve_master_row(r)
 
-            name   = _safe_str(_pick2(r, m, "college_name", "College Name")) or "Unknown college"
+            name   = _safe_str(_pick2(r, m, "college_name", "College Name"), "Unknown college")
             state  = _safe_str(_pick2(r, m, "state", "State"))
             city   = _safe_str(_pick2(r, m, "city",  "City"))
             place  = ", ".join([x for x in (city, state) if x])
 
-            # Closing rank with robust fallback
+            # closing with robust fallback to cutoffs
             closing = _pick2(r, m, "ClosingRank", "closing", "closing_rank", "rank")
             if _is_missing(closing):
                 id_candidates = [
@@ -4387,7 +4163,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             bond_penalty = _pick2(r, m, "bond_penalty_lakhs")
             hostel_raw   = _pick2(r, m, "hostel_available")
 
-            # normalize boolean-ish fields
+            # normalize boolean-ish fields (handles yes/no/emoji/etc.)
             pg_quota_bool = _truthy_or_none(pg_quota_raw)
             hostel_bool   = _truthy_or_none(hostel_raw)
 
@@ -4464,72 +4240,32 @@ async def quiz_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Routes main menu buttons. Finalizes any active quiz if user leaves quiz."""
-    from telegram.error import BadRequest  # local import so this compiles regardless of your global imports
-
     q = update.callback_query
-    if not q:
-        return
+    await q.answer()
     data = (q.data or "").strip()
 
-    # Best-effort: keep profile fresh (don't crash if DB hiccups)
-    await _safe("upsert_user", upsert_user(update.effective_user))
+    if data == "menu_quiz":
+        await menu_quiz_handler(update, context)
+        return
 
-    # Acknowledge tap & try to clear old inline keyboard (prevents double-taps)
-    try:
-        await q.answer()
-    except Exception:
-        pass
-    try:
-        await q.edit_message_reply_markup(reply_markup=None)
-    except BadRequest as e:
-        # ignore "Message is not modified"
-        if "Message is not modified" not in str(e):
-            pass
-    except Exception:
-        pass
+    if data == "menu_predict":
+        await q.message.reply_text("Predictor coming right up. Use /predict to start.")
+        return
 
-    # If navigating away from an active quiz, finalize it
-    def _is_quiz_route(d: str) -> bool:
-        return d.startswith("quiz:") or d == "menu_quiz"
+    if data == "menu_mock_predict":
+        await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
+        return
 
-    if context.user_data.get("session_id") and not _is_quiz_route(data):
-        await _finalize_active_session(update, context)
+    if data == "menu_ask":
+        await q.message.reply_text("Ask your NEET doubt with /ask.")
+        return
 
-    # ---- Routing ----
-    try:
-        if data == "menu:back":
-            await show_menu(update, context);                      return
+    if data == "menu_profile":
+        await q.message.reply_text("Open profile with /profile.")
+        return
 
-        if data == "menu_quiz":
-            await menu_quiz_handler(update, context);              return
-
-        # Predictor (mock rank → college); support multiple button ids
-        if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
-            await predict_mockrank_start(update, context);         return
-
-        if data == "menu_ask":
-            await ask_start(update, context);                      return
-
-        if data == "menu_coach":
-            await coach_router(update, context);                   return
-
-        if data == "menu_profile":
-            # Call whichever exists in your codebase
-            try:
-                await profile_menu(update, context)
-            except NameError:
-                await setup_profile(update, context)
-            return
-
-        # Unknown/coming soon
-        await q.message.reply_text("That menu item isn’t set up yet.")
-    except Exception as e:
-        log.exception("menu_router failed: %s", e)
-        try:
-            await q.message.reply_text("Something went wrong. Please try again from /menu.")
-        except Exception:
-            pass
+    # fallback
+    await q.message.reply_text("Unknown menu item.")
     
 #----------------------------New Quiz end
     # ---------------- small helpers ----------------
@@ -4582,7 +4318,18 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if s in {"no", "n", "false", "0", "not available"}: return "No"
         return str(v)
 
-    
+    def _fmt_bond_line(bond_years, bond_penalty_lakhs):
+        y = _to_int_or_none(years)
+        p = _to_int_or_none(penalty_lakh)
+        if y is None and p is None:
+            return "—"
+        parts = []
+        if y is not None:
+            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
+        if p is not None:
+            parts.append(f"₹{p:,}k")  # penalty in lakhs → print as e.g. 50k
+        return " / ".join(parts) if parts else "—"
+
     
 
     def _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail) -> str:
@@ -4704,15 +4451,15 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
             header   = f"{i}. {name}" + (f", {', '.join([x for x in (city, state) if x])}" if (city or state) else "")
             rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
-            fee = _pick(r, "total_fee", "Fee", "Total Fee") or _pick(m, "total_fee", "Fee", "Total Fee")
             fee_ln   = f"Annual Fee: {_fmt_money(fee)}"
-            why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool)
+            why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail)
             vibe_ln  = "City & campus vibe: " + (
-            ((city or state or "—") + " — " + _city_vibe_from_row(city, state))
+                ((city or state or "—") + " — " + _city_vibe_from_row(city, state))
             )
-            pg_ln    = f"PG Quota: {_yn(pg_quota_bool)}"
+            pg_ln    = f"PG Quota: {_yn(pg_quota)}"
             bond_ln  = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
-            hostel_ln= f"Hostel: {_yn(hostel_bool)}"
+            hostel_ln= f"Hostel: {_yn(hostel_avail)}"
+
             blocks.append("\n".join([header, rank_ln, fee_ln, why_ln, vibe_ln, pg_ln, bond_ln, hostel_ln]))
 
         # Always send the rich offline text (predictable format)
@@ -6308,65 +6055,19 @@ async def predict_mockrank_collect_size_cb(update: Update, context: ContextTypes
     # Example: ask the next question in flow, or call your compute/predict
     return await predict_mockrank_next_step(update, context)  # <-- or whatever your next step is
     
-def _is_spammy(context, key: str, ttl: float = 2.0) -> bool:
-    now = time.time(); last = context.user_data.get(key)
-    if last and now - last < ttl: return True
-    context.user_data[key] = now; return False
-
-PREDICT_PROMPT = "Send your NEET All India Rank (AIR) as a number (e.g., 15234)."
 
 async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Entry point for the Mock-Rank → College predictor.
-    Prompts the user for their mock test All-India Rank (integer).
-    """
-    # Dedupe fast double-taps
-    if _is_spammy(context, "mockrank_enter", ttl=2.0):
-        return ASK_MOCK_RANK
-
-    # Best-effort: keep user profile fresh
-    await _safe("upsert_user", upsert_user(update.effective_user))
-
-    # If we came via a callback button, just acknowledge it
-    q = getattr(update, "callback_query", None)
-    if q:
-        try:
-            await q.answer()
-            # Optional: clear old inline keyboard to reduce double-taps
-            try:
-                await q.edit_message_reply_markup(reply_markup=None)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-    # Flow guard
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
         if tgt:
             await tgt.reply_text(
                 f"You're currently in *{blocked}* flow. Send /cancel to exit it first.",
-                parse_mode="Markdown",
+                parse_mode="Markdown"
             )
         return ConversationHandler.END
-
-    # Mark this predictor mode explicitly so downstream handlers can branch
-    ud = context.user_data
-    ud["predict_mode"] = "mock"
-    # Optional: clear any stale shortlist to avoid "random" AI notes later
-    ud.pop("LAST_SHORTLIST", None)
-    ud.pop("last_shortlist", None)
-    ud.pop("last_predict_shortlist", None)
-
-    # Single, clean prompt
     tgt = _target(update)
-    if tgt:
-        prompt = "Enter your *mock test All-India Rank* (integer):"
-        if ud.get("last_prompt_text") != prompt:
-            ud["last_prompt_text"] = prompt
-            await tgt.reply_text(prompt, parse_mode="Markdown")
-
+    await tgt.reply_text("Enter your *mock test All-India Rank* (integer):", parse_mode="Markdown")
     return ASK_MOCK_RANK
 
 async def predict_mockrank_collect_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7417,31 +7118,28 @@ def _resolve_excel_path() -> str:
     # --- Predictor conversation ---
     if _has("predict_start", "on_air", "on_quota", "on_category",
             "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
-            "on_pref", "cancel_predict", "predict_mockrank_start",
-            "predict_mockrank_collect_rank", "predict_mockrank_collect_size"):
+            "on_pref", "cancel_predict"):
         predict_conv = ConversationHandler(
             entry_points=[
-            # slash commands
-            CommandHandler("predict", predict_start),
-            CommandHandler("mockpredict", predict_mockrank_start),
-            # menu buttons (callback queries)
-            CallbackQueryHandler(predict_start,              pattern=r"^menu_predict$"),
-            CallbackQueryHandler(predict_mockrank_start,     pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
-        ],
-        states={
-            ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-            ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-            ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-            ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-            ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-            ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_predict)],
-        name="predict_conv",
-        persistent=False,
-        per_message=True,   # <- important for reliable CallbackQuery handling
-    )
-    _add(predict_conv, group=3)
+                CommandHandler("predict", predict_start),
+                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
+                CommandHandler("mockpredict", predict_mockrank_start),
+                CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
+            ],
+            states={
+                ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+                ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+                ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+                ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+                ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+                ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel_predict)],
+            name="predict_conv",
+            persistent=False,
+            per_message=False,
+        )
+        _add(predict_conv, group=3)
     
     # --- Profile conversation ---
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
@@ -7671,37 +7369,19 @@ async def _start_quiz_common(update: Update, context: ContextTypes.DEFAULT_TYPE,
     """Create a fresh session and send ONLY ONE first question."""
     user_id = update.effective_user.id
 
-    # --- DB: make sure the profile exists/updates (best-effort) ---
-    await _safe("upsert_user", upsert_user(update.effective_user))
-
-    # --- Load questions first; only open a DB session if we have questions ---
-    qs = load_quiz_questions(n)  # expects list[dict] with: id, question, options, answer_index, ...
+    qs = load_quiz_questions(n)  # returns list[dict] with keys: id, question, options, answer_index, explanation?
     if not qs:
         await update.effective_message.reply_text("Sorry, quiz questions are unavailable right now.")
         return
 
-    # --- DB: open a new persistent quiz session (best-effort, with guardrail) ---
-    mode = f"mini{n}"                                  # e.g., mini5 / mini10
-    subject = context.user_data.get("quiz_subject")    # or None if not used
-
-    # clear any old session id so we don't mix answers
-    context.user_data.pop("session_id", None)
-
-    db_session_id = await _safe("create_session", create_session(str(user_id), mode, subject))
-    if not db_session_id:
-        await update.effective_chat.send_message("⚠️ Couldn't start a test just now. Please try again.")
-        return
-    context.user_data["session_id"] = db_session_id
-
-    # --- your existing in-memory session (keep as is) ---
+    # New session (overwrite any stale one)
     QUIZ_SESSIONS[user_id] = {
         "questions": qs,
         "index": 0,
         "answers": {},           # qid -> user_index
         "inflight": False,       # sending/grading lock
         "last_msg_id": None,     # last message we sent for the question
-        "created_at": time.time(),
-        "ts": time.time(),       # start timer for Q1 (used by on_answer for time_ms)
+        "created_at": time.time()
     }
 
     # Send the first question once
@@ -7722,18 +7402,17 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    
+    _add(CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"), group=0)
 
   
 
     # --- QUIZ: menu + router + answers ---
-    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
+    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
     _add(CallbackQueryHandler(
         quiz_menu_router,
-        pattern=r"^(quiz:(mini5|mini10|sub:[^:]+(?::\d+)?|streaks|leaderboard|continue)|menu:back)$"
+        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
-    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
     # -------------------------------
     # Ask (Doubt) conversation
@@ -7875,8 +7554,8 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     _add(CallbackQueryHandler(
         menu_router,
-        pattern=r"^(?:menu:(?:back|.*)|menu_(?:ask|profile|coach|quiz|.*))$"
-    ), group=0)
+        pattern=r"^menu_(ask|profile|coach|quiz)$"
+    ), group=1)
 
     # -------------------------------
     # Error handler (optional)
