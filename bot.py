@@ -7109,32 +7109,10 @@ def _resolve_excel_path() -> str:
             _add(CallbackQueryHandler(quiz_review_choice, pattern=r"^QUIZ_REVIEW:(yes|no)$"), group=2)
         if _has("quiz_predict_choice_noop"):
             _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
+    
+    
 
-    # --- Predictor conversation ---
-    if _has("predict_start", "on_air", "on_quota", "on_category",
-            "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
-            "on_pref", "cancel_predict"):
-        predict_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("predict", predict_start),
-                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
-                CommandHandler("mockpredict", predict_mockrank_start),
-                CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"),
-            ],
-            states={
-                ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-                ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-                ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-                ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-                ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-                ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel_predict)],
-            name="predict_conv",
-            persistent=False,
-            per_message=False,
-        )
-        _add(predict_conv, group=3)
+
     
     # --- Profile conversation ---
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
