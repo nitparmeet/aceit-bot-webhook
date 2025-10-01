@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import os
 import re
@@ -32,10 +31,6 @@ from collections import Counter
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 _HANDLERS_ATTACHED = False
-
-
-
-
 
 try:
     log
@@ -7566,7 +7561,6 @@ def register_handlers(app: Application) -> None:
         pass
 
     log.info("✅ Handlers registered")
-
 
 
 
