@@ -3969,13 +3969,8 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         if data == "menu_ask":
-            try:
-                await q.answer()
-                await q.edit_message_reply_markup(reply_markup=None)
-            except Exception:
-                pass
-            return
-            
+            await ask_start(update, context); return
+
         if data == "menu_coach":
             await coach_router(update, context); return
 
@@ -5371,12 +5366,6 @@ def tri_inline(prefix: str) -> InlineKeyboardMarkup:
 
 
 async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    now = time.time()
-    last = context.user_data.get("_ask_last_ts", 0)
-    if now - last < 1.0:
-        # suppress the duplicate
-        return
-    context.user_data["_ask_last_ts"] = now
     ok = await guard_or_block(update, context, "ask")
     if not ok:
         return ConversationHandler.END
@@ -7383,7 +7372,7 @@ def _resolve_excel_path() -> str:
         ask_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("ask", ask_start),
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
+                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
             ],
             states={
                 ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
@@ -7426,32 +7415,33 @@ def _resolve_excel_path() -> str:
             _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
 
     # --- Predictor conversation ---
-    if _has(
-        "predict_start", "on_air", "on_quota", "on_category",
-        "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb",
-        "on_bond_avoid", "on_pref", "cancel_predict"
-    ):
+    if _has("predict_start", "on_air", "on_quota", "on_category",
+            "on_domicile", "on_pg_req_cb", "on_pg_req", "on_bond_avoid_cb", "on_bond_avoid",
+            "on_pref", "cancel_predict", "predict_mockrank_start",
+            "predict_mockrank_collect_rank", "predict_mockrank_collect_size"):
         predict_conv = ConversationHandler(
             entry_points=[
-                CommandHandler("predict", predict_start),
-            # handle all predict menu buttons via callback query
-                CallbackQueryHandler(predict_start, pattern=r"^(menu_predict|menu_predict_mock|menu_mock_predict)$"),
-                CommandHandler("mockpredict", predict_mockrank_start),
-            ],
-            states={
-                ASK_AIR:       [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-                ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-                ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-                ASK_QUOTA:     [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-                ASK_CATEGORY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-                ASK_DOMICILE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel_predict)],
-            name="predict_conv",
-            persistent=False,
-            per_message=False,
-        )
-        _add(predict_conv, group=3)
+            # slash commands
+            CommandHandler("predict", predict_start),
+            CommandHandler("mockpredict", predict_mockrank_start),
+            # menu buttons (callback queries)
+            CallbackQueryHandler(predict_start,              pattern=r"^menu_predict$"),
+            CallbackQueryHandler(predict_mockrank_start,     pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
+        ],
+        states={
+            ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+            ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+            ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+            ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+            ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+            ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_predict)],
+        name="predict_conv",
+        persistent=False,
+        per_message=True,   # <- important for reliable CallbackQuery handling
+    )
+    _add(predict_conv, group=3)
     
     # --- Profile conversation ---
     if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
