@@ -1380,9 +1380,6 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
     round_ui = _s(_first((user or {}).get("cutoff_round"), (user or {}).get("round")), "2025_R1")
     quota    = _s((user or {}).get("quota"), "AIQ")
     category = _s((user or {}).get("category"), "General")
-    # normalize common aliases
-    quota = {"all india": "AIQ", "all-india": "AIQ", "ai": "AIQ"}.get(quota.lower(), quota)
-    category = {"ur": "General", "open": "General", "gn": "General"}.get(category.lower(), category)
 
     # --- allow pre-attached df_lookup ---
     try:
@@ -1398,12 +1395,11 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
             r.get("college_id"),   r.get("institute_code"),
             name,  # last resort: match by display name
         ]
-        ids = [_s(x) for x in id_candidates if not _is_missing(x)]
+        ids = [ _s(x) for x in id_candidates if not _is_missing(x) ]
         try:
-            lookup_dict = globals().get("CUTOFF_LOOKUP")  # may be None; _closing_rank_for_identifiers should tolerate
             closing = _closing_rank_for_identifiers(
                 ids, round_ui, quota, category,
-                df_lookup=df_lookup, lookup_dict=lookup_dict
+                df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
             )
         except Exception:
             closing = None
@@ -1417,13 +1413,13 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
             code = _s(_first(r.get("college_code"), r.get("code")))
             cid  = _s(_first(r.get("college_id"),   r.get("institute_code")))
             key_name = _s(name).lower()
-            meta_idx = globals().get("COLLEGE_META_INDEX") or {}
-            if code and code in meta_idx:
-                meta = meta_idx.get(code, {})
-            elif cid and cid in meta_idx:
-                meta = meta_idx.get(cid, {})
-            elif key_name and key_name in meta_idx:
-                meta = meta_idx.get(key_name, {})
+            if 'COLLEGE_META_INDEX' in globals():
+                if code and code in COLLEGE_META_INDEX:
+                    meta = COLLEGE_META_INDEX.get(code, {})
+                elif cid and cid in COLLEGE_META_INDEX:
+                    meta = COLLEGE_META_INDEX.get(cid, {})
+                elif key_name and key_name in COLLEGE_META_INDEX:
+                    meta = COLLEGE_META_INDEX.get(key_name, {})
         except Exception:
             meta = {}
         fee_raw = _first(
@@ -3936,35 +3932,30 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import BadRequest
 
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes main menu buttons. Finalizes any active quiz if user leaves quiz."""
     q = update.callback_query
     if not q:
         return
     data = (q.data or "").strip()
 
-    # Keep profile fresh (best effort)
+    # keep profile fresh
     await _safe("upsert_user", upsert_user(update.effective_user))
 
-    # Acknowledge and clear ONLY if we are going to handle this callback
-    # (If the conv owns the button, this handler won't even run due to the strict pattern)
-    try:
-        await q.answer()
-    except Exception:
-        pass
-    try:
-        await q.edit_message_reply_markup(reply_markup=None)
+    # ack tap; try clearing old keyboard (ignore benign errors)
+    try: await q.answer()
+    except Exception: pass
+    try: await q.edit_message_reply_markup(reply_markup=None)
     except BadRequest as e:
-        if "Message is not modified" not in str(e):
-            pass
-    except Exception:
-        pass
+        if "Message is not modified" not in str(e): pass
+    except Exception: pass
 
-    # Leaving a running quiz? (Your existing quiz finalizer)
+    # leaving a running quiz?
     def _is_quiz_route(d: str) -> bool:
         return d.startswith("quiz:") or d == "menu_quiz"
     if context.user_data.get("session_id") and not _is_quiz_route(data):
         await _finalize_active_session(update, context)
 
-    # Router handles ONLY these:
+    # ---- routing (IMPORTANT: let ConversationHandler handle predict buttons) ----
     try:
         if data == "menu:back":
             await show_menu(update, context); return
@@ -3972,6 +3963,19 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if data == "menu_quiz":
             await menu_quiz_handler(update, context); return
 
+        # Predictor buttons — do NOT start flows here.
+        # Just return so the ConversationHandler entry_points can catch them.
+        if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
+            return
+
+        if data == "menu_ask":
+            try:
+                await q.answer()
+                await q.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+            return
+            
         if data == "menu_coach":
             await coach_router(update, context); return
 
@@ -3982,7 +3986,6 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await setup_profile(update, context)
             return
 
-        # Anything else matched the pattern? Treat as unknown.
         await q.message.reply_text("That menu item isn’t set up yet.")
     except Exception as e:
         log.exception("menu_router failed: %s", e)
@@ -5368,48 +5371,29 @@ def tri_inline(prefix: str) -> InlineKeyboardMarkup:
 
 
 async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    if q:
-        try:
-            await q.answer()
-        except Exception:
-            pass
-        try:
-            # Only clear if there is a message (avoids rare None cases)
-            if q.message:
-                await q.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-
-    # Simple dedupe window (protects against double taps)
     now = time.time()
-    last = context.user_data.get("_ask_last_ts", 0.0)
+    last = context.user_data.get("_ask_last_ts", 0)
     if now - last < 1.0:
+        # suppress the duplicate
         return
     context.user_data["_ask_last_ts"] = now
-
-    # Flow guard
     ok = await guard_or_block(update, context, "ask")
     if not ok:
         return ConversationHandler.END
 
     log.info("ask_start()")
 
-    # Clear any stale follow-up context
+    # Clear any stale follow-up context (old and new keys)
     ud = context.user_data
     for k in ("ask_subject", "ask_last_question", "ask_last_answer", "ask_more_ctx"):
         ud.pop(k, None)
 
     tgt = _target(update)
-    if not tgt:
-        return  # very rare, but be safe
-
-    prompt = "💬 *Ask a NEET doubt*\nFirst, pick a subject (optional)."
-    # Avoid re-sending the same prompt back-to-back
-    if ud.get("_ask_last_prompt") != prompt:
-        ud["_ask_last_prompt"] = prompt
-        await tgt.reply_text(prompt, parse_mode="Markdown", reply_markup=ask_subject_keyboard())
-
+    await tgt.reply_text(
+        "💬 *Ask a NEET doubt*\nFirst, pick a subject (optional).",
+        parse_mode="Markdown",
+        reply_markup=ask_subject_keyboard()
+    )
     return ASK_SUBJECT
 
 
@@ -6347,30 +6331,27 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
     Entry point for the Mock-Rank → College predictor.
     Prompts the user for their mock test All-India Rank (integer).
     """
-    # Debounce fast double taps (1s window)
-    now = time.time()
-    last = context.user_data.get("_mock_last_ts", 0.0)
-    if now - last < 1.0:
+    # Dedupe fast double-taps
+    if _is_spammy(context, "mockrank_enter", ttl=2.0):
         return ASK_MOCK_RANK
-    context.user_data["_mock_last_ts"] = now
 
     # Best-effort: keep user profile fresh
     await _safe("upsert_user", upsert_user(update.effective_user))
 
-    # If invoked via inline button, ack and clear old inline keyboard
+    # If we came via a callback button, just acknowledge it
     q = getattr(update, "callback_query", None)
     if q:
         try:
             await q.answer()
-        except Exception:
-            pass
-        try:
-            if q.message:
+            # Optional: clear old inline keyboard to reduce double-taps
+            try:
                 await q.edit_message_reply_markup(reply_markup=None)
+            except Exception:
+                pass
         except Exception:
             pass
 
-    # Flow guard: don't start if another flow is active
+    # Flow guard
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
@@ -6381,21 +6362,21 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
             )
         return ConversationHandler.END
 
-    # Mark predictor mode + clear stale shortlist to avoid “random” AI notes later
+    # Mark this predictor mode explicitly so downstream handlers can branch
     ud = context.user_data
     ud["predict_mode"] = "mock"
-    for k in ("LAST_SHORTLIST", "last_shortlist", "last_predict_shortlist"):
-        ud.pop(k, None)
+    # Optional: clear any stale shortlist to avoid "random" AI notes later
+    ud.pop("LAST_SHORTLIST", None)
+    ud.pop("last_shortlist", None)
+    ud.pop("last_predict_shortlist", None)
 
-    # Single, clean prompt (with reply keyboard removed)
+    # Single, clean prompt
     tgt = _target(update)
-    if not tgt:
-        return ConversationHandler.END
-
-    prompt = "Enter your *mock test All-India Rank* (integer):"
-    if ud.get("_mock_last_prompt") != prompt:
-        ud["_mock_last_prompt"] = prompt
-        await tgt.reply_text(prompt, parse_mode="Markdown", reply_markup=ReplyKeyboardRemove())
+    if tgt:
+        prompt = "Enter your *mock test All-India Rank* (integer):"
+        if ud.get("last_prompt_text") != prompt:
+            ud["last_prompt_text"] = prompt
+            await tgt.reply_text(prompt, parse_mode="Markdown")
 
     return ASK_MOCK_RANK
 
@@ -6436,53 +6417,24 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
 
 
 async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Debounce fast double taps / duplicate updates (1s window)
-    now = time.time()
-    last = context.user_data.get("_predict_last_ts", 0.0)
-    if now - last < 1.0:
-        return ASK_AIR
-    context.user_data["_predict_last_ts"] = now
-
-    # If invoked from a button: ack and clear old inline keyboard
-    q = update.callback_query
-    if q:
-        try:
-            await q.answer()
-        except Exception:
-            pass
-        try:
-            if q.message:
-                await q.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-
-    # Flow guard: do not start if another flow is active
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
         if tgt:
             await tgt.reply_text(
                 f"You're currently in *{blocked}* flow. Send /cancel to exit it first.",
-                parse_mode="Markdown",
+                parse_mode="Markdown"
             )
         return ConversationHandler.END
 
-    # Fresh slate for this run
-    for k in ("r", "category", "weights", "require_pg_quota", "avoid_bond",
-              "domicile_state", "quota", "rank_air"):
+    for k in ("r", "category", "weights", "require_pg_quota", "avoid_bond", "domicile_state", "quota", "rank_air"):
         context.user_data.pop(k, None)
 
     tgt = _target(update)
-    if not tgt:
-        return ConversationHandler.END  # ultra-rare safety
-
-    prompt = "Send your NEET All India Rank (AIR) as a number (e.g., 15234)."
-    # Avoid re-sending the same prompt back-to-back
-    if context.user_data.get("_predict_last_prompt") != prompt:
-        context.user_data["_predict_last_prompt"] = prompt
-        await tgt.reply_text(prompt, reply_markup=ReplyKeyboardRemove())
-
+    await tgt.reply_text("Send your NEET All India Rank (AIR) as a number (e.g., 15234).",
+                         reply_markup=ReplyKeyboardRemove())
     return ASK_AIR
+
     
 # ========== DEBUG: show loaded cutoff record for a college ==========
 async def debug_loaded_record(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7431,13 +7383,11 @@ def _resolve_excel_path() -> str:
         ask_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("ask", ask_start),
-            # Own the menu tap for Ask (the router MUST NOT see this)
                 CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
             ],
             states={
                 ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
                 ASK_WAIT: [
-                    CallbackQueryHandler(ask_followup, pattern=r"^ask_(?:more:.*|back|cancel)$", block=True),
                     MessageHandler(filters.PHOTO, ask_receive_photo),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
                 ],
@@ -7447,7 +7397,7 @@ def _resolve_excel_path() -> str:
             persistent=False,
             per_message=False,
         )
-        _add(ask_conv, group=0)
+        _add(ask_conv, group=1)
 
     # --- Quiz conversation ---
     if _has("quiz_start", "quiz_subject", "quiz_difficulty", "quiz_size", "cancel"):
@@ -7484,20 +7434,17 @@ def _resolve_excel_path() -> str:
         predict_conv = ConversationHandler(
             entry_points=[
                 CommandHandler("predict", predict_start),
-            # Own the “Predict” menu button
-                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$", block=True),
-
-            # Own the “Mock Predict” buttons/aliases
-                CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_(?:predict_mock|mock_predict)$", block=True),
+            # handle all predict menu buttons via callback query
+                CallbackQueryHandler(predict_start, pattern=r"^(menu_predict|menu_predict_mock|menu_mock_predict)$"),
                 CommandHandler("mockpredict", predict_mockrank_start),
-                ],
-                states={
-                ASK_AIR:        [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-                ASK_MOCK_RANK:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-                ASK_MOCK_SIZE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
-                ASK_QUOTA:      [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-                ASK_CATEGORY:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-                ASK_DOMICILE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+            ],
+            states={
+                ASK_AIR:       [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+                ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+                ASK_MOCK_SIZE: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size)],
+                ASK_QUOTA:     [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+                ASK_CATEGORY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+                ASK_DOMICILE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
             },
             fallbacks=[CommandHandler("cancel", cancel_predict)],
             name="predict_conv",
@@ -7771,28 +7718,32 @@ async def _start_quiz_common(update: Update, context: ContextTypes.DEFAULT_TYPE,
     await _send_next(update, context)
 
 
-
-_HANDLERS_WIRED = False
-
 def register_handlers(app: Application) -> None:
-    """Wire all PTB handlers exactly once, in a safe order."""
+    """Wire all PTB handlers exactly once."""
     global _HANDLERS_WIRED
     if _HANDLERS_WIRED:
+        log.warning("register_handlers() called again; ignoring second call")
         return
+    _HANDLERS_WIRED = True
 
     def _add(h, group: int = 0) -> None:
         app.add_handler(h, group=group)
 
-    # --- Basic commands (OK early) ---
+    # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
+    
 
-    # --- QUIZ: menu + router (but DO NOT register on_answer twice) ---
+  
+
+    # --- QUIZ: menu + router + answers ---
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
     _add(CallbackQueryHandler(
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:[^:]+(?::\d+)?|streaks|leaderboard|continue)|menu:back)$"
     ), group=0)
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+
 
     # -------------------------------
     # Ask (Doubt) conversation
@@ -7800,7 +7751,7 @@ def register_handlers(app: Application) -> None:
     ask_conv = ConversationHandler(
         entry_points=[
             CommandHandler("ask", ask_start),
-            CallbackQueryHandler(ask_start, pattern=r"^menu_ask$", block=True),
+            CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
         ],
         states={
             ASK_SUBJECT: [
@@ -7817,43 +7768,36 @@ def register_handlers(app: Application) -> None:
         persistent=False,
         per_message=False,
     )
-    # Conversations first (lower group)
     _add(ask_conv, group=1)
 
-    # (Optional) legacy feature router for ask
+
+    # (Optional) legacy feature router, keep if you still use these buttons
     _add(
         CallbackQueryHandler(
             ask_feature_router,
             pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
         ),
-        group=1,
+        group=0,
     )
 
     # New “Ask more” buttons
     _add(CallbackQueryHandler(
         ask_followup_handler,
         pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
-    ), group=1)
+    ), group=0)
 
-    # --- Quiz commands & actions (single registration of on_answer) ---
+    # Quiz: start, answer, navigation
+    # -------------------------------
     _add(CommandHandler("quiz5",  start_quiz_5), group=1)
     _add(CommandHandler("quiz10", start_quiz_10), group=1)
-    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=1)  # only once
+
+    # Register `on_answer` **only once** (do NOT also add it in group=0)
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=1)
+
+    # Optional nav/cancel buttons
     _add(CallbackQueryHandler(next_question, pattern=r"^quiz:next$"), group=1)
     _add(CallbackQueryHandler(cancel_quiz,  pattern=r"^quiz:cancel$"), group=1)
 
-    # --- (If you have predict_conv defined elsewhere, add it here safely) ---
-    if "predict_conv" in globals():
-        _add(globals()["predict_conv"], group=3)
-
-    # --- Global menu router LAST, with a STRICT pattern and block=True ---
-    _add(CallbackQueryHandler(
-        menu_router,
-        pattern=r"^(?:menu:back|menu_quiz|menu_profile|menu_coach)$",
-        block=True,
-    ), group=10)
-
-    _HANDLERS_WIRED = True
     log.info("✅ Handlers registered")
 
     
@@ -7939,14 +7883,11 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     # Top-level menu router (catch-all for menu_* buttons) — keep after specifics
     # -------------------------------
-    
     _add(CallbackQueryHandler(
         menu_router,
-        pattern=r"^(?:menu:(?:back|.*)|menu_(?:ask|profile|coach|quiz|.*))$",
-        block=True,              # don't let this fall-through to other handlers
-    ), group=10)  
-    
-    
+        pattern=r"^(?:menu:(?:back|.*)|menu_(?:ask|profile|coach|quiz|.*))$"
+    ), group=0)
+
     # -------------------------------
     # Error handler (optional)
     # -------------------------------
