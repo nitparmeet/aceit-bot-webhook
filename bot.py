@@ -2148,20 +2148,33 @@ async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                     "explanation": q.get("explanation") or "",
                 })
 
-            report_html = format_quiz_report(score, total, details)
-
             chat_id = update.effective_chat.id
-            for j in range(0, len(report_html), 3800):
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=report_html[j:j+3800],
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                )
-
-            # Cleanup finished session
-            QUIZ_SESSIONS.pop(user_id, None)
+            QUIZ_SESSIONS[user_id] = {
+                "questions": qs,
+                "answers": answers,
+                "details": details,
+                "score": score,
+                "total": total,
+                "show_answers": False,
+            }
             _save_quiz_state()
+            perf = "Great job!" if score == total else ("Nice effort!" if score else "Let’s practice!")
+            msg = (
+                f"✅ <b>Quiz complete!</b>\n"
+                f"<b>Score:</b> {score}/{total}\n\n"
+                f"{perf}\n\n"
+                "Tap below if you’d like to review each question."
+            )
+            kb = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("📘 Show Answers", callback_data="quiz:showanswers")]]
+            )
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=kb,
+            )
             return
         # Otherwise, send question i
         q = qs[i]
@@ -2207,15 +2220,16 @@ async def _start_quiz(
     target = update.effective_message or (update.callback_query.message if getattr(update, "callback_query", None) else None)
     if not qs:
         if target:
-            await target.reply_text(f"No questions match those filters.")
+            await target.reply_text("No questions match those filters.")
         return
 
     QUIZ_SESSIONS[update.effective_user.id] = {
         "questions": qs,
         "answers": {},
         "index": 0,
-        "subject": subject,       # store it for resume/debug
-        "started_at": time.time()
+        ""subject": subject,
+        "started_at": time.time(),
+        "show_answers": False,
     }
     _save_quiz_state()
     await _send_next(update, context) 
@@ -2260,6 +2274,46 @@ async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     except Exception:
         pass
 
+async def quiz_show_answers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+    await q.answer()
+
+    user_id = update.effective_user.id
+    sess = QUIZ_SESSIONS.get(user_id)
+    if not sess:
+        await q.message.edit_text("Session expired. Use /quiz5 or /quiz10 to play again.")
+        return
+
+    if sess.get("show_answers"):
+        await q.message.edit_text("Answers already shared.")
+        return
+
+    details = sess.get("details") or []
+    score = sess.get("score") or 0
+    total = sess.get("total") or len(details)
+
+    report_html = format_quiz_report(score, total, details)
+    chat_id = update.effective_chat.id
+    for i in range(0, len(report_html), 3800):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=report_html[i:i+3800],
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+
+    sess["show_answers"] = True
+    sess.pop("details", None)
+    sess.pop("answers", None)
+    sess.pop("questions", None)
+    _save_quiz_state()
+
+    try:
+        await q.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass    
 
 async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _start_quiz(update, context, count=5)
@@ -7250,7 +7304,7 @@ def register_handlers(app: Application) -> None:
 
     # Register `on_answer` **only once** (do NOT also add it in group=0)
     _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=1)
-
+    _add(CallbackQueryHandler(quiz_show_answers, pattern=r"^quiz:showanswers$"), group=1)
     # Optional nav/cancel buttons
     _add(CallbackQueryHandler(next_question, pattern=r"^quiz:next$"), group=1)
     _add(CallbackQueryHandler(cancel_quiz,  pattern=r"^quiz:cancel$"), group=1)
