@@ -6181,7 +6181,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
         if saved_quota != "State" or saved_dom:
            msg = (
                 f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
-                f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
+                f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,}\n\n"
                 f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
                 )
         if saved_quota == "State" and saved_dom:
