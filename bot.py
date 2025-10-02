@@ -4729,6 +4729,26 @@ async def call_openai(prompt: str, *, model: str | None = None, max_output_token
     except Exception as e:
         log.exception("ask_followup: OpenAI error")
         return f"Sorry—couldn’t generate that. ({type(e).__name__})"
+
+async def _ask_genai_text(question: str, subject_hint: str | None = None) -> tuple[bool, str]:
+    subject_hint = (subject_hint or "NEET").strip()
+    prompt = (
+        "You are a NEET biology/chemistry/physics and motivation teacher. "
+        f"The student asked: {question}\n"
+        "Answer in <=150 words using simple, exam-oriented language. "
+        "If it is a factual NEET syllabus question, give the exact explanation. "
+        "If it is motivational or strategy-based, give practical NEET-prep advice. "
+        "Avoid over-complicated language and avoid bullet formatting that Telegram might render as HTML."
+    )
+
+    try:
+        reply = await call_openai(prompt, max_output_tokens=450)
+        reply = (reply or "").strip()
+        if not reply:
+            return False, "I couldn’t generate a helpful answer right now."
+        return True, reply
+    except Exception as exc:  # already logged in call_openai
+        return False, f"Sorry—couldn’t generate that answer ({type(exc).__name__})."
         
 async def quota_counts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rk = context.user_data.get("cutoff_round", ACTIVE_CUTOFF_ROUND_DEFAULT)
@@ -5383,11 +5403,11 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Call solver (guarded; never crash the handler)
         try:
-            ok, res = await ask_openai_vision(q, image_path=None, subject_hint=subject)
+            ok, res = await _ask_genai_text(q, subject_hint=subject)
         except asyncio.TimeoutError:
-            ok, res = False, "The solver timed out. Please try again."
+            ok, res = False, "The tutor timed out. Please try again."
         except Exception as e:
-            ok, res = False, f"Error contacting solver: {e}"
+            ok, res = False, f"Error contacting tutor: {e}"
 
         # Clean + stash legacy keys
         text = _clean_to_html(res if ok else f"Error: {res}")
@@ -5396,24 +5416,20 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # >>>>>>>>>>>>>>>>>>  FOLLOW-UP CONTEXT PATCH  <<<<<<<<<<<<<<<<<
         if ok:
-            
-            
             detected_subject = context.user_data.get("ask_subject") or "NEET"
             user_query_text  = q
             answer_html      = text
-            explanation_html = ""
 
             context.user_data["ask_more_ctx"] = {
-            "subject": detected_subject,
-            "question": user_query_text,
-            "answer_text": answer_html,
-            "explanation": explanation_html,
+                "subject": detected_subject,
+                "question": user_query_text,
+                "answer_text": answer_html,
+                "explanation": "",
             }
-           # legacy keys (your other code reads these too)
+          # legacy keys (your other code reads these too)
             context.user_data["ask_subject"] = detected_subject
             context.user_data["ask_last_question"] = user_query_text
             context.user_data["ask_last_answer"] = answer_html
-        
 # >>>>>>>>>>>>>>>>>  END FOLLOW-UP CONTEXT PATCH  <<<<<<<<<<<<<<
 
         # Try editing the “working…” message first; if that fails, fall back to sends
