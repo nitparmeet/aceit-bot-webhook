@@ -2397,6 +2397,18 @@ async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception:
             pass
 
+    explanation = await _generate_quiz_explanation(q, chosen)
+    if explanation and not explanation.lower().startswith("sorry"):
+        header = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct answer: {cor_txt}"
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"{header}\n\nAI Explanation:\n{explanation}",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+
     await _send_next(update, context)
     
 # ===== END SIMPLE QUIZ =====
@@ -6481,6 +6493,55 @@ async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Go straight to results (no scoring / no preference UI)
     return await _finish_predict_now(update, context)
+
+async def _generate_quiz_explanation(q: dict, chosen_index: int) -> str:
+    try:
+        question_text = str(q.get("question") or "").strip()
+        options_raw = q.get("options") or []
+        options = [str(opt) for opt in options_raw]
+        if not question_text or not options:
+            return ""
+
+        correct_index = int(q.get("answer_index", 0))
+        labels = [chr(65 + i) for i in range(len(options))]
+        option_lines = "\n".join(f"{labels[i]}) {options[i]}" for i in range(len(options)))
+
+        try:
+            chosen_label = labels[chosen_index]
+            chosen_text = options[chosen_index]
+        except Exception:
+            chosen_label = "?"
+            chosen_text = "(invalid option)"
+
+        try:
+            correct_label = labels[correct_index]
+            correct_text = options[correct_index]
+        except Exception:
+            correct_label = "?"
+            correct_text = q.get("answer_text") or ""
+
+        prompt = (
+            "You are a NEET UG teacher. Analyse the multiple-choice question below and respond in plain text.\n"
+            f"Question: {question_text}\n"
+            f"Options:\n{option_lines}\n\n"
+            f"Correct answer: {correct_label}) {correct_text}\n"
+            f"Student selected: {chosen_label}) {chosen_text}\n\n"
+            "Explain in at most 150 words why the correct answer is right and why each other option is wrong.\n"
+            "Format strictly as:\n"
+            "✅ Why the correct answer is right: <2 sentences>\n"
+            "❌ Why the other options are wrong:\n"
+            "- <label>) <option text>: <reason>\n"
+            "Use the same bullet characters shown above. Avoid Markdown or LaTeX."
+        )
+
+        explanation = await call_openai(prompt, max_output_tokens=400)
+        if explanation:
+            return explanation.strip()
+        return ""
+    except Exception:
+        log.exception("[quiz] explanation generation failed")
+        return ""
+        
 
 async def on_pg_req_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
