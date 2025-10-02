@@ -6184,15 +6184,15 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
                 f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
                 f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
                 )
-            if saved_quota == "State" and saved_dom:
-                msg += f", domicile *{saved_dom}*"
-            msg += "\n\nTap /profile to change defaults."
+        if saved_quota == "State" and saved_dom:
+            msg += f", domicile *{saved_dom}*"
+        msg += "\n\nTap /profile to change defaults."
 
-            await update.message.reply_text(
-                msg,
-                parse_mode="Markdown",
-            )
-            return await _finish_predict_now(update, context)
+        await update.message.reply_text(
+            msg,
+            parse_mode="Markdown",
+        )
+        return await _finish_predict_now(update, context)
 
     kb = quota_keyboard()
     msg = (
