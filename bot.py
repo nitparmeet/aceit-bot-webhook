@@ -1173,7 +1173,7 @@ def _pick(d: dict, *keys):
     return None
 
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
-     """Name, place; then Closing Rank and Total Fee each on its own line. No 'm' fallbacks here."""
+    """Name, place; then Closing Rank and Total Fee each on its own line. No 'm' fallbacks here."""
     # NaN/None safe strings
     name  = _safe_str(_pick(r, "college_name", "College Name")) or "—"
     city  = _safe_str(_pick(r, "city", "City"))
