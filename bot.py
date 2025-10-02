@@ -6197,6 +6197,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
             
         )
         context.user_data["pending_predict_summary"] = True
+        _end_flow(context, "predict")
         return ConversationHandler.END
 
     kb = quota_keyboard()
