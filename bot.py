@@ -654,7 +654,7 @@ def _notes_deterministic(facts, air):
             bullets.append(f"NIRF: {f['nirf']}")
         fee = f.get("fee")
         if fee is not None:
-            bullets.append(f"fee: ~{fee:.1f} L")
+             bullets.append(f"total fee: ~{fee:.1f} L")
         owner = f.get("ownership")
         if owner:
             bullets.append(owner)
@@ -1065,7 +1065,7 @@ def _notes_deterministic(facts, air):
             bullets.append(f"NIRF: {f['nirf']}")
         fee = f.get("fee")
         if fee is not None:
-            bullets.append(f"fee: ~{fee:.1f} L")
+            bullets.append(f"total fee: ~{fee:.1f} L")
         owner = f.get("ownership")
         if owner:
             bullets.append(owner)
@@ -1173,7 +1173,7 @@ def _pick(d: dict, *keys):
     return None
 
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
-    """Name, place; then Closing Rank and Annual Fee each on its own line. No 'm' fallbacks here."""
+     """Name, place; then Closing Rank and Total Fee each on its own line. No 'm' fallbacks here."""
     # NaN/None safe strings
     name  = _safe_str(_pick(r, "college_name", "College Name")) or "—"
     city  = _safe_str(_pick(r, "city", "City"))
@@ -1216,7 +1216,7 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
 
     header = f"{name}" + (f", {place}" if place else "")
     cr_ln  = f"Closing Rank ({quota}/{category}) { _fmt_rank_val(closing) }"
-    fee_ln = f"Annual Fee { _fmt_money(fee) }"
+    fee_ln = f"Total Fee { _fmt_money(fee) }"
     return "\n".join([header, cr_ln, fee_ln])
 
 def _deemed_only(rows):
@@ -4223,7 +4223,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
 
             header    = f"{i}. {name}" + (f", {place}" if place else "")
             rank_ln   = f"Closing Rank: {_fmt_rank_val(closing)}"
-            fee_ln    = f"Annual Fee: {_fmt_money(fee_raw)}"
+            fee_ln    = f"Total Fee: {_fmt_money(fee_raw)}"
             why_ln    = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool)
             vibe_ln   = "City & campus vibe: " + _city_vibe_from_row(city, state)
             pg_ln     = f"PG Quota: {_yn(pg_quota_bool)}"
@@ -4502,7 +4502,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
             header   = f"{i}. {name}" + (f", {', '.join([x for x in (city, state) if x])}" if (city or state) else "")
             rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
-            fee_ln   = f"Annual Fee: {_fmt_money(fee)}"
+            fee_ln   = f"Total Fee: {_fmt_money(fee)}"
             why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail)
             vibe_ln  = "City & campus vibe: " + (
                 ((city or state or "—") + " — " + _city_vibe_from_row(city, state))
@@ -5814,7 +5814,7 @@ def _row_brief(r: dict) -> str:
     cr_txt  = f"Closing Rank {cr}" if cr not in (None, "", "—") else "Closing Rank —"
 
     fee     = r.get("total_fee") or r.get("Fee")
-    fee_txt = f"Annual Fee {_fmt_money(fee)}"
+    fee_txt = f"Total Fee {_fmt_money(fee)}"
 
     header = f"{name}, {addr}".strip().rstrip(",")
     return f"{header}\n{cr_txt}\n{fee_txt}"
