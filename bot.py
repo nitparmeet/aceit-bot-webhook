@@ -2224,12 +2224,12 @@ async def _start_quiz(
         return
 
     QUIZ_SESSIONS[update.effective_user.id] = {
-        "questions": qs,
-        "answers": {},
-        "index": 0,
-        ""subject": subject,
-        "started_at": time.time(),
-        "show_answers": False,
+        'questions': qs,
+        'answers': {},
+        'index': 0,
+        'subject': subject,
+        'started_at': time.time(),
+        'show_answers': False,
     }
     _save_quiz_state()
     await _send_next(update, context) 
