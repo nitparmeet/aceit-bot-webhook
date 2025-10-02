@@ -873,6 +873,9 @@ EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx"  # your file
 ACTIVE_CUTOFF_ROUND_DEFAULT = "2025_R1"
 TG_LIMIT = 4000
 NEET_CANDIDATE_POOL_DEFAULT = 2300000  # adjust if you want
+MOCK_BIAS_FACTOR_MIN = 1.10
+MOCK_BIAS_FACTOR_MAX = 1.40
+MOCK_BIAS_FACTOR_DEFAULT = 1.25
 _ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State" ]
 CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
 ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)
@@ -6149,21 +6152,26 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
 
     mock_rank = context.user_data.get("mock_rank")
     size = int(txt)
-    # percentile among participants: higher is better
-    # Percentile ~ (1 - (rank-1)/size) * 100
-    pct = max(0.0, min(100.0, (1.0 - (max(1, mock_rank)-1) / max(1, size)) * 100.0))
 
-    # Map percentile to NEET AIR using a simple population model
-    # AIR ≈ round((100 - pct)/100 * NEET_CANDIDATE_POOL_DEFAULT)
-    air_est = max(1, int(round((100.0 - pct) / 100.0 * NEET_CANDIDATE_POOL_DEFAULT)))
+     # Neutral percentile (lower rank => smaller percentile fraction)
+    percentile = max(0.0, min(1.0, max(1, mock_rank) / max(1, size)))
 
-    context.user_data["rank_air"] = air_est
+    neutral_air = max(1, int(round(percentile * NEET_CANDIDATE_POOL_DEFAULT)))
+    bias_lower = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_MIN)))
+    bias_upper = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_MAX)))
+    adjusted_air = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_DEFAULT)))
+    
+    
+
+    context.user_data["rank_air"] = adjusted_air
+    context.user_data["mock_neutral_air"] = neutral_air
+    context.user_data["mock_air_band"] = (bias_lower, bias_upper)
 
     kb = quota_keyboard()
     await update.message.reply_text(
-        f"Estimated NEET AIR from mock percentile ≈ *{air_est}*.\n\nSelect your *quota*:",
-        parse_mode="Markdown",
-        reply_markup=kb,
+        f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
+        f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
+        "Select your *quota*:",
     )
     return ASK_QUOTA
 
