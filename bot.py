@@ -18,7 +18,7 @@ import random
 import time
 import base64
 from openai import OpenAI
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram import ReplyKeyboardMarkup
 from telegram.constants import ChatAction
 from typing import Dict, Any, List, Optional, Tuple, Iterable
@@ -7093,6 +7093,22 @@ async def on_startup(app: Application):
         log.info("Starting bot… colleges: %d | cutoff entries: %d (round=%s)", col_count, cut_count, round_code)
     else:
         log.info("Starting bot… colleges: %d | cutoff entries: %d", col_count, cut_count)
+    # Configure the Bot Command menu so users see friendly labels
+    try:
+        await app.bot.set_my_commands([
+            BotCommand("menu", "Click here to start the bot"),
+            BotCommand("predict", "Predict colleges from your AIR"),
+            BotCommand("mockpredict", "Convert mock rank to NEET AIR"),
+            BotCommand("quiz", "Daily quiz menu"),
+            BotCommand("ask", "Ask a NEET doubt"),
+            BotCommand("profile", "Update your predictor profile"),
+        ])
+    except Exception:
+        log.exception("Failed to set bot command menu")
+
+
+def _has(*names: str) -> bool:
+    """Return True only if all given names exist and are callable."""
 
 
 def _has(*names: str) -> bool:
