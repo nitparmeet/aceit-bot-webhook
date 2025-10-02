@@ -5282,16 +5282,16 @@ async def _gen_quick_qna(*, subject: str | None, concept: str | None, n: int = 5
     if not blocks:
         safe = html.escape(raw)
         safe = safe.replace("\n", "\n")  # keep as lines; no <br> in Telegram
-        return True, f"<b>Quick Q&A</b>\n{safe}"
+        return True, f"Quick Q&A\n{safe}"
 
     # Trim to n
     blocks = blocks[:n]
 
     # Build HTML (no <br>, just \n)
-    out_lines = ["<b>Quick Q&A</b>"]
+    out_lines = ["Quick Q&A"]
     for i, (q, a) in enumerate(blocks, 1):
-        out_lines.append(f"{i}) <b>Q:</b> {html.escape(q)}")
-        out_lines.append(f"    <b>A:</b> {html.escape(a)}")
+        out_lines.append(f"{i}) Q: {html.escape(q)}")
+        out_lines.append(f"    A: {html.escape(a)}")
     return True, "\n".join(out_lines)
 
 def _ask_followup_markup():
