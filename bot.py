@@ -6166,7 +6166,34 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     context.user_data["rank_air"] = adjusted_air
     context.user_data["mock_neutral_air"] = neutral_air
     context.user_data["mock_air_band"] = (bias_lower, bias_upper)
+    
+    profile = get_user_profile(update)
+    saved_quota = canonical_quota_ui(profile.get("pref_quota") or profile.get("quota") or "")
+    saved_cat = canonical_category(profile.get("category")) if profile.get("category") else None
+    saved_dom = profile.get("domicile_state")
 
+    if saved_quota in {"AIQ", "Deemed", "Central", "State"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
+        context.user_data["quota"] = saved_quota
+        context.user_data["category"] = saved_cat
+        if saved_quota == "State":
+            context.user_data["domicile_state"] = saved_dom
+
+        if saved_quota != "State" or saved_dom:
+            await update.message.reply_text(
+                f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
+                f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
+                f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
+                + (f", domicile *{saved_dom}*" if saved_quota == "State" and saved_dom else "")
+                + "\n\nTap /profile to change defaults.",
+                parse_mode="Markdown",
+            )
+            return await _finish_predict_now(update, context)
+
+    kb = quota_keyboard()
+    await update.message.reply_text(
+        f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
+
+    
     kb = quota_keyboard()
     await update.message.reply_text(
         f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
