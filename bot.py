@@ -3634,11 +3634,11 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
 
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏫 Find Your NEET College 🎯", callback_data="menu_predict")],
-        [InlineKeyboardButton("📈 Mock Test Rank → College 🎓", callback_data="menu_predict_mock")],
-        [InlineKeyboardButton("✏️ Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
-        [InlineKeyboardButton("💬 Clear your NEET Doubts 🤔", callback_data="menu_ask")],
-        [InlineKeyboardButton("⚙️ Setup your profile 🧾", callback_data="menu_profile")],
+        [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
+        [InlineKeyboardButton("📈 Click to find your NEET style AIR & College from Mock Test Rank🎓", callback_data="menu_predict_mock")],
+        [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
+        [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
+        [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
     ])
 
 async def show_menu(
