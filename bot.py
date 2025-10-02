@@ -1177,7 +1177,14 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
         pass
 
     # closing rank: prefer inline fields, else compute from identifiers
-    closing = r.get("ClosingRank") or r.get("closing") or r.get("rank")
+    
+    closing = (
+        r.get("close_rank")
+        or r.get("ClosingRank")
+        or r.get("closing")
+        or r.get("rank")
+    )
+    
     if _is_missing(closing):
         ids = [
             r.get("college_code"), r.get("code"),
@@ -1193,7 +1200,7 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
     fee = _pick(r, "total_fee", "Fee")
 
     header = f"{name}" + (f", {place}" if place else "")
-    cr_ln  = f"Closing Rank { _fmt_rank_val(closing) }"
+    cr_ln  = f"Closing Rank ({quota}/{category}) { _fmt_rank_val(closing) }"
     fee_ln = f"Annual Fee { _fmt_money(fee) }"
     return "\n".join([header, cr_ln, fee_ln])
 
