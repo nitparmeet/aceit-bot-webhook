@@ -6197,7 +6197,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     kb = quota_keyboard()
     msg = (
         f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
-
+        )
     
     kb = quota_keyboard()
     msg = (
