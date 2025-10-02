@@ -2926,6 +2926,10 @@ def _target(update: Update):
         return update.message
     cq = getattr(update, "callback_query", None)
     if cq and getattr(cq, "message", None):
+        try:
+            asyncio.create_task(cq.answer())
+        except Exception:
+            pass
         return cq.message
     return None
 
@@ -3632,15 +3636,16 @@ def main_menu_markup() -> InlineKeyboardMarkup:
 
 async def show_menu(
     update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    context: ContextTypes.DEFAULT_TYPE | None,
     text: str = "Choose an option:",
 ) -> None:
     """Show the main menu (can be called from /menu or any callback)."""
     tgt = update.effective_message
+    bot = context.bot if context else getattr(update, "get_bot", lambda: None)()
     if tgt is None:
         chat_id = update.effective_chat.id if update.effective_chat else None
-        if chat_id:
-            await context.bot.send_message(chat_id=chat_id, text="Hi! 👋")
+        if chat_id and bot:
+            await bot.send_message(chat_id=chat_id, text="Hi! 👋")
         return
 
     explanation = (
@@ -3661,31 +3666,6 @@ async def show_menu(
     await tgt.reply_text(text, reply_markup=main_menu_markup())
 
 
-async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    q = update.callback_query
-    data = q.data if q else ""
-    await q.answer()
-
- #   if data == "menu_predict":
- #       return await predict_start(update, context)
- #   if data in {"menu_mock_predict", "menu_predict_mock"}:
- #       return await predict_mockrank_start(update, context)
-    if data in {"menu_mock_predict", "menu_predict_mock"}:
-    # Let the ConversationHandler entry_point handle this callback.
-    # We just acknowledge the press and return.
-        await q.answer()
-        return
-    if data == "menu_ask":
-        return await ask_start(update, context)
-    if data == "menu_profile":
-        return await setup_profile(update, context)
-    if data == "menu_coach":
-        return await coach_router(update, context)
-    if data == "menu_quiz":
-        return await menu_quiz_handler(update, context)
-
-    # Catch-all so unknown menu_* never hangs
-    await q.message.reply_text("That menu item isn’t set up yet.")
 
 async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
@@ -3769,7 +3749,7 @@ async def menu_back(update, context):
     q = update.callback_query
     await q.answer()
     await _safe_clear_kb(q)
-    await show_menu(update)
+    await show_menu(update, context)
 
 # States
 ASK_SUBJECT = 1001
@@ -3892,7 +3872,7 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         unlock_flow(context)
         await update.message.reply_text("Profile saved. Returning to menu.", reply_markup=ReplyKeyboardRemove())
-        await show_menu(update)
+        await show_menu(update, context)
         return ConversationHandler.END
 
 async def profile_set_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5133,7 +5113,7 @@ async def ask_subject_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if text == "cancel":
         unlock_flow(context)
         await update.message.reply_text("Ask cancelled.", reply_markup=ReplyKeyboardRemove())
-        await show_menu(update)
+        await show_menu(update, context)
         return ConversationHandler.END
     if text != "skip" and text not in {"physics", "chemistry", "zoology", "botany", "counselling"}:
         await update.message.reply_text("Choose from buttons (or Skip).", reply_markup=ask_subject_keyboard())
@@ -6052,6 +6032,13 @@ async def predict_mockrank_collect_size_cb(update: Update, context: ContextTypes
     
 
 async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    log.debug(
+        "[predict_mockrank_start] update_id=%s via=%s msg_id=%s cq_id=%s",
+        getattr(update, "update_id", None),
+        "callback" if getattr(update, "callback_query", None) else "message",
+        getattr(getattr(update, "message", None), "message_id", None),
+        getattr(getattr(update, "callback_query", None), "id", None),
+    )
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
@@ -6413,7 +6400,7 @@ async def _unknown_cb(update, context):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     unlock_flow(context)
     await update.message.reply_text("Cancelled. Back to menu.")
-    await show_menu(update)
+    await show_menu(update, context)
     return ConversationHandler.END
 
 
@@ -6424,7 +6411,7 @@ async def cancel_predict(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         if update.callback_query and update.callback_query.message:
             await update.callback_query.message.reply_text("Prediction cancelled.", reply_markup=ReplyKeyboardRemove())
-    await show_menu(update)
+    await show_menu(update, context)
     return ConversationHandler.END
 
 
@@ -6934,7 +6921,7 @@ async def on_pref(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         
         _end_flow(context, "predict")
-        await show_menu(update)
+        await show_menu(update, context)
         return ConversationHandler.END
 
     except Exception as e:
@@ -6945,222 +6932,6 @@ async def on_pref(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         _end_flow(context, "predict")
         return ConversationHandler.END
-
-# ========================= Main =========================
-def main():
-    global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX
-
-    # --- Build the Telegram app ---
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
-    # --- Load datasets (robust, with logs) ---
-    if not os.path.exists(EXCEL_PATH):
-        log.error("Excel not found at %s", EXCEL_PATH)
-        raise FileNotFoundError(EXCEL_PATH)
-
-    # 1) Load Colleges (robust)
-    COLLEGES = load_colleges_dataset(EXCEL_PATH)  # <- returns DataFrame (maybe minimal), never None
-    if COLLEGES is None:
-        COLLEGES = pd.DataFrame()
-    if COLLEGES.empty:
-        log.warning("load_colleges_dataset returned empty; continuing with empty DataFrame")
-    else:
-        log.info("Loaded colleges: %d rows, columns=%s", len(COLLEGES), list(COLLEGES.columns))
-
-    # 2) Build name maps from the colleges DF you just loaded
-    try:
-        build_name_maps_from_colleges_df(COLLEGES)
-    except Exception:
-        log.exception("Failed building name maps from Colleges DF")
-
-    # 3) Build/Load cutoffs lookup (your existing function)
-    try:
-        CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
-            path=EXCEL_PATH,
-            sheet="Cutoffs",
-            round_tag="2025_R1",
-            require_quota=None,
-            require_course_contains="MBBS",
-            require_category_set=("General","EWS","OBC","SC","ST"),
-        ) or {}
-    except Exception:
-        log.exception("Failed to load cutoff lookup; continuing with empty")
-        CUTOFF_LOOKUP = {}
-
-    # 3b) Build normalized CUTOFFS_DF exactly once from the lookup
-    try:
-        CUTOFFS_DF = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES)  # << your helper (keep only one definition of it)
-        globals()["CUTOFFS_DF"] = CUTOFFS_DF
-        application.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
-        log.info("[startup] CUTOFFS_DF ready: %s rows", len(CUTOFFS_DF))
-
-        # Optional smoke test (helpful while debugging)
-        if not CUTOFFS_DF.empty and _has("_filter_predict"):
-            try:
-                _smoke = _filter_predict(
-                    CUTOFFS_DF,
-                    rank_air=1, quota="AIQ", domicile_state=None, category="OP",
-                    course="MBBS", year=2025, round_code="2025_R1", limit=3, pwd_filter="N",
-                )
-                log.info("[startup] AIQ smoke rows=%d head=%s",
-                         len(_smoke),
-                         (_smoke[["college_code","ClosingRank"]].head(3).to_dict("records") if not _smoke.empty else []))
-            except Exception:
-                log.exception("[startup] AIQ smoke failed")
-    except Exception:
-        log.exception("[startup] Failed to prepare CUTOFFS_DF")
-        CUTOFFS_DF = pd.DataFrame()
-        application.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
-
-    log.info(
-        "Starting bot… colleges: %d | cutoff entries: %d",
-        len(COLLEGES),
-        len(CUTOFF_LOOKUP),
-    )
-
-    # 4) Startup banner
-    col_count = (0 if not isinstance(COLLEGES, pd.DataFrame) or COLLEGES.empty else len(COLLEGES))
-    cut_count = (len(CUTOFF_LOOKUP) if isinstance(CUTOFF_LOOKUP, dict) else 0)
-    round_code = globals().get("ACTIVE_CUTOFF_ROUND_DEFAULT")
-
-    if round_code:
-        log.info("Starting bot… colleges: %d | cutoff entries: %d (round=%s)", col_count, cut_count, round_code)
-    else:
-        log.info("Starting bot… colleges: %d | cutoff entries: %d", col_count, cut_count)
-
-    # --- Helpers to add handlers only if callbacks exist (prevents NameError) ---
-    def _has(*names: str) -> bool:
-        g = globals()
-        return all((n in g and callable(g[n])) for n in names)
-
-   
-    
-    
-
-    # --- Error handler ---
-    if _has("on_error"):
-        application.add_error_handler(on_error)
-
-    # --- Basic commands ---
-    if _has("start"):
-        _add(CommandHandler("start", start), group=0)
-        _add(CommandHandler("menu", start), group=0)
-    if _has("reset_lock"):
-        _add(CommandHandler("reset", reset_lock), group=0)
-    if _has("quizdiag"):    
-        _add(CommandHandler("quizdiag", quizdiag), group=0)
-
-def _resolve_excel_path() -> str:  
-    
-    # --- Admin commands ---
-    if _has("set_round"):           _add(CommandHandler("set_round", set_round), group=5)
-    if _has("which_round"):         _add(CommandHandler("which_round", which_round), group=5)
-    if _has("list_cutoff_sheets"):  _add(CommandHandler("list_sheets", list_cutoff_sheets), group=5)
-    if _has("use_cutoff_sheet"):    _add(CommandHandler("use_cutoff_sheet", use_cutoff_sheet), group=5)
-    if _has("cutoff_headers"):      _add(CommandHandler("cutoff_headers", cutoff_headers), group=5)
-    if _has("set_cutsheet"):        _add(CommandHandler("set_cutsheet", set_cutsheet), group=5)
-    if _has("cutoff_probe"):        _add(CommandHandler("cutoff_probe", cutoff_probe), group=5)
-    if _has("cutdiag"):             _add(CommandHandler("cutdiag", cutdiag), group=5)
-    if _has("quota_counts"):        _add(CommandHandler("quota_counts", quota_counts), group=5)
-
-    # --- Ask (Doubt) conversation ---
-    if _has("ask_start", "ask_subject_select", "ask_receive_photo", "ask_receive_text", "cancel"):
-        ask_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("ask", ask_start),
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
-            ],
-            states={
-                ASK_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select)],
-                ASK_WAIT: [
-                    MessageHandler(filters.PHOTO, ask_receive_photo),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
-                ],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-            name="ask_conv",
-            persistent=False,
-            per_message=False,
-        )
-        _add(ask_conv, group=1)
-
-    # --- Quiz conversation ---
-    if _has("quiz_start", "quiz_subject", "quiz_difficulty", "quiz_size", "cancel"):
-        quiz_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("quiz", quiz_start),
-                CallbackQueryHandler(quiz_start, pattern=r"^menu_quiz$"),
-            ],
-            states={
-                QUIZ_SUBJECT:    [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_subject)],
-                QUIZ_DIFFICULTY: [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_difficulty)],
-                QUIZ_SIZE:       [MessageHandler(filters.TEXT & ~filters.COMMAND, quiz_size)],
-                QUIZ_RUNNING:    [CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:")],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-            name="quiz_conv",
-            persistent=False,
-            per_message=False,
-        )
-        _add(quiz_conv, group=2)
-        if _has("quiz_answer"):
-            _add(CallbackQueryHandler(quiz_answer, pattern=r"^QUIZ:"), group=2)
-        if _has("quiz_review_choice"):
-            _add(CallbackQueryHandler(quiz_review_choice, pattern=r"^QUIZ_REVIEW:(yes|no)$"), group=2)
-        if _has("quiz_predict_choice_noop"):
-            _add(CallbackQueryHandler(quiz_predict_choice_noop, pattern=r"^QUIZ_PREDICT:no$"), group=2)
-    
-    
-
-
-    
-    # --- Profile conversation ---
-    if _has("setup_profile", "profile_menu", "profile_set_category", "profile_set_domicile",
-            "profile_set_pref", "profile_set_email", "profile_set_mobile", "profile_set_primary", "cancel"):
-        profile_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("profile", setup_profile),
-                CallbackQueryHandler(setup_profile, pattern=r"^menu_profile$"),
-            ],
-            states={
-                PROFILE_MENU:         [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu)],
-                PROFILE_SET_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category)],
-                PROFILE_SET_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile)],
-                PROFILE_SET_PREF:     [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref)],
-                PROFILE_SET_EMAIL:    [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email)],
-                PROFILE_SET_MOBILE: [
-                    MessageHandler(filters.CONTACT, profile_set_mobile),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_mobile),
-                ],
-                PROFILE_SET_PRIMARY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-            name="profile_conv",
-            persistent=False,
-        )
-        _add(profile_conv, group=4)
-
-    # --- AI Coach (Preference-List) ---
-    if _has("coach_start", "coach_adjust_cb", "coach_save_cb"):
-        _add(CommandHandler("coach", coach_start), group=0)
-        # If you added a menu button with callback_data="menu_coach", enable this:
-        _add(CallbackQueryHandler(coach_start, pattern=r"^menu_coach$"), group=0)
-    
-    if _has("coach_notes_cb"):
-        _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
-
-   
-
-
-    # --- Unknown callbacks last (safety net) ---
-    if _has("_unknown_cb"):
-        _add(CallbackQueryHandler(_unknown_cb), group=9)
-
-    # --- Run bot (call ONCE) ---
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == "__main__":
-    main()
 
 # === BEGIN PATCH ===
 import os, json, time, logging, pandas as pd, re
@@ -7375,7 +7146,6 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    _add(CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"), group=0)
 
   
 
@@ -7385,7 +7155,6 @@ def register_handlers(app: Application) -> None:
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
-    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=0)
 
     # -------------------------------
     # Ask (Doubt) conversation
@@ -7523,14 +7292,6 @@ def register_handlers(app: Application) -> None:
     _add(profile_conv, group=4)
 
     # -------------------------------
-    # Top-level menu router (catch-all for menu_* buttons) — keep after specifics
-    # -------------------------------
-    _add(CallbackQueryHandler(
-        menu_router,
-        pattern=r"^menu_(ask|profile|coach|quiz)$"
-    ), group=1)
-
-    # -------------------------------
     # Error handler (optional)
     # -------------------------------
     try:
@@ -7539,7 +7300,3 @@ def register_handlers(app: Application) -> None:
         pass
 
     log.info("✅ Handlers registered")
-
-
-
-
