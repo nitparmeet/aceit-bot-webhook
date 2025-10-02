@@ -6179,28 +6179,39 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
             context.user_data["domicile_state"] = saved_dom
 
         if saved_quota != "State" or saved_dom:
-            await update.message.reply_text(
+           msg = (
                 f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
                 f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
                 f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
-                + (f", domicile *{saved_dom}*" if saved_quota == "State" and saved_dom else "")
-                + "\n\nTap /profile to change defaults.",
+                )
+            if saved_quota == "State" and saved_dom:
+                msg += f", domicile *{saved_dom}*"
+            msg += "\n\nTap /profile to change defaults."
+
+            await update.message.reply_text(
+                msg,
                 parse_mode="Markdown",
             )
             return await _finish_predict_now(update, context)
 
     kb = quota_keyboard()
-    await update.message.reply_text(
+    msg = (
         f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
 
     
     kb = quota_keyboard()
-    await update.message.reply_text(
+    msg = (
         f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
         f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
-        "Select your *quota*:",
+        "Select your *quota*:"
     )
-    return ASK_QUOTA
+    await update.message.reply_text(
+        msg,
+        parse_mode="Markdown",
+        reply_markup=kb,
+    )
+    
+    
 
 
 async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
