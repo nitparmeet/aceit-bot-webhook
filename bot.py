@@ -3635,7 +3635,7 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
-        [InlineKeyboardButton("📈 Click to find your NEET style AIR & College from Mock Test Rank🎓", callback_data="menu_predict_mock")],
+        [InlineKeyboardButton("📈 Click to predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
         [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
         [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
