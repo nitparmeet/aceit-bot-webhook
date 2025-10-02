@@ -6191,8 +6191,13 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
         await update.message.reply_text(
             msg,
             parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("📋 Show Colleges", callback_data="predict:showlist")]]
+                ),
+            
         )
-        return await _finish_predict_now(update, context)
+        context.user_data["pending_predict_summary"] = True
+        return ConversationHandler.END
 
     kb = quota_keyboard()
     msg = (
@@ -6210,7 +6215,8 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
         parse_mode="Markdown",
         reply_markup=kb,
     )
-    
+    context.user_data.pop("pending_predict_summary", None)
+    return ASK_QUOTA
     
 
 
@@ -6457,6 +6463,8 @@ async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         prof = get_user_profile(update)
         context.user_data["domicile_state"] = prof.get("domicile_state")
+    context.user_data.pop("pending_predict_summary", None)
+
     
     if context.user_data.get("quota") == "State":
         if not context.user_data.get("domicile_state"):
@@ -7385,7 +7393,8 @@ def register_handlers(app: Application) -> None:
         per_message=False,
     )
     _add(predict_conv, group=3)
-
+    _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
+    
     # Predictor follow-ups (AI Coach buttons attached to predict output)
     # Handles: predict:ai, predict:ai_coach, predict:coach, predict:refine, predict:alt, predict:details
     try:
@@ -7446,3 +7455,17 @@ def register_handlers(app: Application) -> None:
         pass
 
     log.info("✅ Handlers registered")
+
+async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not q:
+        return
+    await q.answer()
+
+    context.user_data.pop("pending_predict_summary", None)
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await _finish_predict_now(update, context)
