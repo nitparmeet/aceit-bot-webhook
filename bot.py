@@ -7097,11 +7097,6 @@ async def on_startup(app: Application):
     try:
         await app.bot.set_my_commands([
             BotCommand("menu", "Click here to start the bot"),
-            BotCommand("predict", "Predict colleges from your AIR"),
-            BotCommand("mockpredict", "Convert mock rank to NEET AIR"),
-            BotCommand("quiz", "Daily quiz menu"),
-            BotCommand("ask", "Ask a NEET doubt"),
-            BotCommand("profile", "Update your predictor profile"),
         ])
     except Exception:
         log.exception("Failed to set bot command menu")
