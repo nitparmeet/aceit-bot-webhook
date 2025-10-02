@@ -350,6 +350,18 @@ def _norm_token(x: str | None) -> str | None:
     if x is None: return None
     return str(x).strip()
 
+def _norm_state_name(x: str | None) -> str:
+    if x is None:
+        return ""
+    try:
+        s = unidecode(str(x)).lower()
+    except Exception:
+        s = str(x).lower()
+    s = re.sub(r"[^a-z]", "", s)
+    return s
+
+
+
 def _variants_for_quota(q: str | None) -> set[str]:
     q = _norm_token(q)
     if not q: return {None}
@@ -861,7 +873,7 @@ EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx"  # your file
 ACTIVE_CUTOFF_ROUND_DEFAULT = "2025_R1"
 TG_LIMIT = 4000
 NEET_CANDIDATE_POOL_DEFAULT = 2300000  # adjust if you want
-_ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central" ]
+_ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State" ]
 CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
 ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)
 
@@ -5635,6 +5647,7 @@ def canonical_quota_ui(text: str) -> str:
     if t in {"AIQ","ALL INDIA","ALL INDIA QUOTA"}: return "AIQ"
     if "DEEMED" in t or "PAID" in t or "MANAGEMENT" in t: return "Deemed"
     if "CENTRAL" in t or t == "CU": return "Central"
+    if "STATE" in t or t in {"SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}: return "State"  
     #if "AIIMS" in t:   return "AIIMS"
     #if "JIPMER" in t:  return "JIPMER"
     #if "ESIC" in t:    return "ESIC"
@@ -5653,7 +5666,7 @@ def _quota_bucket_from_ui(v: str) -> str:
 
 def quota_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [["AIQ", "Deemed", "Central"], ],
+        [["AIQ", "State"], ["Deemed", "Central"]],
         one_time_keyboard=True,
         resize_keyboard=True,
     )
@@ -5894,7 +5907,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     category  = _canon_cat(user.get("category"))
     air       = _safe_int(user.get("rank_air") or user.get("air"))
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
-
+    domicile_state_norm = _norm_state_name(user.get("domicile_state"))
+    
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
@@ -5936,7 +5950,12 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         nirf_val  = _safe_int(r.get(nirf_col)) if nirf_col else None
         fee_val   = _safe_int(r.get(fee_col))  if fee_col  else None
         state_val = (str(r.get(state_col)).strip() if state_col else "—")
-
+        if quota_ui == "State":
+            if not domicile_state_norm:
+                continue
+            if _norm_state_name(state_val) != domicile_state_norm:
+                continue
+                
         out.append({
             "college_id":   (str(r.get(id_col)) if id_col else None),
             "college_code": (str(r.get(code_col)) if code_col else None),
@@ -6291,6 +6310,7 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Select your admission *quota* for prediction:"
         "\n• *AIQ* = All India Quota (MCC)"
+        "\n• *State* = State quota (requires domicile state)"
         "\n• *Deemed* = Deemed Universities"
         "\n• *Central* = Central Universities"
       #  "\n• *AIIMS/JIPMER/ESIC/AFMS* as applicable"
@@ -6337,7 +6357,15 @@ async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         prof = get_user_profile(update)
         context.user_data["domicile_state"] = prof.get("domicile_state")
-
+    
+    if context.user_data.get("quota") == "State":
+        if not context.user_data.get("domicile_state"):
+            await update.message.reply_text(
+                "State quota requires your domicile state. Please type it (e.g., Delhi, Karnataka).",
+                reply_markup=ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
+            )
+            return ASK_DOMICILE
+            
     # Do NOT ask for PG/bond now; keep features inactive:
     context.user_data["require_pg_quota"] = None
     context.user_data["avoid_bond"] = None
