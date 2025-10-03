@@ -6304,20 +6304,23 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             if enforce_state_quota:
                 if domicile not in row_states and state_norm_display != domicile_state_norm:
                     continue
-                    
-            tmp.append({
-                "college_id":   (str(r.get(id_col)) if id_col else None),
-                "college_code": (str(r.get(code_col)) if code_col else None),
-                "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
-                "state":        state_val,
-                "close_rank":   None,
-                "category":     category,
-                "quota":        quota_ui,
-                "source":       "fallback",
-                "score":        None,
-                "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
-                "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
-            })
+            
+            tmp.append(
+                {
+                    "college_id":   (str(r.get(id_col)) if id_col else None),
+                    "college_code": (str(r.get(code_col)) if code_col else None),
+                    "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
+                    "state":        state_val,
+                    "close_rank":   None,
+                    "category":     category,
+                    "quota":        quota_ui,
+                    "source":       "fallback",
+                    "score":        None,
+                    "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
+                    "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
+                }
+            )        
+            
          tmp.sort(
             key=lambda x: (
                 x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
