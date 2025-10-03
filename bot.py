@@ -43,7 +43,7 @@ QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}
 from dataclasses import dataclass
 QUIZ_POOL: List[Dict[str, Any]] = []  
 QUIZ_INDEX: Dict[str, Dict[str, Any]] = {} 
-QUIZ_BY_ID: dict[str, dict] = {}    # built from QUIZ_POOL after load
+QUIZ_BY_ID: dict[str, dict] = {}
 QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
 
 PROFILE_MENU = 1001  # or use Enum
@@ -313,7 +313,7 @@ def format_quiz_report(score: int, total: int, details: list[dict]) -> str:
     return "\n".join(lines).strip()
 
 def _new_token(n=8) -> str:
-    # 8 hex chars, upper → short but unique per session
+   
     return secrets.token_hex(n//2).upper()
     
 def _stack_keyboards(*markups: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
@@ -806,16 +806,11 @@ async def send_ai_notes(bot, chat_id: int, text: str):
 
 
         
-def _cleanup_latex(s: str) -> str:
-    # remove display math markers
-    s = re.sub(r"\\\[|\\\]", "", s)
-    # remove inline math markers
+def _cleanup_latex(s: str) -> str: 
+    s = re.sub(r"\\\[|\\\]", "", s) 
     s = re.sub(r"\\\(|\\\)", "", s)
-    # replace \cdot with ×
     s = s.replace(r"\cdot", "×")
-    # strip \text{...}
     s = re.sub(r"\\text\{([^}]*)\}", r"\1", s)
-    # remove extra backslashes
     s = s.replace("\\", "")
     return s.strip()
 
@@ -863,16 +858,16 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").stri
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
 
-QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}          # user_id -> {"questions":[], "answers":{}, "index": int}
+QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}          
 
-# difficulty mapping used by /quiz5medium etc.
+
 _DIFF_MAP = {1: "low", 2: "medium", 3: "high"}
 
 DATA_DIR = "data"
-EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx"  # your file
+EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx" 
 ACTIVE_CUTOFF_ROUND_DEFAULT = "2025_R1"
 TG_LIMIT = 4000
-NEET_CANDIDATE_POOL_DEFAULT = 2300000  # adjust if you want
+NEET_CANDIDATE_POOL_DEFAULT = 2300000  
 MOCK_BIAS_FACTOR_MIN = 1.10
 MOCK_BIAS_FACTOR_MAX = 1.40
 MOCK_BIAS_FACTOR_DEFAULT = 1.25
@@ -880,25 +875,25 @@ _ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State" ]
 CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
 ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)
 
-COACH_TOP_N = 40         # how many rows to send to LLM
-COACH_SHOW_N = 12        # how many to display back to user
-COACH_MODEL = "gpt-4o-mini"  # or your preferred small JSON-capable model
+COACH_TOP_N = 40        
+COACH_SHOW_N = 12      
+COACH_MODEL = "gpt-4o-mini" 
 
-COACH_ADJUST = "coach_adjust"   # callback query data prefixes
+COACH_ADJUST = "coach_adjust"   
 COACH_SAVE   = "coach_save"
 
 MENU_COACH = "menu_coach"
 
 NOTES_TOP_N = 10
-GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")  # or gpt-4.1-mini
+GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini") 
 
 SAFE_CUTOFF = 0.90   # AIR <= 0.90 * ClosingRank → "safe"
 DREAM_CUTOFF = 1.10  # AIR >  1.10 * ClosingRank → "dream"
 
 
 
-COACH_TOP_N  = 200     # pool to send to LLM/fallback
-COACH_SHOW_N = 20      # lines to show in Telegram (avoid 4096 char limit)
+COACH_TOP_N  = 200     
+COACH_SHOW_N = 20    
 OPENAI_MODEL = "gpt-4o-mini"
 
 df_candidate = None
@@ -3710,6 +3705,47 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
 
 # ========================= Menus & States =========================
 
+JOSH_ZONE_STORIES: List[str] = [
+    "Ravi NEET topper (AIR 47) bhi pehle Physics mein fail hota tha.\n"
+    "Roz sirf 30 min diya, aur 3 months mein subject strong ho gaya 💪.\n"
+    "Tu bhi small steps se shuru kar, momentum khud banega.",
+    "Dr. Neha internship mein night duty ke baad bhi MCQ set solve karti thi.\n"
+    "Bolti thi 'thoda thak kar padhna, exam wale pressure ka rehearsal hai'.\n"
+    "Aaj woh pediatrics resident hai, patients usse \"energy doc\" bulate hain.\n"
+    "Tired ho toh break le, par mission yaad rakh.",
+    "Lucknow ka Aman bhai mock tests mein hamesha 520 pe atak jata tha.\n"
+    "Mentor ne bola - 'score nahi, silly mistake list bhejo'.\n"
+    "Har test ke baad 3 mistakes likh ke sudhara, next attempt 640 nikaal diya.\n"
+    "Discipline boring lagta hai, par result dhamakedar hota hai.",
+    "MBBS first year ki Priya didi histology ko nightmare bolti thi.\n"
+    "Usne hostel corridor mein chhota whiteboard lagaya, daily ek diagram draw karti thi.\n"
+    "Teen mahine baad sab juniors uske board se revise karte the.\n"
+    "Kuch naya create karo, confidence apne aap level up hoga.",
+    "Dr. Imran sir Operation Theatre se nikal ke hamare batch ko bolte the,\n"
+    "'Stress ko enemy mat samjho, yahi tumhe sharp banata hai'.\n"
+    "Exam day ke din unhone wohi lines yaad karke calm feel kiya tha.\n"
+    "Dil tez dhadke toh usse fuel ki tarah use karo.",
+    "Shreya AIR 112 ne bio ke charts se room decorate kiye the.\n"
+    "Guests aate the toh bolti: 'Yeh meri vision board hai, memes nahi'.\n"
+    "Roz subah uthke pehla kaam - ek concept aloud revise.\n"
+    "Environment ko mission mode banaoge, focus automatic ho jayega.",
+    "Coaching ke Rahul sir ka funda simple tha - '25 minute war, 5 minute chill'.\n"
+    "Timer laga ke chapters ko attack karta tha aur break mein push-ups.\n"
+    "Wahi Pomodoro routine se usne organic chemistry tame ki.\n"
+    "Ritual set karo, brain ko pata rahega kab beast mode on karna hai.",
+    "NEET dropper Kavya ko log bolte the 'again try?'.\n"
+    "Usne har doubt ko voice note bana ke khud ko samjhaya.\n"
+    "Repeat year mein wohi voice notes last week ka armor ban gaye.\n"
+    "Log kya kahenge chhodo, tumhari tape hi tumhara mentor ban sakti hai.",
+]
+
+
+def _pick_josh_story() -> str:
+    if not JOSH_ZONE_STORIES:
+        return "Aaj ka mantra: chhote consistent steps hi bada result banate hain."
+    return random.choice(JOSH_ZONE_STORIES).strip()
+
+
 
 
 
@@ -3718,6 +3754,7 @@ def main_menu_markup() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
         [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
         [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
+        [InlineKeyboardButton("🔥 Josh Zone: AI Mentor Stories", callback_data="menu_josh")],
         [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
     ])
@@ -3742,6 +3779,7 @@ async def show_menu(
         "Get quick AI notes for shortlisted colleges.\n\n"
         "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
         "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
+        "🔥 *Josh Zone (AI Mentor Stories)* — Senior mentor style Hinglish kahaniyan jo motivation aur routine hacks share karti hain.\n\n"
         "💬 *Clear your NEET Doubts* — Ask questions, get instant explanations.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
@@ -3752,6 +3790,40 @@ async def show_menu(
         await tgt.reply_text(explanation, disable_web_page_preview=True)
 
     await tgt.reply_text(text, reply_markup=main_menu_markup())
+
+async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    story = _pick_josh_story()
+    header = "🔥 Josh Zone — AI Mentor Story (Hinglish)"
+    text = f"{header}\n\n{story}"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚡ Another Josh Story", callback_data="menu_josh")],
+        [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="menu_home")],
+    ])
+
+    q = update.callback_query
+    if q:
+        await q.answer()
+        target = q.message
+    else:
+        target = update.effective_message
+
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(text, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+
+
+async def menu_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        await q.answer()
+    await show_menu(update, context)
 
 
 
@@ -4319,6 +4391,11 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
         return
 
+    if data == "menu_josh":
+        return await show_josh_zone(update, context)
+    if data == "menu_home":
+        return await show_menu(update, context)
+    
     if data == "menu_ask":
         await q.message.reply_text("Ask your NEET doubt with /ask.")
         return
@@ -7378,7 +7455,7 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-
+    _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
     # --- QUIZ: menu + router + answers ---
@@ -7523,15 +7600,21 @@ def register_handlers(app: Application) -> None:
         persistent=False,
     )
     _add(profile_conv, group=4)
-
+    
     # -------------------------------
     # Error handler (optional)
     # -------------------------------
+
+    _add(CallbackQueryHandler(
+        menu_router,
+        pattern=r"^menu_(ask|profile|coach|quiz|josh|home)$"
+    ), group=1)
+    
     try:
         app.add_error_handler(on_error)
     except NameError:
         pass
-
+    
     log.info("✅ Handlers registered")
 
 async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
