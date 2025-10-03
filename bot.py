@@ -426,6 +426,53 @@ def _states_in_text(value: str | None) -> set[str]:
         if alias_key in norm:
             hits.add(canon)
     return hits
+def _row_state_candidates(
+    row: dict | pd.Series,
+    *,
+    name_col: str | None,
+    state_col: str | None,
+    city_col: str | None,
+) -> tuple[str | None, set[str]]:
+    """
+    Returns (display_state, candidate_states).
+    - start with the canonical state column value
+    - merge any states mentioned in name/city text
+    - if textual evidence contradicts the column, trust the text
+    """
+    raw_state = str(row.get(state_col)).strip() if state_col and row.get(state_col) is not None else ""
+    canon_state = _canon_state(raw_state) if raw_state else None
+
+    text_states: set[str] = set()
+    if name_col:
+        text_states |= _states_in_text(str(row.get(name_col) or ""))
+    if city_col:
+        text_states |= _states_in_text(str(row.get(city_col) or ""))
+
+    candidates: set[str] = set()
+    if canon_state:
+        candidates.add(canon_state)
+    candidates |= text_states
+
+    if text_states and canon_state and canon_state not in text_states:
+        # column disagrees with stronger textual evidence → trust text
+        candidates = set(text_states)
+
+    if not candidates and canon_state:
+        candidates = {canon_state}
+
+    display_state = None
+    if canon_state and (not text_states or canon_state in text_states):
+        display_state = canon_state
+    elif text_states:
+        display_state = sorted(text_states)[0]
+    elif canon_state:
+        display_state = canon_state
+    elif raw_state:
+        display_state = raw_state
+
+    return display_state, {s for s in candidates if s}
+
+
 
 def _safe_str(v, default: str = "") -> str:
     try:
@@ -6149,6 +6196,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     cols = list(map(str, colleges_df.columns))
     name_col = _pick_col_local(cols, "College Name", "college_name", "name", "institute_name")
     state_col = _pick_col_local(cols, "state", "State")
+    city_col  = _pick_col_local(cols, "city", "City")
     code_col  = _pick_col_local(cols, "college_code", "College Code", "code", "institute_code")
     id_col    = _pick_col_local(cols, "college_id", "College ID", "id")
     nirf_col  = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
@@ -6168,8 +6216,6 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
         raw_name = (str(r.get(name_col)) if name_col else "") or ""
         raw_name = raw_name.strip()
-        name_states = _states_in_text(raw_name)
-
 
         display_name = (
             (COLLEGE_NAME_BY_CODE.get(code_key) if code_key else None)
@@ -6181,20 +6227,18 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # Prefer code, then id, then normalized name
         college_key = code_key or id_key or _name_key(raw_name)
 
-        state_val_raw = str(r.get(state_col)).strip() if state_col else ""
-        state_canon = _canon_state(state_val_raw) if state_val_raw else None
-        state_norm_raw = _norm_state_name(state_val_raw) if state_val_raw else ""
-        state_val = state_val_raw or (state_canon or "—")
-        state_norm_display = state_norm_raw or _norm_state_name(state_val)
+        state_val, row_states = _row_state_candidates(
+            r,
+            name_col=name_col,
+            state_col=state_col,
+            city_col=city_col,
+        )
+        state_val = str(state_val or "—")
+        state_norm_display = _norm_state_name(state_val)
+
+        if enforce_state_quota and domicile and domicile not in row_states:
+            continue
         
-        if enforce_state_quota:
-            state_matches = (state_canon == domicile) if state_canon else False
-            norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
-            name_matches = domicile in name_states
-            if name_states and not name_matches:
-                continue
-            if state_norm_display != domicile_state_norm and domicile not in name_states:
-                continue
                 
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
@@ -6223,9 +6267,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         state_val = state_val_raw or (state_canon or "—")
         state_norm_display = state_norm_raw or _norm_state_name(state_val)
         if quota_ui == "State" and domicile_state_norm:
-            if name_states and domicile not in name_states:
-                continue
-            if state_norm_display != domicile_state_norm and domicile not in name_states:
+            if domicile not in row_states and state_norm_display != domicile_state_norm:
                 continue
                 
         out.append({
@@ -6251,20 +6293,16 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # metadata-only fallback (kept for when AIR not provided)
         tmp = []
         for _, r in colleges_df.iterrows():
-            raw_name = (str(r.get(name_col)).strip() if name_col else "") or ""
-            name_states = _states_in_text(raw_name)
-            state_raw = str(r.get(state_col)).strip() if state_col else ""
-            state_norm = _canon_state(state_raw) if state_raw else None
-            state_norm_raw = _norm_state_name(state_raw) if state_raw else ""
-            state_val = state_raw or (state_norm or "—")
-            state_norm_display = state_norm_raw or _norm_state_name(state_val)
+            state_val, row_states = _row_state_candidates(
+                r,
+                name_col=name_col,
+                state_col=state_col,
+                city_col=city_col,
+            )
+            state_val = str(state_val or "—")
+            state_norm_display = _norm_state_name(state_val)
             if enforce_state_quota:
-                state_matches = (state_norm == domicile) if state_norm else False
-                norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
-                name_matches = domicile in name_states
-                if name_states and not name_matches:
-                    continue
-                if state_norm_display != domicile_state_norm and not name_matches:
+                if domicile not in row_states and state_norm_display != domicile_state_norm:
                     continue
                     
             tmp.append({
