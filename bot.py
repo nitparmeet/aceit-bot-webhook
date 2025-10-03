@@ -335,6 +335,80 @@ _CATEGORY_ALIASES = {
 
 NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
 
+_STATE_ALIASES: dict[str, set[str]] = {
+    "Andhra Pradesh": {"andhra pradesh", "andhra", "ap"},
+    "Arunachal Pradesh": {"arunachal pradesh", "arunachal"},
+    "Assam": {"assam", "as"},
+    "Bihar": {"bihar", "br"},
+    "Chhattisgarh": {"chhattisgarh", "chattisgarh", "cg"},
+    "Goa": {"goa", "ga"},
+    "Gujarat": {"gujarat", "gj"},
+    "Haryana": {"haryana", "hr"},
+    "Himachal Pradesh": {"himachal pradesh", "himachal", "hp"},
+    "Jharkhand": {"jharkhand", "jh"},
+    "Karnataka": {"karnataka", "ka"},
+    "Kerala": {"kerala", "kl"},
+    "Madhya Pradesh": {"madhya pradesh", "mp"},
+    "Maharashtra": {"maharashtra", "mh"},
+    "Manipur": {"manipur", "mn"},
+    "Meghalaya": {"meghalaya", "ml"},
+    "Mizoram": {"mizoram", "mz"},
+    "Nagaland": {"nagaland", "nl"},
+    "Odisha": {"odisha", "orissa", "od", "or"},
+    "Punjab": {"punjab", "pb"},
+    "Rajasthan": {"rajasthan", "rj"},
+    "Sikkim": {"sikkim", "sk"},
+    "Tamil Nadu": {"tamil nadu", "tamilnadu", "tn"},
+    "Telangana": {"telangana", "ts"},
+    "Tripura": {"tripura", "tr"},
+    "Uttar Pradesh": {"uttar pradesh", "up"},
+    "Uttarakhand": {"uttarakhand", "uttaranchal", "uk", "ua"},
+    "West Bengal": {"west bengal", "wb"},
+    "Delhi": {"delhi", "nct", "nct of delhi", "national capital territory of delhi"},
+    "Jammu and Kashmir": {"jammu and kashmir", "jammu & kashmir", "jk"},
+    "Ladakh": {"ladakh"},
+    "Andaman and Nicobar Islands": {"andaman and nicobar islands", "andaman nicobar", "andaman & nicobar"},
+    "Chandigarh": {"chandigarh", "ch"},
+    "Dadra and Nagar Haveli and Daman and Diu": {
+        "dadra and nagar haveli", "daman and diu", "dadra nagar haveli daman diu", "dn h dd"
+    },
+    "Lakshadweep": {"lakshadweep", "ld"},
+    "Puducherry": {"puducherry", "pondicherry", "py"},
+}
+
+def _state_norm(value: str | None) -> str:
+    s = unidecode(str(value or "")).lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"[^a-z0-9 ]+", " ", s)
+    s = re.sub(r"\bstate of\b", " ", s)
+    s = re.sub(r"\bstate\b", " ", s)
+    s = re.sub(r"\bunion territory of\b", " ", s)
+    s = re.sub(r"\bunion territory\b", " ", s)
+    s = re.sub(r"\bnational capital territory\b", " delhi ", s)
+    s = re.sub(r"\but\b", " ", s)
+    s = re.sub(r"\bthe\b", " ", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+_STATE_ALIAS_LOOKUP: dict[str, str] = {}
+for _canon, _aliases in _STATE_ALIASES.items():
+    all_aliases = set(_aliases) | {_canon}
+    for alias in all_aliases:
+        key = _state_norm(alias)
+        if key:
+            _STATE_ALIAS_LOOKUP[key] = _canon
+
+
+def _canon_state(value: str | None) -> Optional[str]:
+    key = _state_norm(value)
+    if not key:
+        return None
+    if key in _STATE_ALIAS_LOOKUP:
+        return _STATE_ALIAS_LOOKUP[key]
+    for alias_key, canon in _STATE_ALIAS_LOOKUP.items():
+        if alias_key and alias_key in key:
+            return canon
+    return key.title()
 
 
 def _safe_str(v, default: str = "") -> str:
@@ -6069,7 +6143,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     category  = _canon_cat(user.get("category"))
     air       = _safe_int(user.get("rank_air") or user.get("air"))
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
-    domicile_state_norm = _norm_state_name(user.get("domicile_state"))
+    domicile  = _canon_state(user.get("domicile_state"))
+    enforce_state_quota = quota_ui == "State" and domicile is not None
     
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
@@ -6087,6 +6162,14 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # Prefer code, then id, then normalized name
         college_key = code_key or id_key or _name_key(raw_name)
 
+        state_val_raw = str(r.get(state_col)).strip() if state_col else ""
+        state_canon = _canon_state(state_val_raw) if state_val_raw else None
+
+        if enforce_state_quota:
+            if state_canon is None or state_canon != domicile:
+                continue
+
+        
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
             college_key=college_key,
@@ -6111,7 +6194,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         nirf_val  = _safe_int(r.get(nirf_col)) if nirf_col else None
         fee_val   = _safe_int(r.get(fee_col))  if fee_col  else None
-        state_val = (str(r.get(state_col)).strip() if state_col else "—")
+        state_val = state_val_raw or (state_canon or "—")
         if quota_ui == "State":
             if not domicile_state_norm:
                 continue
@@ -6139,11 +6222,18 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # metadata-only fallback (kept for when AIR not provided)
         tmp = []
         for _, r in colleges_df.iterrows():
+            state_raw = str(r.get(state_col)).strip() if state_col else ""
+            state_norm = _canon_state(state_raw) if state_raw else None
+            if enforce_state_quota and (state_norm is None or state_norm != domicile):
+                continue
+            
+            
+            
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
                 "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
-                "state":        (str(r.get(state_col)).strip() if state_col else "—"),
+                "state":        state_raw or (state_norm or "—"),
                 "close_rank":   None,
                 "category":     category,
                 "quota":        quota_ui,
@@ -7455,6 +7545,7 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
+    
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
