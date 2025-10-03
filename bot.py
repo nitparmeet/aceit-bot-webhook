@@ -3793,7 +3793,7 @@ async def show_menu(
 
 async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     story = _pick_josh_story()
-    header = "🔥 Josh Zone — AI Mentor Story (Hinglish)"
+    header = "🔥 Josh Zone "
     text = f"{header}\n\n{story}"
 
     keyboard = InlineKeyboardMarkup([
@@ -7605,11 +7605,7 @@ def register_handlers(app: Application) -> None:
     # Error handler (optional)
     # -------------------------------
 
-    _add(CallbackQueryHandler(
-        menu_router,
-        pattern=r"^menu_(ask|profile|coach|quiz|josh|home)$"
-    ), group=1)
-    
+  
     try:
         app.add_error_handler(on_error)
     except NameError:
