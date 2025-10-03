@@ -6219,8 +6219,11 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         nirf_val  = _safe_int(r.get(nirf_col)) if nirf_col else None
         fee_val   = _safe_int(r.get(fee_col))  if fee_col  else None
         state_val = state_val_raw or (state_canon or "—")
+        state_norm_display = state_norm_raw or _norm_state_name(state_val)
         if quota_ui == "State" and domicile_state_norm:
-            if (state_norm_raw or _norm_state_name(state_val)) != domicile_state_norm:
+            if name_states and domicile not in name_states:
+                continue
+            if state_norm_display != domicile_state_norm and domicile not in name_states:
                 continue
                 
         out.append({
