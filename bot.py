@@ -6204,18 +6204,6 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 continue
                 
         out.append({
-        for _, r in colleges_df.iterrows():
-            state_raw = str(r.get(state_col)).strip() if state_col else ""
-            state_norm = _canon_state(state_raw) if state_raw else None
-            state_norm_raw = _norm_state_name(state_raw) if state_raw else ""
-            if enforce_state_quota:
-                state_matches = (state_norm == domicile) if state_norm else False
-                norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
-                if not (state_matches or norm_matches):
-                    continue
-            
-                
-        out.append({
             "college_id":   (str(r.get(id_col)) if id_col else None),
             "college_code": (str(r.get(code_col)) if code_col else None),
             "college_name": display_name,
@@ -6228,7 +6216,9 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             "nirf_rank":    nirf_val,
             "total_fee":    fee_val,
         })
-
+ 
+            
+       
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
     if not out:
         if air is not None:
