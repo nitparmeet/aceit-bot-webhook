@@ -6290,7 +6290,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     if not out:
          if air is not None and not enforce_state_quota:
             return []
-        tmp: list[dict] = []
+    tmp: list[dict] = []
         for _, r in colleges_df.iterrows():
             state_val, row_states = _row_state_candidates(
                 r,
