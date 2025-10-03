@@ -6197,10 +6197,12 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     name_col = _pick_col_local(cols, "College Name", "college_name", "name", "institute_name")
     state_col = _pick_col_local(cols, "state", "State")
     city_col  = _pick_col_local(cols, "city", "City")
-    code_col  = _pick_col_local(cols, "college_code", "College Code", "code", "institute_code")
-    id_col    = _pick_col_local(cols, "college_id", "College ID", "id")
-    nirf_col  = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
-    fee_col   = _pick_col_local(cols, "total_fee", "Fee")
+    code_col      = _pick_col_local(cols, "college_code", "College Code", "code", "institute_code")
+    id_col        = _pick_col_local(cols, "college_id", "College ID", "id")
+    nirf_col      = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
+    fee_col       = _pick_col_local(cols, "total_fee", "Fee")
+    ownership_col = _pick_col_local(cols, "ownership", "Ownership")
+    seat_type_col = _pick_col_local(cols, "seat_type", "Seat Type")
 
     # ---- user prefs ----
     quota_ui  = _canon_quota(user.get("quota") or user.get("pref_quota") or "AIQ")
@@ -6236,9 +6238,17 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         state_val = str(state_val or "—")
         state_norm_display = _norm_state_name(state_val)
 
+        ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
+        seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
+
         if enforce_state_quota and domicile and domicile not in row_states:
             continue
         
+        if enforce_state_quota:
+            if "central" in ownership_val or "central" in seat_type_val:
+                continue
+            if raw_name.lower().startswith("aiims"):
+                continue
                 
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
@@ -6301,9 +6311,18 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             state_val = str(state_val or "—")
             state_norm_display = _norm_state_name(state_val)
             
-            if enforce_state_quota and domicile not in row_states and state_norm_display != domicile_state_norm:
-                continue
+            ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
+            seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
 
+            if enforce_state_quota:
+                if domicile not in row_states and state_norm_display != domicile_state_norm:
+                    continue
+                if "central" in ownership_val or "central" in seat_type_val:
+                    continue
+                raw_name_tmp = (str(r.get(name_col)).strip() if name_col else "").lower()
+                if raw_name_tmp.startswith("aiims"):
+                    continue
+            
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
