@@ -6214,10 +6214,6 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 if not (state_matches or norm_matches):
                     continue
             
-            
-            
-
-                continue
                 
         out.append({
             "college_id":   (str(r.get(id_col)) if id_col else None),
