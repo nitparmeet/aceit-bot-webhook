@@ -7600,12 +7600,17 @@ def register_handlers(app: Application) -> None:
         persistent=False,
     )
     _add(profile_conv, group=4)
+    _add(CallbackQueryHandler(
+        menu_router,
+        pattern=r"^menu_(josh|home)$"
+    ), group=1)
+
     
     # -------------------------------
     # Error handler (optional)
     # -------------------------------
 
-  
+      
     try:
         app.add_error_handler(on_error)
     except NameError:
