@@ -6290,8 +6290,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     if not out:
          if air is not None and not enforce_state_quota:
             return []
-        # metadata-only fallback (kept for when AIR not provided)
-        tmp = []
+        tmp: list[dict] = []
         for _, r in colleges_df.iterrows():
             state_val, row_states = _row_state_candidates(
                 r,
@@ -6301,6 +6300,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             )
             state_val = str(state_val or "—")
             state_norm_display = _norm_state_name(state_val)
+            
             if enforce_state_quota:
                 if domicile not in row_states and state_norm_display != domicile_state_norm:
                     continue
@@ -6318,10 +6318,12 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
                 "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
             })
-        tmp.sort(key=lambda x: (
-            x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
-            x["college_name"] or ""
-        ))
+         tmp.sort(
+            key=lambda x: (
+                x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
+                x["college_name"] or "",
+            )
+        )
         return tmp[:30]
 
     out.sort(key=lambda x: (
