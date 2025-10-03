@@ -6288,9 +6288,9 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
        
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
     if not out:
-         if air is not None and not enforce_state_quota:
+        if air is not None and not enforce_state_quota:
             return []
-    tmp: list[dict] = []
+        tmp: list[dict] = []
         for _, r in colleges_df.iterrows():
             state_val, row_states = _row_state_candidates(
                 r,
