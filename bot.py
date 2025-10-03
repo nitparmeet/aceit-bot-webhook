@@ -410,6 +410,22 @@ def _canon_state(value: str | None) -> Optional[str]:
             return canon
     return key.title()
 
+def _states_in_text(value: str | None) -> set[str]:
+    """Extract canonical state hits embedded in free-form text (e.g., college names)."""
+    if not value:
+        return set()
+    norm = _state_norm(value)
+    if not norm:
+        return set()
+    hits: set[str] = set()
+    for alias_key, canon in _STATE_ALIAS_LOOKUP.items():
+        if not alias_key:
+            continue
+        if len(alias_key) < 3 and " " not in alias_key:
+            continue
+        if alias_key in norm:
+            hits.add(canon)
+    return hits
 
 def _safe_str(v, default: str = "") -> str:
     try:
@@ -6152,6 +6168,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
         raw_name = (str(r.get(name_col)) if name_col else "") or ""
         raw_name = raw_name.strip()
+        name_states = _states_in_text(raw_name)
+
 
         display_name = (
             (COLLEGE_NAME_BY_CODE.get(code_key) if code_key else None)
@@ -6170,10 +6188,12 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         if enforce_state_quota:
             state_matches = (state_canon == domicile) if state_canon else False
             norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
-            if not (state_matches or norm_matches):
+            name_matches = domicile in name_states
+            if name_states and not name_matches:
                 continue
-
-        
+            if state_norm_display != domicile_state_norm and domicile not in name_states:
+                continue
+                
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
             college_key=college_key,
@@ -6226,16 +6246,20 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # metadata-only fallback (kept for when AIR not provided)
         tmp = []
         for _, r in colleges_df.iterrows():
+            raw_name = (str(r.get(name_col)).strip() if name_col else "") or ""
+            name_states = _states_in_text(raw_name)
             state_raw = str(r.get(state_col)).strip() if state_col else ""
             state_norm = _canon_state(state_raw) if state_raw else None
             state_norm_raw = _norm_state_name(state_raw) if state_raw else ""
             if enforce_state_quota:
                 state_matches = (state_norm == domicile) if state_norm else False
                 norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
-                if not (state_matches or norm_matches):
+                name_matches = domicile in name_states
+                if name_states and not name_matches:
                     continue
-            
-            
+                if not (state_matches or norm_matches or name_matches):
+                    continue
+                    
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
