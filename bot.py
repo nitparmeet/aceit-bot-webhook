@@ -6288,7 +6288,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
        
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
     if not out:
-        if air is not None:
+         if air is not None and not enforce_state_quota:
             return []
         # metadata-only fallback (kept for when AIR not provided)
         tmp = []
