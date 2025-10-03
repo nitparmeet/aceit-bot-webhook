@@ -6184,7 +6184,9 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         state_val_raw = str(r.get(state_col)).strip() if state_col else ""
         state_canon = _canon_state(state_val_raw) if state_val_raw else None
         state_norm_raw = _norm_state_name(state_val_raw) if state_val_raw else ""
-
+        state_val = state_val_raw or (state_canon or "—")
+        state_norm_display = state_norm_raw or _norm_state_name(state_val)
+        
         if enforce_state_quota:
             state_matches = (state_canon == domicile) if state_canon else False
             norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
@@ -6254,20 +6256,22 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             state_raw = str(r.get(state_col)).strip() if state_col else ""
             state_norm = _canon_state(state_raw) if state_raw else None
             state_norm_raw = _norm_state_name(state_raw) if state_raw else ""
+            state_val = state_raw or (state_norm or "—")
+            state_norm_display = state_norm_raw or _norm_state_name(state_val)
             if enforce_state_quota:
                 state_matches = (state_norm == domicile) if state_norm else False
                 norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
                 name_matches = domicile in name_states
                 if name_states and not name_matches:
                     continue
-                if not (state_matches or norm_matches or name_matches):
+                if state_norm_display != domicile_state_norm and not name_matches:
                     continue
                     
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
                 "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
-                "state":        state_raw or (state_norm or "—"),
+                "state":        state_val,
                 "close_rank":   None,
                 "category":     category,
                 "quota":        quota_ui,
