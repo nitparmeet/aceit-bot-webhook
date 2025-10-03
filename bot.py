@@ -1640,7 +1640,7 @@ def _canon_quota(q: str | None) -> str:
 
     if s in {"AIQ", "ALL INDIA", "ALLINDIA", "15%", "15 PERCENT"}:
         return "AIQ"
-    if s in {"STATE", "SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}:
+    if ("STATE" in s) or s in {"STATE", "SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}:
         return "State"
     # Central / GOI bucket
     if s in {"GOI", "CENTRAL", "DGHS", "CU", "CENTRAL UNIVERSITY", "CENTRAL UNIV"}:
@@ -6144,6 +6144,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     air       = _safe_int(user.get("rank_air") or user.get("air"))
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
     domicile  = _canon_state(user.get("domicile_state"))
+    domicile_state_norm = _norm_state_name(domicile) if domicile else ""
     enforce_state_quota = quota_ui == "State" and domicile is not None
     
     for _, r in colleges_df.iterrows():
@@ -6164,9 +6165,12 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         state_val_raw = str(r.get(state_col)).strip() if state_col else ""
         state_canon = _canon_state(state_val_raw) if state_val_raw else None
+        state_norm_raw = _norm_state_name(state_val_raw) if state_val_raw else ""
 
         if enforce_state_quota:
-            if state_canon is None or state_canon != domicile:
+            state_matches = (state_canon == domicile) if state_canon else False
+            norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
+            if not (state_matches or norm_matches):
                 continue
 
         
@@ -6195,10 +6199,24 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         nirf_val  = _safe_int(r.get(nirf_col)) if nirf_col else None
         fee_val   = _safe_int(r.get(fee_col))  if fee_col  else None
         state_val = state_val_raw or (state_canon or "—")
-        if quota_ui == "State":
-            if not domicile_state_norm:
+        if quota_ui == "State" and domicile_state_norm:
+            if (state_norm_raw or _norm_state_name(state_val)) != domicile_state_norm:
                 continue
-            if _norm_state_name(state_val) != domicile_state_norm:
+                
+        out.append({
+        for _, r in colleges_df.iterrows():
+            state_raw = str(r.get(state_col)).strip() if state_col else ""
+            state_norm = _canon_state(state_raw) if state_raw else None
+            state_norm_raw = _norm_state_name(state_raw) if state_raw else ""
+            if enforce_state_quota:
+                state_matches = (state_norm == domicile) if state_norm else False
+                norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
+                if not (state_matches or norm_matches):
+                    continue
+            
+            
+            
+
                 continue
                 
         out.append({
@@ -6224,9 +6242,12 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         for _, r in colleges_df.iterrows():
             state_raw = str(r.get(state_col)).strip() if state_col else ""
             state_norm = _canon_state(state_raw) if state_raw else None
-            if enforce_state_quota and (state_norm is None or state_norm != domicile):
-                continue
-            
+            state_norm_raw = _norm_state_name(state_raw) if state_raw else ""
+            if enforce_state_quota:
+                state_matches = (state_norm == domicile) if state_norm else False
+                norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
+                if not (state_matches or norm_matches):
+                    continue
             
             
             tmp.append({
