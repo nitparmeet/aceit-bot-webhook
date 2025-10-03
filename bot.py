@@ -6321,20 +6321,20 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 }
             )        
             
-         tmp.sort(
-            key=lambda x: (
-                x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
-                x["college_name"] or "",
+            tmp.sort(
+                key=lambda x: (
+                    x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
+                    x["college_name"] or "",
+                )
             )
-        )
-        return tmp[:30]
+            return tmp[:30]
 
-    out.sort(key=lambda x: (
-        x["close_rank"],
-        x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
-        x["college_name"] or ""
-    ))
-    return out
+        out.sort(key=lambda x: (
+            x["close_rank"],
+            x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
+            x["college_name"] or ""
+        ))
+        return out
 
 # Final cutoffs we read from your “Cutoffs” sheet
 
