@@ -57,3 +57,16 @@ create index if not exists answers_question_idx on answers (question_id, is_corr
 create index if not exists answers_session_idx  on answers (session_id);
 create index if not exists results_user_idx     on results (user_id, finished_at desc);
 create index if not exists sessions_user_idx    on quiz_sessions (user_id, started_at desc);
+
+-- usage analytics
+create table if not exists bot_usage_events (
+  event_id    uuid primary key default gen_random_uuid(),
+  user_id     text,
+  chat_id     text,
+  event_type  text,
+  meta        jsonb,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists bot_usage_events_created_idx on bot_usage_events (created_at);
+create index if not exists bot_usage_events_user_idx    on bot_usage_events (user_id, created_at desc);
