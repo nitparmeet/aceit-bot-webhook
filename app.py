@@ -3,9 +3,10 @@ import os
 import json
 import random
 import logging
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from db import init_db, close_db  
+from db import init_db, close_db, record_usage_event 
 
 from fastapi import FastAPI, Request, HTTPException, Header, Query
 from fastapi.responses import JSONResponse
@@ -168,8 +169,55 @@ async def telegram_webhook(
         raise HTTPException(status_code=403, detail="Bad secret header")
     data = await req.json()
     update = Update.de_json(data, tg.bot)
+
+    user = update.effective_user
+    chat = update.effective_chat
+    async def _log_usage():
+        try:
+            user_id = str(user.id) if user and getattr(user, "id", None) is not None else None
+            chat_id = str(chat.id) if chat and getattr(chat, "id", None) is not None else None
+            if not user_id and not chat_id:
+                return
+            event_type = _classify_event(update)
+            meta = _event_meta(update)
+            await record_usage_event(user_id, chat_id, event_type, meta)
+        except Exception:
+            log.exception("usage logging failed")
+    asyncio.create_task(_log_usage())
+
+    
     await tg.process_update(update)
     return {"ok": True}
+
+
+def _classify_event(update: Update) -> str:
+    if update.message:
+        if update.message.text:
+            return "message:text"
+        if update.message.photo:
+            return "message:photo"
+        if update.message.document:
+            return "message:document"
+        return "message"
+    if update.callback_query:
+        return "callback"
+    if update.inline_query:
+        return "inline_query"
+    if update.chosen_inline_result:
+        return "inline_result"
+    if update.poll_answer:
+        return "poll_answer"
+    return "update"
+def _event_meta(update: Update) -> Dict[str, Any]:
+    meta: Dict[str, Any] = {}
+    msg = update.message
+    if msg and msg.text:
+        meta["text"] = msg.text[:160]
+    cq = update.callback_query
+    if cq and cq.data:
+        meta["callback_data"] = cq.data[:160]
+    return meta
+
 
 # -------------- quiz endpoints --------------
 @app.get("/quiz")
