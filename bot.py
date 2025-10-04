@@ -532,7 +532,20 @@ def _state_quota_from_cutoffs(round_key: str,
         close_rank = int(row["ClosingRank"])
         state_val = row.get(state_col) or (meta.get("State") if meta else None) or dom_canon
         nirf_val = meta.get("nirf_rank_medical_latest") if meta else None
-        fee_val  = meta.get("total_fee") if meta else None
+        def _pick_fee(*sources):
+            for src in sources:
+                if src is None:
+                    continue
+                for key in ("total_fee", "Total Fee", "Fee"):
+                    try:
+                        val = src.get(key) if hasattr(src, "get") else None
+                    except Exception:
+                        val = None
+                    if val not in (None, "", "—"):
+                        return val
+            return None
+
+        fee_val = _pick_fee(meta, row)
 
         results.append({
             "college_id":   str(cid).strip() or None if cid not in (None, "") else None,
@@ -6766,6 +6779,11 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_CATEGORY
 
     context.user_data["category"] = cat
+    if context.user_data.get("quota") != "State":
+        # Clear any stale domicile and finish without extra prompts for non-state quotas
+        context.user_data.pop("domicile_state", None)
+        context.user_data.pop("pending_predict_summary", None)
+        return await _finish_predict_now(update, context)
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Type your *domicile state* (e.g., Delhi, Uttar Pradesh) or tap *Skip*.",
