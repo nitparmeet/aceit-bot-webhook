@@ -1637,6 +1637,74 @@ def _name_key(x: str | None) -> str:
     """Normalize display names for fuzzy matching (lowercase alnum)."""
     return re.sub(r"[^a-z0-9]+", "", (str(x).strip().lower() if x else ""))
 
+
+_STATE_QUOTA_OVERRIDES: dict[tuple[str, str], dict[str, object]] = {
+    (_norm_state_name("Punjab"), _name_key("Government Medical College, Patiala")): {
+        "display_name": "Government Medical College, Patiala",
+        "close_rank": 9801,
+    },
+    (_norm_state_name("Punjab"), _name_key("Dayanand Medical College and Hospital, Ludhiana")): {
+        "display_name": "Dayanand Medical College and Hospital, Ludhiana",
+        "close_rank": 10759,
+    },
+    (_norm_state_name("Punjab"), _name_key("Dr. B.R. Ambedkar State Institute of Medical Sciences, Mohali")): {
+        "display_name": "Dr. B.R. Ambedkar State Institute of Medical Sciences, Mohali",
+        "close_rank": 19662,
+    },
+    (_norm_state_name("Punjab"), _name_key("Dr. B.R. Ambedkar State Institute of Medical Sciences , Sector 56 Mohali, Punjab, 160055")): {
+        "display_name": "Dr. B.R. Ambedkar State Institute of Medical Sciences, Mohali",
+        "close_rank": 19662,
+    },
+    (_norm_state_name("Punjab"), _name_key("Government Medical College, Amritsar")): {
+        "display_name": "Government Medical College, Amritsar",
+        "close_rank": 20404,
+    },
+    (_norm_state_name("Punjab"), _name_key("Guru Gobind Singh Medical College, Faridkot")): {
+        "display_name": "Guru Gobind Singh Medical College, Faridkot",
+        "close_rank": 21834,
+    },
+    (_norm_state_name("Punjab"), _name_key("GURU GOVIND SINGH MED COLL,FARIDKOT, Sadiq Road, Faridkot., Punjab, 151203")): {
+        "display_name": "Guru Gobind Singh Medical College, Faridkot",
+        "close_rank": 21834,
+    },
+    (_norm_state_name("Punjab"), _name_key("Christian Medical College, Ludhiana")): {
+        "display_name": "Christian Medical College, Ludhiana",
+        "close_rank": 29705,
+    },
+    (_norm_state_name("Punjab"), _name_key("Punjab Institute of Medical Sciences, Jalandhar")): {
+        "display_name": "Punjab Institute of Medical Sciences, Jalandhar",
+        "close_rank": 33545,
+    },
+    (_norm_state_name("Punjab"), _name_key("Gian Sagar Medical College and Hospital, Banur")): {
+        "display_name": "Gian Sagar Medical College and Hospital, Banur",
+        "close_rank": 40733,
+    },
+    (_norm_state_name("Punjab"), _name_key("RIMT Medical College and Hospital, Mandi Gobindgarh")): {
+        "display_name": "RIMT Medical College and Hospital, Mandi Gobindgarh",
+        "close_rank": 42180,
+    },
+    (_norm_state_name("Punjab"), _name_key("Adesh Institute of Medical Sciences and Research, Bathinda")): {
+        "display_name": "Adesh Institute of Medical Sciences and Research, Bathinda",
+        "close_rank": 85595,
+    },
+}
+
+
+def _state_quota_override_for(state: str | None, name: str | None) -> dict[str, object] | None:
+    state_key = _norm_state_name(state)
+    if not state_key:
+        return None
+    name_key = _name_key(name)
+    data = _STATE_QUOTA_OVERRIDES.get((state_key, name_key))
+    if data:
+        return data
+    for (st_key, nm_key), data in _STATE_QUOTA_OVERRIDES.items():
+        if st_key != state_key:
+            continue
+        if nm_key and (name_key.startswith(nm_key) or nm_key.startswith(name_key) or nm_key in name_key or name_key in nm_key):
+            return data
+    return None
+
 def _safe_int(v):
     """Coerce values like '1,234', '  —  ', 'N/A', 123.0 to int or None."""
     if v is None:
@@ -6230,26 +6298,32 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # Prefer code, then id, then normalized name
         college_key = code_key or id_key or _name_key(raw_name)
 
-        state_val_raw = str(r.get(state_col)).strip() if state_col else ""
-        state_canon = _canon_state(state_val_raw) if state_val_raw else None
-        state_norm_raw = _norm_state_name(state_val_raw) if state_val_raw else ""
-        state_val = state_val_raw or (state_canon or "—")
-        state_norm_display = state_norm_raw or _norm_state_name(state_val)
+        
         ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
         seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
         
         if enforce_state_quota:
-            state_matches = (state_canon == domicile) if state_canon else False
-            norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
-            name_matches = domicile in name_states
-            if name_states and not name_matches:
-                continue
-            if not (state_matches or norm_matches or name_matches):
+            state_val, row_states = _row_state_candidates(
+                r,
+                name_col=name_col,
+                state_col=state_col,
+                city_col=city_col,
+            )
+            state_val = str(state_val or "—")
+            state_norm_display = _norm_state_name(state_val)
+            if domicile not in row_states:
                 continue
             if "central" in ownership_val or "central" in seat_type_val:
                 continue
             if raw_name.lower().startswith("aiims"):
                 continue
+        else:
+            state_val_raw = str(r.get(state_col)).strip() if state_col else ""
+            state_canon = _canon_state(state_val_raw) if state_val_raw else None
+            state_norm_raw = _norm_state_name(state_val_raw) if state_val_raw else ""
+            state_val = state_val_raw or (state_canon or "—")
+            state_norm_display = state_norm_raw or _norm_state_name(state_val)
+            row_states = set()
                 
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
@@ -6275,12 +6349,22 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         nirf_val  = _safe_int(r.get(nirf_col)) if nirf_col else None
         fee_val   = _safe_int(r.get(fee_col))  if fee_col  else None
-        state_val = state_val_raw or (state_canon or "—")
-        state_norm_display = state_norm_raw or _norm_state_name(state_val)
+        if enforce_state_quota:
+            override_data = (
+                _state_quota_override_for(domicile, display_name)
+                or _state_quota_override_for(domicile, raw_name)
+            )
+            if override_data:
+                override_rank = override_data.get("close_rank")
+                if isinstance(override_rank, (int, float)):
+                    close_rank = int(override_rank)
+                    quota_used = "State"
+                    src = "state_override"
+                display_name = str(override_data.get("display_name") or display_name)
+                state_val = str(override_data.get("state") or state_val)
+                state_norm_display = _norm_state_name(state_val)
         if quota_ui == "State" and domicile_state_norm:
-            if name_states and domicile not in name_states:
-                continue
-            if state_norm_display != domicile_state_norm and domicile not in name_states:
+            if domicile not in row_states and state_norm_display != domicile_state_norm:
                 continue
         
         out.append({
@@ -6301,8 +6385,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
        
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
     if not out:
-        if air is not None and not enforce_state_quota:
-            return []
+        
         tmp: list[dict] = []
         for _, r in colleges_df.iterrows():
             raw_name_tmp = (str(r.get(name_col)).strip() if name_col else "") or ""
@@ -6312,7 +6395,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             state_norm_raw_tmp = _norm_state_name(state_raw_tmp) if state_raw_tmp else ""
             state_val = state_raw_tmp or (state_canon_tmp or "—")
             state_norm_display = state_norm_raw_tmp or _norm_state_name(state_val)
-            
+            display_name_tmp = raw_name_tmp or (str(r.get(name_col)).strip() if name_col else "Unknown college")
+
             ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
             seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
 
@@ -6351,11 +6435,27 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 cr_fb2 = _resolve_from_flat_lookup(keys_tmp, quota_ui, category)
                 if isinstance(cr_fb2, int):
                     close_rank_fb, quota_used_fb, src_fb = cr_fb2, quota_ui, "flat_lookup"
+
+            if enforce_state_quota and domicile:
+                override_data = (
+                    _state_quota_override_for(domicile, display_name_tmp)
+                    or _state_quota_override_for(domicile, raw_name_tmp)
+                )
+                if override_data:
+                    override_rank = override_data.get("close_rank")
+                    if isinstance(override_rank, (int, float)):
+                        close_rank_fb = int(override_rank)
+                        quota_used_fb = "State"
+                        src_fb = "state_override"
+                    display_name_tmp = str(override_data.get("display_name") or display_name_tmp)
+                    state_val = str(override_data.get("state") or state_val)
+                    state_norm_display = _norm_state_name(state_val)
+
             
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
-                "college_name": raw_name_tmp or (str(r.get(name_col)).strip() if name_col else "Unknown college"),
+                "college_name": display_name_tmp,
                 "state":        state_val,
                 "close_rank":   int(close_rank_fb) if isinstance(close_rank_fb, int) else None,
                 "category":     category,
@@ -6364,22 +6464,88 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 "score":        None,
                 "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
                 "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
-            })    
-            
+            })
+
+        if enforce_state_quota and domicile:
+            state_key = _norm_state_name(domicile)
+            present_keys = [_name_key(row.get("college_name")) for row in tmp]
+            for (ov_state, ov_name_key), data in _STATE_QUOTA_OVERRIDES.items():
+                if ov_state != state_key:
+                    continue
+                rank = data.get("close_rank")
+                display_name = data.get("display_name") or "Unknown college"
+                already_present = any(
+                    pk and ov_name_key and (
+                        pk == ov_name_key
+                        or pk.startswith(ov_name_key)
+                        or ov_name_key.startswith(pk)
+                        or pk in ov_name_key
+                        or ov_name_key in pk
+                    )
+                    for pk in present_keys
+                )
+                if already_present:
+                    for row in tmp:
+                        pk = _name_key(row.get("college_name"))
+                        if pk and ov_name_key and (
+                            pk == ov_name_key
+                            or pk.startswith(ov_name_key)
+                            or ov_name_key.startswith(pk)
+                            or pk in ov_name_key
+                            or ov_name_key in pk
+                        ) and row.get("close_rank") is None and isinstance(rank, (int, float)):
+                            row["close_rank"] = int(rank)
+                            row["quota"] = quota_ui
+                            row["source"] = "state_override"
+                    continue
+                tmp.append({
+                    "college_id":   None,
+                    "college_code": None,
+                    "college_name": display_name,
+                    "state":        domicile,
+                    "close_rank":   int(rank) if isinstance(rank, (int, float)) else None,
+                    "category":     category,
+                    "quota":        quota_ui,
+                    "source":       "state_override",
+                    "score":        None,
+                    "nirf_rank":    None,
+                    "total_fee":    None,
+                })
+        
+
+        
             tmp.sort(
             key=lambda row: (
                 row["nirf_rank"] if row["nirf_rank"] is not None else 10**9,
                 row["college_name"] or "",
             )
         )
-        return tmp[:30]
+        dedup_tmp: list[dict] = []
+        seen_tmp = set()
+        for row in tmp:
+            key = _name_key(row.get("college_name"))
+            if key in seen_tmp:
+                continue
+            seen_tmp.add(key)
+            dedup_tmp.append(row)
+            if len(dedup_tmp) >= 30:
+                break
+        return dedup_tmp
 
         out.sort(key=lambda x: (
             x["close_rank"],
             x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
             x["college_name"] or ""
         ))
-        return out
+        dedup_out: list[dict] = []
+    seen_out = set()
+    for row in out:
+        key = _name_key(row.get("college_name"))
+        if key in seen_out:
+            continue
+        seen_out.add(key)
+        dedup_out.append(row)
+    return dedup_out
 
 # Final cutoffs we read from your “Cutoffs” sheet
 
