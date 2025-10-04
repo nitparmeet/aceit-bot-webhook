@@ -6236,30 +6236,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                     return original
         return None
 
-    def _resolve_from_flat_lookup(keys: list[str], quota: str, cat: str) -> int | None:
-        """Try exact (key, quota, cat); then same key with any quota only if quota=='Any'."""
-        if not cutoff_lookup:
-            return None
-        q = _canon_quota(quota)
-        cat_aliases = _cat_aliases(cat)
-
-        # 1) exact quota + cat aliases
-        for k in keys:
-            for c in cat_aliases:
-                v = cutoff_lookup.get((k, q, _canon_cat(c)))
-                if isinstance(v, int):
-                    return v
-
-        # 2) Only if user picked Any: same key, any quota + cat aliases
-        if q == "Any":
-            for k in keys:
-                for (kk, qq, cc), v in cutoff_lookup.items():
-                    if kk == k and _canon_cat(cc) in cat_aliases and isinstance(v, int):
-                        return v
-
-        # 3) If still nothing: give up (no “any quota any cat” leak)
-        return None
-
+    
     # ---- columns ----
     cols = list(map(str, colleges_df.columns))
     name_col = _pick_col_local(cols, "College Name", "college_name", "name", "institute_name")
@@ -6280,6 +6257,49 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     domicile  = _canon_state(user.get("domicile_state"))
     domicile_state_norm = _norm_state_name(domicile) if domicile else ""
     enforce_state_quota = quota_ui == "State" and domicile is not None
+
+    flat_lookup: dict[tuple[str, str, str], int] = {}
+    if isinstance(cutoff_lookup, dict) and cutoff_lookup:
+        flat_lookup = cutoff_lookup
+    else:
+        flat_lookup = _ensure_cutoff_lookup(round_key)
+
+    def _resolve_from_flat_lookup(keys: list[str], quota: str, cat: str) -> int | None:
+        """Try exact (key, quota, cat); then same key with any quota only if quota=='Any'."""
+        if not flat_lookup:
+            return None
+        q = _canon_quota(quota)
+        cat_aliases = _cat_aliases(cat)
+
+        # 1) exact quota + cat aliases
+        for k in keys:
+            if not k:
+                continue
+            for c in cat_aliases:
+                v = flat_lookup.get((k, q, _canon_cat(c)))
+                if isinstance(v, int):
+                    return v
+
+        # 2) Only if user picked Any: same key, any quota + cat aliases
+        if q == "Any":
+            for k in keys:
+                if not k:
+                    continue
+                for (kk, qq, cc), v in flat_lookup.items():
+                    if kk == k and _canon_cat(cc) in cat_aliases and isinstance(v, int):
+                        return v
+
+        # 2b) For non-AIQ quotas, allow fallback to AIQ entries when specific quota data missing
+        if q != "AIQ":
+            for k in keys:
+                if not k:
+                    continue
+                for c in cat_aliases:
+                    v = flat_lookup.get((k, "AIQ", _canon_cat(c)))
+                    if isinstance(v, int):
+                        return v
+
+        return None
     
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
@@ -6516,8 +6536,9 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         
             tmp.sort(
             key=lambda row: (
-                row["nirf_rank"] if row["nirf_rank"] is not None else 10**9,
-                row["college_name"] or "",
+                row["close_rank"] if isinstance(row.get("close_rank"), int) else 10**9,
+                row["nirf_rank"] if row.get("nirf_rank") is not None else 10**9,
+                row.get("college_name") or "",
             )
         )
         dedup_tmp: list[dict] = []
@@ -6545,9 +6566,40 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             continue
         seen_out.add(key)
         dedup_out.append(row)
+
+    dedup_out.sort(
+        key=lambda row: (
+            row["close_rank"] if isinstance(row.get("close_rank"), int) else 10**9,
+            row["nirf_rank"] if row.get("nirf_rank") is not None else 10**9,
+            row.get("college_name") or "",
+        )
+    )
     return dedup_out
 
 # Final cutoffs we read from your “Cutoffs” sheet
+
+def _ensure_cutoff_lookup(round_key: str = "2025_R1") -> dict[tuple[str, str, str], int]:
+    """Lazily load the flat cutoff lookup if it isn't in memory."""
+    global CUTOFF_LOOKUP
+    if isinstance(CUTOFF_LOOKUP, dict) and CUTOFF_LOOKUP:
+        return CUTOFF_LOOKUP
+    try:
+        CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
+            path=EXCEL_PATH,
+            sheet="Cutoffs",
+            round_tag=round_key,
+            require_quota=None,
+            require_course_contains="MBBS",
+            require_category_set=("General", "EWS", "OBC", "SC", "ST"),
+        ) or {}
+        if not isinstance(CUTOFF_LOOKUP, dict):
+            CUTOFF_LOOKUP = dict(CUTOFF_LOOKUP or {})
+        log.info("[cutoffs] lookup ready: %d entries (round=%s)", len(CUTOFF_LOOKUP), round_key)
+    except Exception:
+        log.exception("[cutoffs] failed to load strict lookup")
+        CUTOFF_LOOKUP = {}
+    return CUTOFF_LOOKUP
+    
 
 async def cutdiag(update, context):
     user = context.user_data
