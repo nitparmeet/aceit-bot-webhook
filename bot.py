@@ -6404,6 +6404,25 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             
        
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
+    def _dedupe_and_sort(rows: list[dict]) -> list[dict]:
+        seen: set[str] = set()
+        deduped: list[dict] = []
+        for row in rows:
+            key = _name_key(row.get("college_name"))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(row)
+        deduped.sort(
+            key=lambda row: (
+                row["close_rank"] if isinstance(row.get("close_rank"), int) else 10**9,
+                row["nirf_rank"] if row.get("nirf_rank") is not None else 10**9,
+                row.get("college_name") or "",
+            )
+        )
+        return deduped
+    
+    
     if not out:
         
         tmp: list[dict] = []
@@ -6541,40 +6560,16 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 row.get("college_name") or "",
             )
         )
-        dedup_tmp: list[dict] = []
-        seen_tmp = set()
-        for row in tmp:
-            key = _name_key(row.get("college_name"))
-            if key in seen_tmp:
-                continue
-            seen_tmp.add(key)
-            dedup_tmp.append(row)
-            if len(dedup_tmp) >= 30:
-                break
-        return dedup_tmp
+        return _dedupe_and_sort(tmp)[:30]
 
-        out.sort(key=lambda x: (
-            x["close_rank"],
-            x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
-            x["college_name"] or ""
-        ))
-        dedup_out: list[dict] = []
-    seen_out = set()
-    for row in out:
-        key = _name_key(row.get("college_name"))
-        if key in seen_out:
-            continue
-        seen_out.add(key)
-        dedup_out.append(row)
-
-    dedup_out.sort(
+    out.sort(
         key=lambda row: (
             row["close_rank"] if isinstance(row.get("close_rank"), int) else 10**9,
             row["nirf_rank"] if row.get("nirf_rank") is not None else 10**9,
             row.get("college_name") or "",
         )
     )
-    return dedup_out
+    return _dedupe_and_sort(out)
 
 # Final cutoffs we read from your “Cutoffs” sheet
 
