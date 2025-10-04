@@ -28,6 +28,9 @@ from dotenv import load_dotenv
 from unidecode import unidecode
 from telegram import Update
 from collections import Counter
+from io import BytesIO
+
+from db import fetch_usage_metrics
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 _HANDLERS_ATTACHED = False
@@ -532,6 +535,7 @@ def _state_quota_from_cutoffs(round_key: str,
         close_rank = int(row["ClosingRank"])
         state_val = row.get(state_col) or (meta.get("State") if meta else None) or dom_canon
         nirf_val = meta.get("nirf_rank_medical_latest") if meta else None
+        
         def _pick_fee(*sources):
             for src in sources:
                 if src is None:
@@ -1417,6 +1421,42 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
     fee_ln = f"Total Fee { _fmt_money(fee) }"
     return "\n".join([header, cr_ln, fee_ln])
 
+def _render_usage_chart(daily: List[Dict[str, Any]]):
+    if not daily:
+        return None
+
+    import matplotlib.pyplot as plt
+
+    x_labels = [d["day"].strftime("%b %d") if hasattr(d["day"], "strftime") else str(d["day"]) for d in daily]
+    requests = [d.get("requests", 0) for d in daily]
+    dau = [d.get("dau", 0) for d in daily]
+    x = list(range(len(daily)))
+
+    fig, ax1 = plt.subplots(figsize=(8, 4.5))
+    bars = ax1.bar(x, requests, color="#4F81BD", alpha=0.75, label="Requests")
+    ax1.set_ylabel("Requests")
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(x_labels, rotation=45, ha="right")
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, dau, color="#C0504D", marker="o", linewidth=2, label="DAU")
+    ax2.set_ylabel("Active users")
+
+    lines, labels = [], []
+    for ax in (ax1, ax2):
+        lns, lbls = ax.get_legend_handles_labels()
+        lines += lns
+        labels += lbls
+    ax1.legend(lines, labels, loc="upper left")
+    ax1.set_title("Bot usage (last {} days)".format(len(daily)))
+    fig.tight_layout()
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+    
 def _deemed_only(rows):
     out = []
     for r in rows:
@@ -3430,6 +3470,48 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Choose an option:",
         reply_markup=main_menu_keyboard()
     )
+
+async def show_bot_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tgt = _target(update)
+    if tgt is None:
+        return
+
+    try:
+        metrics = await fetch_usage_metrics(days=14)
+    except Exception:
+        log.exception("analytics fetch failed")
+        await tgt.reply_text("Couldn't fetch analytics right now. Please try later.")
+        return
+
+    total_users = metrics.get("total_users", 0)
+    total_requests = metrics.get("total_requests", 0)
+    active_today = metrics.get("active_today", 0)
+    daily = metrics.get("daily", [])
+
+    lines = [
+        "📈 *Bot Analytics*",
+        f"• Total users: {total_users:,}",
+        f"• Total requests: {total_requests:,}",
+        f"• Active today: {active_today:,}",
+        f"• Window: last {max(1, len(daily))} day(s)",
+    ]
+
+    await tgt.reply_text("\n".join(lines), parse_mode="Markdown")
+
+    if not daily:
+        return
+
+    try:
+        chart_buf = await asyncio.to_thread(_render_usage_chart, daily)
+    except Exception:
+        log.exception("analytics chart render failed")
+        chart_buf = None
+
+    if chart_buf:
+        try:
+            await tgt.reply_photo(photo=chart_buf, caption="Usage trend (requests vs DAU)")
+        except Exception:
+            log.exception("sending analytics chart failed")
 
 # ========================= Excel helpers & loaders =========================
 def _norm_hdr(s: str) -> str:
@@ -6784,6 +6866,7 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("domicile_state", None)
         context.user_data.pop("pending_predict_summary", None)
         return await _finish_predict_now(update, context)
+        
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Type your *domicile state* (e.g., Delhi, Uttar Pradesh) or tap *Skip*.",
@@ -7713,7 +7796,7 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    
+    _add(CommandHandler("stats", show_bot_stats), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
