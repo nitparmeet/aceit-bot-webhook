@@ -6218,7 +6218,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
         raw_name = (str(r.get(name_col)) if name_col else "") or ""
         raw_name = raw_name.strip()
-
+        name_states = _states_in_text(raw_name)
+        
         display_name = (
             (COLLEGE_NAME_BY_CODE.get(code_key) if code_key else None)
             or (COLLEGE_NAME_BY_ID.get(id_key) if id_key else None)
@@ -6229,22 +6230,22 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # Prefer code, then id, then normalized name
         college_key = code_key or id_key or _name_key(raw_name)
 
-        state_val, row_states = _row_state_candidates(
-            r,
-            name_col=name_col,
-            state_col=state_col,
-            city_col=city_col,
-        )
-        state_val = str(state_val or "—")
-        state_norm_display = _norm_state_name(state_val)
-
+        state_val_raw = str(r.get(state_col)).strip() if state_col else ""
+        state_canon = _canon_state(state_val_raw) if state_val_raw else None
+        state_norm_raw = _norm_state_name(state_val_raw) if state_val_raw else ""
+        state_val = state_val_raw or (state_canon or "—")
+        state_norm_display = state_norm_raw or _norm_state_name(state_val)
         ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
         seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
-
-        if enforce_state_quota and domicile and domicile not in row_states:
-            continue
         
         if enforce_state_quota:
+            state_matches = (state_canon == domicile) if state_canon else False
+            norm_matches = bool(domicile_state_norm and state_norm_raw == domicile_state_norm)
+            name_matches = domicile in name_states
+            if name_states and not name_matches:
+                continue
+            if not (state_matches or norm_matches or name_matches):
+                continue
             if "central" in ownership_val or "central" in seat_type_val:
                 continue
             if raw_name.lower().startswith("aiims"):
@@ -6277,9 +6278,11 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         state_val = state_val_raw or (state_canon or "—")
         state_norm_display = state_norm_raw or _norm_state_name(state_val)
         if quota_ui == "State" and domicile_state_norm:
-            if domicile not in row_states and state_norm_display != domicile_state_norm:
+            if name_states and domicile not in name_states:
                 continue
-                
+            if state_norm_display != domicile_state_norm and domicile not in name_states:
+                continue
+        
         out.append({
             "college_id":   (str(r.get(id_col)) if id_col else None),
             "college_code": (str(r.get(code_col)) if code_col else None),
@@ -6302,36 +6305,62 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             return []
         tmp: list[dict] = []
         for _, r in colleges_df.iterrows():
-            state_val, row_states = _row_state_candidates(
-                r,
-                name_col=name_col,
-                state_col=state_col,
-                city_col=city_col,
-            )
-            state_val = str(state_val or "—")
-            state_norm_display = _norm_state_name(state_val)
+            raw_name_tmp = (str(r.get(name_col)).strip() if name_col else "") or ""
+            name_states_tmp = _states_in_text(raw_name_tmp)
+            state_raw_tmp = str(r.get(state_col)).strip() if state_col else ""
+            state_canon_tmp = _canon_state(state_raw_tmp) if state_raw_tmp else None
+            state_norm_raw_tmp = _norm_state_name(state_raw_tmp) if state_raw_tmp else ""
+            state_val = state_raw_tmp or (state_canon_tmp or "—")
+            state_norm_display = state_norm_raw_tmp or _norm_state_name(state_val)
             
             ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
             seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
 
             if enforce_state_quota:
-                if domicile not in row_states and state_norm_display != domicile_state_norm:
+                state_matches = (state_canon_tmp == domicile) if state_canon_tmp else False
+                norm_matches = bool(domicile_state_norm and state_norm_raw_tmp == domicile_state_norm)
+                name_matches = domicile in name_states_tmp
+                if name_states_tmp and not name_matches:
+                    continue
+                if not (state_matches or norm_matches or name_matches):
                     continue
                 if "central" in ownership_val or "central" in seat_type_val:
                     continue
-                raw_name_tmp = (str(r.get(name_col)).strip() if name_col else "").lower()
-                if raw_name_tmp.startswith("aiims"):
+                if raw_name_tmp.lower().startswith("aiims"):
                     continue
+
+            code_key_tmp = _norm_key(r.get(code_col)) if code_col else ""
+            id_key_tmp   = _norm_key(r.get(id_col))   if id_col   else ""
+            college_key_tmp = code_key_tmp or id_key_tmp or _name_key(raw_name_tmp)
+
+            close_rank_fb = None
+            quota_used_fb = None
+            src_fb = "fallback"
+
+            if college_key_tmp:
+                close_rank_fb, quota_used_fb, src_fb = get_closing_rank(
+                    college_key=college_key_tmp,
+                    round_key=round_key,
+                    quota=quota_ui,
+                    category=category,
+                    air=None,
+                )
+
+            if close_rank_fb is None and college_key_tmp:
+                keys_tmp = [k for k in (code_key_tmp, id_key_tmp, _name_key(raw_name_tmp)) if k]
+                cr_fb2 = _resolve_from_flat_lookup(keys_tmp, quota_ui, category)
+                if isinstance(cr_fb2, int):
+                    close_rank_fb, quota_used_fb, src_fb = cr_fb2, quota_ui, "flat_lookup"
             
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
-                "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
+                "college_name": raw_name_tmp or (str(r.get(name_col)).strip() if name_col else "Unknown college"),
                 "state":        state_val,
-                "close_rank":   None,
+                "close_rank":   int(close_rank_fb) if isinstance(close_rank_fb, int) else None,
                 "category":     category,
-                "quota":        quota_ui,
-                "source":       "fallback",
+                "quota":        quota_used_fb or quota_ui,
+                "source":       src_fb,
                 "score":        None,
                 "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
                 "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
