@@ -410,69 +410,6 @@ def _canon_state(value: str | None) -> Optional[str]:
             return canon
     return key.title()
 
-def _states_in_text(value: str | None) -> set[str]:
-    """Extract canonical state hits embedded in free-form text (e.g., college names)."""
-    if not value:
-        return set()
-    norm = _state_norm(value)
-    if not norm:
-        return set()
-    hits: set[str] = set()
-    for alias_key, canon in _STATE_ALIAS_LOOKUP.items():
-        if not alias_key:
-            continue
-        if len(alias_key) < 3 and " " not in alias_key:
-            continue
-        if alias_key in norm:
-            hits.add(canon)
-    return hits
-def _row_state_candidates(
-    row: dict | pd.Series,
-    *,
-    name_col: str | None,
-    state_col: str | None,
-    city_col: str | None,
-) -> tuple[str | None, set[str]]:
-    """
-    Returns (display_state, candidate_states).
-    - start with the canonical state column value
-    - merge any states mentioned in name/city text
-    - if textual evidence contradicts the column, trust the text
-    """
-    raw_state = str(row.get(state_col)).strip() if state_col and row.get(state_col) is not None else ""
-    canon_state = _canon_state(raw_state) if raw_state else None
-
-    text_states: set[str] = set()
-    if name_col:
-        text_states |= _states_in_text(str(row.get(name_col) or ""))
-    if city_col:
-        text_states |= _states_in_text(str(row.get(city_col) or ""))
-
-    candidates: set[str] = set()
-    if canon_state:
-        candidates.add(canon_state)
-    candidates |= text_states
-
-    if text_states and canon_state and canon_state not in text_states:
-        # column disagrees with stronger textual evidence → trust text
-        candidates = set(text_states)
-
-    if not candidates and canon_state:
-        candidates = {canon_state}
-
-    display_state = None
-    if canon_state and (not text_states or canon_state in text_states):
-        display_state = canon_state
-    elif text_states:
-        display_state = sorted(text_states)[0]
-    elif canon_state:
-        display_state = canon_state
-    elif raw_state:
-        display_state = raw_state
-
-    return display_state, {s for s in candidates if s}
-
-
 
 def _safe_str(v, default: str = "") -> str:
     try:
@@ -1637,74 +1574,6 @@ def _name_key(x: str | None) -> str:
     """Normalize display names for fuzzy matching (lowercase alnum)."""
     return re.sub(r"[^a-z0-9]+", "", (str(x).strip().lower() if x else ""))
 
-
-_STATE_QUOTA_OVERRIDES: dict[tuple[str, str], dict[str, object]] = {
-    (_norm_state_name("Punjab"), _name_key("Government Medical College, Patiala")): {
-        "display_name": "Government Medical College, Patiala",
-        "close_rank": 9801,
-    },
-    (_norm_state_name("Punjab"), _name_key("Dayanand Medical College and Hospital, Ludhiana")): {
-        "display_name": "Dayanand Medical College and Hospital, Ludhiana",
-        "close_rank": 10759,
-    },
-    (_norm_state_name("Punjab"), _name_key("Dr. B.R. Ambedkar State Institute of Medical Sciences, Mohali")): {
-        "display_name": "Dr. B.R. Ambedkar State Institute of Medical Sciences, Mohali",
-        "close_rank": 19662,
-    },
-    (_norm_state_name("Punjab"), _name_key("Dr. B.R. Ambedkar State Institute of Medical Sciences , Sector 56 Mohali, Punjab, 160055")): {
-        "display_name": "Dr. B.R. Ambedkar State Institute of Medical Sciences, Mohali",
-        "close_rank": 19662,
-    },
-    (_norm_state_name("Punjab"), _name_key("Government Medical College, Amritsar")): {
-        "display_name": "Government Medical College, Amritsar",
-        "close_rank": 20404,
-    },
-    (_norm_state_name("Punjab"), _name_key("Guru Gobind Singh Medical College, Faridkot")): {
-        "display_name": "Guru Gobind Singh Medical College, Faridkot",
-        "close_rank": 21834,
-    },
-    (_norm_state_name("Punjab"), _name_key("GURU GOVIND SINGH MED COLL,FARIDKOT, Sadiq Road, Faridkot., Punjab, 151203")): {
-        "display_name": "Guru Gobind Singh Medical College, Faridkot",
-        "close_rank": 21834,
-    },
-    (_norm_state_name("Punjab"), _name_key("Christian Medical College, Ludhiana")): {
-        "display_name": "Christian Medical College, Ludhiana",
-        "close_rank": 29705,
-    },
-    (_norm_state_name("Punjab"), _name_key("Punjab Institute of Medical Sciences, Jalandhar")): {
-        "display_name": "Punjab Institute of Medical Sciences, Jalandhar",
-        "close_rank": 33545,
-    },
-    (_norm_state_name("Punjab"), _name_key("Gian Sagar Medical College and Hospital, Banur")): {
-        "display_name": "Gian Sagar Medical College and Hospital, Banur",
-        "close_rank": 40733,
-    },
-    (_norm_state_name("Punjab"), _name_key("RIMT Medical College and Hospital, Mandi Gobindgarh")): {
-        "display_name": "RIMT Medical College and Hospital, Mandi Gobindgarh",
-        "close_rank": 42180,
-    },
-    (_norm_state_name("Punjab"), _name_key("Adesh Institute of Medical Sciences and Research, Bathinda")): {
-        "display_name": "Adesh Institute of Medical Sciences and Research, Bathinda",
-        "close_rank": 85595,
-    },
-}
-
-
-def _state_quota_override_for(state: str | None, name: str | None) -> dict[str, object] | None:
-    state_key = _norm_state_name(state)
-    if not state_key:
-        return None
-    name_key = _name_key(name)
-    data = _STATE_QUOTA_OVERRIDES.get((state_key, name_key))
-    if data:
-        return data
-    for (st_key, nm_key), data in _STATE_QUOTA_OVERRIDES.items():
-        if st_key != state_key:
-            continue
-        if nm_key and (name_key.startswith(nm_key) or nm_key.startswith(name_key) or nm_key in name_key or name_key in nm_key):
-            return data
-    return None
-
 def _safe_int(v):
     """Coerce values like '1,234', '  —  ', 'N/A', 123.0 to int or None."""
     if v is None:
@@ -1771,7 +1640,7 @@ def _canon_quota(q: str | None) -> str:
 
     if s in {"AIQ", "ALL INDIA", "ALLINDIA", "15%", "15 PERCENT"}:
         return "AIQ"
-    if ("STATE" in s) or s in {"STATE", "SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}:
+    if s in {"STATE", "SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}:
         return "State"
     # Central / GOI bucket
     if s in {"GOI", "CENTRAL", "DGHS", "CU", "CENTRAL UNIVERSITY", "CENTRAL UNIV"}:
@@ -6236,18 +6105,38 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                     return original
         return None
 
-    
+    def _resolve_from_flat_lookup(keys: list[str], quota: str, cat: str) -> int | None:
+        """Try exact (key, quota, cat); then same key with any quota only if quota=='Any'."""
+        if not cutoff_lookup:
+            return None
+        q = _canon_quota(quota)
+        cat_aliases = _cat_aliases(cat)
+
+        # 1) exact quota + cat aliases
+        for k in keys:
+            for c in cat_aliases:
+                v = cutoff_lookup.get((k, q, _canon_cat(c)))
+                if isinstance(v, int):
+                    return v
+
+        # 2) Only if user picked Any: same key, any quota + cat aliases
+        if q == "Any":
+            for k in keys:
+                for (kk, qq, cc), v in cutoff_lookup.items():
+                    if kk == k and _canon_cat(cc) in cat_aliases and isinstance(v, int):
+                        return v
+
+        # 3) If still nothing: give up (no “any quota any cat” leak)
+        return None
+
     # ---- columns ----
     cols = list(map(str, colleges_df.columns))
     name_col = _pick_col_local(cols, "College Name", "college_name", "name", "institute_name")
     state_col = _pick_col_local(cols, "state", "State")
-    city_col  = _pick_col_local(cols, "city", "City")
-    code_col      = _pick_col_local(cols, "college_code", "College Code", "code", "institute_code")
-    id_col        = _pick_col_local(cols, "college_id", "College ID", "id")
-    nirf_col      = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
-    fee_col       = _pick_col_local(cols, "total_fee", "Fee")
-    ownership_col = _pick_col_local(cols, "ownership", "Ownership")
-    seat_type_col = _pick_col_local(cols, "seat_type", "Seat Type")
+    code_col  = _pick_col_local(cols, "college_code", "College Code", "code", "institute_code")
+    id_col    = _pick_col_local(cols, "college_id", "College ID", "id")
+    nirf_col  = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
+    fee_col   = _pick_col_local(cols, "total_fee", "Fee")
 
     # ---- user prefs ----
     quota_ui  = _canon_quota(user.get("quota") or user.get("pref_quota") or "AIQ")
@@ -6255,59 +6144,14 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     air       = _safe_int(user.get("rank_air") or user.get("air"))
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
     domicile  = _canon_state(user.get("domicile_state"))
-    domicile_state_norm = _norm_state_name(domicile) if domicile else ""
     enforce_state_quota = quota_ui == "State" and domicile is not None
-
-    flat_lookup: dict[tuple[str, str, str], int] = {}
-    if isinstance(cutoff_lookup, dict) and cutoff_lookup:
-        flat_lookup = cutoff_lookup
-    else:
-        flat_lookup = _ensure_cutoff_lookup(round_key)
-
-    def _resolve_from_flat_lookup(keys: list[str], quota: str, cat: str) -> int | None:
-        """Try exact (key, quota, cat); then same key with any quota only if quota=='Any'."""
-        if not flat_lookup:
-            return None
-        q = _canon_quota(quota)
-        cat_aliases = _cat_aliases(cat)
-
-        # 1) exact quota + cat aliases
-        for k in keys:
-            if not k:
-                continue
-            for c in cat_aliases:
-                v = flat_lookup.get((k, q, _canon_cat(c)))
-                if isinstance(v, int):
-                    return v
-
-        # 2) Only if user picked Any: same key, any quota + cat aliases
-        if q == "Any":
-            for k in keys:
-                if not k:
-                    continue
-                for (kk, qq, cc), v in flat_lookup.items():
-                    if kk == k and _canon_cat(cc) in cat_aliases and isinstance(v, int):
-                        return v
-
-        # 2b) For non-AIQ quotas, allow fallback to AIQ entries when specific quota data missing
-        if q != "AIQ":
-            for k in keys:
-                if not k:
-                    continue
-                for c in cat_aliases:
-                    v = flat_lookup.get((k, "AIQ", _canon_cat(c)))
-                    if isinstance(v, int):
-                        return v
-
-        return None
     
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
         raw_name = (str(r.get(name_col)) if name_col else "") or ""
         raw_name = raw_name.strip()
-        name_states = _states_in_text(raw_name)
-        
+
         display_name = (
             (COLLEGE_NAME_BY_CODE.get(code_key) if code_key else None)
             or (COLLEGE_NAME_BY_ID.get(id_key) if id_key else None)
@@ -6318,33 +6162,14 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         # Prefer code, then id, then normalized name
         college_key = code_key or id_key or _name_key(raw_name)
 
-        
-        ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
-        seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
-        
+        state_val_raw = str(r.get(state_col)).strip() if state_col else ""
+        state_canon = _canon_state(state_val_raw) if state_val_raw else None
+
         if enforce_state_quota:
-            state_val, row_states = _row_state_candidates(
-                r,
-                name_col=name_col,
-                state_col=state_col,
-                city_col=city_col,
-            )
-            state_val = str(state_val or "—")
-            state_norm_display = _norm_state_name(state_val)
-            if domicile not in row_states:
+            if state_canon is None or state_canon != domicile:
                 continue
-            if "central" in ownership_val or "central" in seat_type_val:
-                continue
-            if raw_name.lower().startswith("aiims"):
-                continue
-        else:
-            state_val_raw = str(r.get(state_col)).strip() if state_col else ""
-            state_canon = _canon_state(state_val_raw) if state_val_raw else None
-            state_norm_raw = _norm_state_name(state_val_raw) if state_val_raw else ""
-            state_val = state_val_raw or (state_canon or "—")
-            state_norm_display = state_norm_raw or _norm_state_name(state_val)
-            row_states = set()
-                
+
+        
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
             college_key=college_key,
@@ -6369,24 +6194,13 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         nirf_val  = _safe_int(r.get(nirf_col)) if nirf_col else None
         fee_val   = _safe_int(r.get(fee_col))  if fee_col  else None
-        if enforce_state_quota:
-            override_data = (
-                _state_quota_override_for(domicile, display_name)
-                or _state_quota_override_for(domicile, raw_name)
-            )
-            if override_data:
-                override_rank = override_data.get("close_rank")
-                if isinstance(override_rank, (int, float)):
-                    close_rank = int(override_rank)
-                    quota_used = "State"
-                    src = "state_override"
-                display_name = str(override_data.get("display_name") or display_name)
-                state_val = str(override_data.get("state") or state_val)
-                state_norm_display = _norm_state_name(state_val)
-        if quota_ui == "State" and domicile_state_norm:
-            if domicile not in row_states and state_norm_display != domicile_state_norm:
+        state_val = state_val_raw or (state_canon or "—")
+        if quota_ui == "State":
+            if not domicile_state_norm:
                 continue
-        
+            if _norm_state_name(state_val) != domicile_state_norm:
+                continue
+                
         out.append({
             "college_id":   (str(r.get(id_col)) if id_col else None),
             "college_code": (str(r.get(code_col)) if code_col else None),
@@ -6400,201 +6214,48 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             "nirf_rank":    nirf_val,
             "total_fee":    fee_val,
         })
- 
-            
-       
+
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
-    def _dedupe_and_sort(rows: list[dict]) -> list[dict]:
-        seen: set[str] = set()
-        deduped: list[dict] = []
-        for row in rows:
-            key = _name_key(row.get("college_name"))
-            if key in seen:
-                continue
-            seen.add(key)
-            deduped.append(row)
-        deduped.sort(
-            key=lambda row: (
-                row["close_rank"] if isinstance(row.get("close_rank"), int) else 10**9,
-                row["nirf_rank"] if row.get("nirf_rank") is not None else 10**9,
-                row.get("college_name") or "",
-            )
-        )
-        return deduped
-    
-    
     if not out:
-        
-        tmp: list[dict] = []
+        if air is not None:
+            return []
+        # metadata-only fallback (kept for when AIR not provided)
+        tmp = []
         for _, r in colleges_df.iterrows():
-            raw_name_tmp = (str(r.get(name_col)).strip() if name_col else "") or ""
-            name_states_tmp = _states_in_text(raw_name_tmp)
-            state_raw_tmp = str(r.get(state_col)).strip() if state_col else ""
-            state_canon_tmp = _canon_state(state_raw_tmp) if state_raw_tmp else None
-            state_norm_raw_tmp = _norm_state_name(state_raw_tmp) if state_raw_tmp else ""
-            state_val = state_raw_tmp or (state_canon_tmp or "—")
-            state_norm_display = state_norm_raw_tmp or _norm_state_name(state_val)
-            display_name_tmp = raw_name_tmp or (str(r.get(name_col)).strip() if name_col else "Unknown college")
-
-            ownership_val = str(r.get(ownership_col) or "").strip().lower() if ownership_col else ""
-            seat_type_val = str(r.get(seat_type_col) or "").strip().lower() if seat_type_col else ""
-
-            if enforce_state_quota:
-                state_matches = (state_canon_tmp == domicile) if state_canon_tmp else False
-                norm_matches = bool(domicile_state_norm and state_norm_raw_tmp == domicile_state_norm)
-                name_matches = domicile in name_states_tmp
-                if name_states_tmp and not name_matches:
-                    continue
-                if not (state_matches or norm_matches or name_matches):
-                    continue
-                if "central" in ownership_val or "central" in seat_type_val:
-                    continue
-                if raw_name_tmp.lower().startswith("aiims"):
-                    continue
-
-            code_key_tmp = _norm_key(r.get(code_col)) if code_col else ""
-            id_key_tmp   = _norm_key(r.get(id_col))   if id_col   else ""
-            college_key_tmp = code_key_tmp or id_key_tmp or _name_key(raw_name_tmp)
-
-            close_rank_fb = None
-            quota_used_fb = None
-            src_fb = "fallback"
-
-            if college_key_tmp:
-                close_rank_fb, quota_used_fb, src_fb = get_closing_rank(
-                    college_key=college_key_tmp,
-                    round_key=round_key,
-                    quota=quota_ui,
-                    category=category,
-                    air=None,
-                )
-
-            if close_rank_fb is None and college_key_tmp:
-                keys_tmp = [k for k in (code_key_tmp, id_key_tmp, _name_key(raw_name_tmp)) if k]
-                cr_fb2 = _resolve_from_flat_lookup(keys_tmp, quota_ui, category)
-                if isinstance(cr_fb2, int):
-                    close_rank_fb, quota_used_fb, src_fb = cr_fb2, quota_ui, "flat_lookup"
-
-            if enforce_state_quota and domicile:
-                override_data = (
-                    _state_quota_override_for(domicile, display_name_tmp)
-                    or _state_quota_override_for(domicile, raw_name_tmp)
-                )
-                if override_data:
-                    override_rank = override_data.get("close_rank")
-                    if isinstance(override_rank, (int, float)):
-                        close_rank_fb = int(override_rank)
-                        quota_used_fb = "State"
-                        src_fb = "state_override"
-                    display_name_tmp = str(override_data.get("display_name") or display_name_tmp)
-                    state_val = str(override_data.get("state") or state_val)
-                    state_norm_display = _norm_state_name(state_val)
-
+            state_raw = str(r.get(state_col)).strip() if state_col else ""
+            state_norm = _canon_state(state_raw) if state_raw else None
+            if enforce_state_quota and (state_norm is None or state_norm != domicile):
+                continue
+            
+            
             
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
-                "college_name": display_name_tmp,
-                "state":        state_val,
-                "close_rank":   int(close_rank_fb) if isinstance(close_rank_fb, int) else None,
+                "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
+                "state":        state_raw or (state_norm or "—"),
+                "close_rank":   None,
                 "category":     category,
-                "quota":        quota_used_fb or quota_ui,
-                "source":       src_fb,
+                "quota":        quota_ui,
+                "source":       "fallback",
                 "score":        None,
                 "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
                 "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
             })
+        tmp.sort(key=lambda x: (
+            x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
+            x["college_name"] or ""
+        ))
+        return tmp[:30]
 
-        if enforce_state_quota and domicile:
-            state_key = _norm_state_name(domicile)
-            present_keys = [_name_key(row.get("college_name")) for row in tmp]
-            for (ov_state, ov_name_key), data in _STATE_QUOTA_OVERRIDES.items():
-                if ov_state != state_key:
-                    continue
-                rank = data.get("close_rank")
-                display_name = data.get("display_name") or "Unknown college"
-                already_present = any(
-                    pk and ov_name_key and (
-                        pk == ov_name_key
-                        or pk.startswith(ov_name_key)
-                        or ov_name_key.startswith(pk)
-                        or pk in ov_name_key
-                        or ov_name_key in pk
-                    )
-                    for pk in present_keys
-                )
-                if already_present:
-                    for row in tmp:
-                        pk = _name_key(row.get("college_name"))
-                        if pk and ov_name_key and (
-                            pk == ov_name_key
-                            or pk.startswith(ov_name_key)
-                            or ov_name_key.startswith(pk)
-                            or pk in ov_name_key
-                            or ov_name_key in pk
-                        ) and row.get("close_rank") is None and isinstance(rank, (int, float)):
-                            row["close_rank"] = int(rank)
-                            row["quota"] = quota_ui
-                            row["source"] = "state_override"
-                    continue
-                tmp.append({
-                    "college_id":   None,
-                    "college_code": None,
-                    "college_name": display_name,
-                    "state":        domicile,
-                    "close_rank":   int(rank) if isinstance(rank, (int, float)) else None,
-                    "category":     category,
-                    "quota":        quota_ui,
-                    "source":       "state_override",
-                    "score":        None,
-                    "nirf_rank":    None,
-                    "total_fee":    None,
-                })
-        
-
-        
-            tmp.sort(
-            key=lambda row: (
-                row["close_rank"] if isinstance(row.get("close_rank"), int) else 10**9,
-                row["nirf_rank"] if row.get("nirf_rank") is not None else 10**9,
-                row.get("college_name") or "",
-            )
-        )
-        return _dedupe_and_sort(tmp)[:30]
-
-    out.sort(
-        key=lambda row: (
-            row["close_rank"] if isinstance(row.get("close_rank"), int) else 10**9,
-            row["nirf_rank"] if row.get("nirf_rank") is not None else 10**9,
-            row.get("college_name") or "",
-        )
-    )
-    return _dedupe_and_sort(out)
+    out.sort(key=lambda x: (
+        x["close_rank"],
+        x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
+        x["college_name"] or ""
+    ))
+    return out
 
 # Final cutoffs we read from your “Cutoffs” sheet
-
-def _ensure_cutoff_lookup(round_key: str = "2025_R1") -> dict[tuple[str, str, str], int]:
-    """Lazily load the flat cutoff lookup if it isn't in memory."""
-    global CUTOFF_LOOKUP
-    if isinstance(CUTOFF_LOOKUP, dict) and CUTOFF_LOOKUP:
-        return CUTOFF_LOOKUP
-    try:
-        CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
-            path=EXCEL_PATH,
-            sheet="Cutoffs",
-            round_tag=round_key,
-            require_quota=None,
-            require_course_contains="MBBS",
-            require_category_set=("General", "EWS", "OBC", "SC", "ST"),
-        ) or {}
-        if not isinstance(CUTOFF_LOOKUP, dict):
-            CUTOFF_LOOKUP = dict(CUTOFF_LOOKUP or {})
-        log.info("[cutoffs] lookup ready: %d entries (round=%s)", len(CUTOFF_LOOKUP), round_key)
-    except Exception:
-        log.exception("[cutoffs] failed to load strict lookup")
-        CUTOFF_LOOKUP = {}
-    return CUTOFF_LOOKUP
-    
 
 async def cutdiag(update, context):
     user = context.user_data
