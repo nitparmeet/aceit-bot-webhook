@@ -7132,18 +7132,47 @@ try:
                                     row.setdefault("quota", quota)
                                     row.setdefault("category", category)
                                     rows.append(row)
-                # fallback: flat dict keyed by tuples {(code, quota, category): {...}}
+                
                 if not rows:
                     for key, val in lookup.items():
-                        if isinstance(key, tuple) and isinstance(val, dict):
-                            row = dict(val)
-                            if len(key) >= 1:
-                                row.setdefault("college_code", key[0])
-                            if len(key) >= 2:
-                                row.setdefault("quota", key[1])
-                            if len(key) >= 3:
-                                row.setdefault("category", key[2])
-                            rows.append(row)
+                        if not isinstance(key, tuple) or len(key) == 0:
+                            continue
+
+                        row: dict[str, Any] = {}
+
+                        ident = str(key[0]).strip()
+                        if ident:
+                            if _CODE_RE.match(ident):
+                                row["college_code"] = ident
+                            else:
+                                row["college_id"] = ident
+
+                        if len(key) >= 2 and key[1]:
+                            row["quota"] = key[1]
+                        if len(key) >= 3 and key[2]:
+                            row["category"] = key[2]
+
+                        if isinstance(val, dict):
+                            row.update({k: v for k, v in val.items() if k not in row})
+                            close_val = None
+                            for key_name in ("ClosingRank", "closing_rank", "closing", "rank", "close_rank"):
+                                if key_name in val and close_val is None:
+                                    close_val = _value_to_closing(val[key_name])
+                            if close_val is None:
+                                close_val = _value_to_closing(val)
+                        else:
+                            close_val = _value_to_closing(val)
+
+                        if close_val is None:
+                            continue
+
+                        row.setdefault("ClosingRank", close_val)
+
+                        # Provide a round so downstream filters do not drop rows.
+                        if "round_code" not in row:
+                            row["round_code"] = globals().get("ACTIVE_CUTOFF_ROUND_DEFAULT", "2025_R1")
+
+                        rows.append(row)
             return pd.DataFrame(rows)
 
         def build_cutoffs_df(lookup, colleges) -> pd.DataFrame:
