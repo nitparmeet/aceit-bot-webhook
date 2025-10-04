@@ -434,6 +434,121 @@ def _norm_state_name(x: str | None) -> str:
     s = re.sub(r"[^a-z]", "", s)
     return s
 
+def _state_quota_from_cutoffs(round_key: str,
+                              domicile: str | None,
+                              category: str,
+                              air: Optional[int]) -> list[dict]:
+    """Return State quota rows for the given domicile/category pulled directly from the Cutoffs sheet."""
+    if domicile is None:
+        return []
+
+    df = _safe_df(globals().get("CUTOFFS_DF"))
+    if df.empty:
+        return []
+
+    dom_canon = _canon_state(domicile)
+    if not dom_canon:
+        return []
+
+    work = df.copy()
+
+    def _col(*cands: str) -> Optional[str]:
+        for c in cands:
+            if c in work.columns:
+                return c
+        return None
+
+    quota_col  = _col("quota", "Quota", "Allotment", "Allotment Category")
+    cat_col    = _col("category", "Category", "Seat Category", "Cat")
+    state_col  = _col("state", "State")
+    close_col  = _col("ClosingRank", "closing", "Closing Rank", "Close Rank", "closing_rank", "rank")
+    round_col  = _col("round_code", "Round")
+    course_col = _col("Course", "course")
+    code_col   = _col("college_code", "College Code", "code")
+    id_col     = _col("college_id", "College ID", "id")
+    name_col   = _col("college_name", "College Name", "Institute Name", "Name")
+
+    if not (quota_col and cat_col and state_col and close_col):
+        return []
+
+    if round_col:
+        target_round = str(round_key or "").upper()
+        series = work[round_col].astype(str).str.upper()
+        mask = series == target_round
+        if not mask.any() and round_col == "Round":
+            mask = series.str.contains(target_round, na=False)
+        work = work[mask]
+        if work.empty:
+            return []
+
+    work = work.assign(
+        __quota=work[quota_col].astype(str).apply(_canon_quota),
+        __cat=work[cat_col].astype(str).apply(_canon_cat),
+        __state=work[state_col].astype(str).apply(_canon_state),
+    )
+
+    cat_key = _canon_cat(category)
+    work = work[(work["__quota"] == "State") & (work["__state"] == dom_canon) & (work["__cat"] == cat_key)]
+    if work.empty:
+        return []
+
+    if course_col:
+        work = work[work[course_col].astype(str).str.contains("MBBS", case=False, na=False)]
+        if work.empty:
+            return []
+
+    work = work.copy()
+    work["ClosingRank"] = pd.to_numeric(work[close_col], errors="coerce")
+    work = work.dropna(subset=["ClosingRank"])
+    if work.empty:
+        return []
+
+    if air is not None:
+        work = work[work["ClosingRank"] >= int(air)]
+        if work.empty:
+            return []
+
+    def _meta_lookup(*keys: str) -> Optional[dict]:
+        for key in keys:
+            if not key:
+                continue
+            mk = _norm_meta_key(key)
+            meta = COLLEGE_META_INDEX.get(mk)
+            if meta:
+                return meta
+        return None
+
+    results: list[dict] = []
+    for _, row in work.sort_values("ClosingRank").iterrows():
+        code = row.get(code_col)
+        cid  = row.get(id_col)
+        raw_name = str(row.get(name_col) or "").strip()
+
+        meta = _meta_lookup(code, cid, raw_name)
+        display_name = raw_name or (str(meta.get("College Name") or "") if meta else "")
+        if not display_name:
+            display_name = "Unknown college"
+
+        close_rank = int(row["ClosingRank"])
+        state_val = row.get(state_col) or (meta.get("State") if meta else None) or dom_canon
+        nirf_val = meta.get("nirf_rank_medical_latest") if meta else None
+        fee_val  = meta.get("total_fee") if meta else None
+
+        results.append({
+            "college_id":   str(cid).strip() or None if cid not in (None, "") else None,
+            "college_code": str(code).strip() or None if code not in (None, "") else None,
+            "college_name": display_name,
+            "state":        state_val,
+            "close_rank":   close_rank,
+            "category":     cat_key,
+            "quota":        "State",
+            "source":       str(row.get("Source") or "cutoffs_state"),
+            "score":        None,
+            "nirf_rank":    _safe_int(nirf_val) if nirf_val is not None else None,
+            "total_fee":    _safe_int(fee_val) if fee_val is not None else None,
+        })
+
+    return results
 
 
 def _variants_for_quota(q: str | None) -> set[str]:
@@ -474,6 +589,7 @@ def _value_to_closing(v):
             if k in v and v[k] not in (None,"","—","-","NA"):
                 return _value_to_closing(v[k])
     return None
+    
 def _closing_rank_for_identifiers(identifiers: list[str],
                                   round_code: str | None,
                                   quota: str | None,
@@ -6145,6 +6261,11 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
     domicile  = _canon_state(user.get("domicile_state"))
     enforce_state_quota = quota_ui == "State" and domicile is not None
+    if enforce_state_quota:
+        state_results = _state_quota_from_cutoffs(round_key, domicile, category, air)
+        if state_results:
+            return state_results[:30]
+        return []
     
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
