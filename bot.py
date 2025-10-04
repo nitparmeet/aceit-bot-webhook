@@ -3980,9 +3980,9 @@ async def show_menu(
         "📋 *Menu Options*\n\n"
         "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
         "Get quick AI notes for shortlisted colleges.\n\n"
-        "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
-        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
-        "🔥 *Josh Zone (AI Mentor Stories)* — Senior mentor style Hinglish kahaniyan jo motivation aur routine hacks share karti hain.\n\n"
+        "📈 *Mock Test Rank → College* — Check your NEET style rank that match your mock test rank and predict colleges that you might get with that rank.\n\n"
+        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test) with instant asnhwers and why the correct anser is right and why incorrect asnwers are not, and track streaks.\n\n"
+        "🔥 *Josh Zone (Motivational Adda)* — Get motivated and lag jao tayari mai aur NEET ko fod do.\n\n"
         "💬 *Clear your NEET Doubts* — Ask questions, get instant explanations.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
