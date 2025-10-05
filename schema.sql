@@ -58,15 +58,29 @@ create index if not exists answers_session_idx  on answers (session_id);
 create index if not exists results_user_idx     on results (user_id, finished_at desc);
 create index if not exists sessions_user_idx    on quiz_sessions (user_id, started_at desc);
 
--- usage analytics
-create table if not exists bot_usage_events (
-  event_id    uuid primary key default gen_random_uuid(),
-  user_id     text,
-  chat_id     text,
-  event_type  text,
-  meta        jsonb,
-  created_at  timestamptz not null default now()
-);
 
-create index if not exists bot_usage_events_created_idx on bot_usage_events (created_at);
-create index if not exists bot_usage_events_user_idx    on bot_usage_events (user_id, created_at desc);
+-- Topper Strategy persistence (optional)
+
+CREATE TABLE IF NOT EXISTS topper_plans (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  neet_year INT,
+  hours_per_day TEXT,
+  plan_days INT,
+  weak_subject TEXT,
+  plan_text TEXT
+);
+-- usage analytics
+CREATE TABLE IF NOT EXISTS bot_usage_events (
+  id BIGSERIAL PRIMARY KEY,
+  ts TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  user_id BIGINT NOT NULL,
+  username TEXT,
+  chat_id BIGINT,
+  intent TEXT,
+  feature TEXT,
+  payload JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_bue_ts ON bot_usage_events (ts);
+CREATE INDEX IF NOT EXISTS idx_bue_user ON bot_usage_events (user_id);
