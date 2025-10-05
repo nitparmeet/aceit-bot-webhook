@@ -11,3 +11,7 @@ openpyxl
 Unidecode
 asyncpg>=0.29
 matplotlib
+# Add (if missing) for Topper Strategy feature:
+openai>=1.40
+SQLAlchemy>=2.0
+python-dateutil>=2.9
