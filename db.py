@@ -1,7 +1,7 @@
 # db.py
 import os, json, asyncpg
 from typing import Optional, Any, Dict
-
+from asyncpg import exceptions as pg_exc
 _POOL: Optional[asyncpg.Pool] = None
 
 async def init_db():
@@ -97,7 +97,11 @@ async def record_usage_event(user_id: Optional[str], chat_id: Optional[str], eve
     """
     payload = json.dumps(meta) if meta else None
     async with _pool().acquire() as c:
-        await c.execute(q, user_id, chat_id, event_type, payload)
+        try:
+            await c.execute(q, user_id, chat_id, event_type, payload)
+        except pg_exc.UndefinedTableError:
+            # schema not yet applied; skip quietly
+            return
 
 
 async def fetch_usage_metrics(days: int = 14) -> Dict[str, Any]:
@@ -105,23 +109,31 @@ async def fetch_usage_metrics(days: int = 14) -> Dict[str, Any]:
     days = max(1, min(int(days or 1), 90))
     async with _pool().acquire() as c:
         total_users = await c.fetchval("select count(*) from users")
-        total_requests = await c.fetchval("select count(*) from bot_usage_events")
-        active_today = await c.fetchval(
-            "select count(distinct user_id) from bot_usage_events where created_at::date = current_date"
-        )
-        rows = await c.fetch(
-            """
-            select
-              created_at::date as day,
-              count(distinct user_id) as dau,
-              count(*) as requests
-            from bot_usage_events
-            where created_at::date >= (current_date - ($1::int - 1))
-            group by day
-            order by day
-            """,
-            days,
-        )
+        try:
+            total_requests = await c.fetchval("select count(*) from bot_usage_events")
+            active_today = await c.fetchval(
+                "select count(distinct user_id) from bot_usage_events where created_at::date = current_date"
+            )
+            rows = await c.fetch(
+                """
+                select
+                  created_at::date as day,
+                  count(distinct user_id) as dau,
+                  count(*) as requests
+                from bot_usage_events
+                where created_at::date >= (current_date - ($1::int - 1))
+                group by day
+                order by day
+                """,
+                days,
+            )
+        except pg_exc.UndefinedTableError:
+            return {
+                "total_users": int(total_users or 0),
+                "total_requests": 0,
+                "active_today": 0,
+                "daily": [],
+            }
 
     daily = [
         {
