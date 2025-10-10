@@ -52,6 +52,13 @@ from db import fetch_usage_metrics
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 _HANDLERS_ATTACHED = False
 
+async def _strategy_feature_unavailable(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tgt = _target(update)
+    if tgt:
+        await tgt.reply_text("Strategy module is not available right now. Please check back later.")
+globals().setdefault("menu_strategy_handler", _strategy_feature_unavailable)
+globals().setdefault("strategy_plan_handler", _strategy_feature_unavailable)
+
 try:
     log
 except NameError:
