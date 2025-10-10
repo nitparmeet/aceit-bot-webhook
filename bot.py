@@ -7819,7 +7819,13 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("menu", show_menu), group=0)
     _add(CommandHandler("stats", show_bot_stats), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
-  
+    
+    # --- TOPPER STRATEGY: command + menu router + plan callbacks ---
+    _add(CommandHandler("strategy", strategy_cmd), group=0) 
+    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$"), group=0)
+    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:\d+$"), group=0)
+
+    _add(ask_conv, group=1)
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
@@ -7828,6 +7834,8 @@ def register_handlers(app: Application) -> None:
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
 
+    
+    
     # -------------------------------
     # Ask (Doubt) conversation
     # -------------------------------
