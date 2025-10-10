@@ -18,6 +18,8 @@ import random
 import time
 import base64
 from openai import OpenAI
+from telegram.ext import Application
+from strategies import load_strategies, get_menu, get_plan
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram import ReplyKeyboardMarkup
 from telegram.constants import ChatAction
@@ -7976,3 +7978,30 @@ async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT
         pass
 
     await _finish_predict_now(update, context)
+
+async def strategy_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    items = get_menu()
+    rows = []
+    for i in range(0, len(items), 2):
+        row = [InlineKeyboardButton(title, callback_data=f"strategy:{pid}")
+               for pid, title in items[i:i+2]]
+        rows.append(row)
+    await update.message.reply_text("🏁 Choose your Topper Strategy:",
+                                    reply_markup=InlineKeyboardMarkup(rows))
+
+async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query; await q.answer()
+    _, pid = q.data.split(":")
+    plan = get_plan(int(pid))
+    await q.message.reply_text(f"🧭 {plan['title']}")
+    for m in plan["messages"]:
+        await q.message.reply_text(m)
+        await asyncio.sleep(0.2)
+
+def build_app(token: str) -> Application:
+    load_strategies()
+    app = Application.builder().token(token).build()
+    app.add_handler(CommandHandler("strategy", strategy_cmd))
+    app.add_handler(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:\d+$"))
+    return app
+
