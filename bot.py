@@ -3147,7 +3147,10 @@ def load_cutoff_lookup_from_excel(
             return {}
 
     # --- Closing rank numeric ---
-    df["_close"] = pd.to_numeric(df[c_close], errors="coerce").astype("Int64")
+    close_numeric = pd.to_numeric(df[c_close], errors="coerce")
+    # Some sheets store ranks as floats (e.g., 12345.0). Round safely before casting.
+    close_numeric = close_numeric.where(close_numeric.isna(), close_numeric.round())
+    df["_close"] = close_numeric.astype("Int64")
     df = df.dropna(subset=["_close"])
     if df.empty:
         return {}
