@@ -7846,28 +7846,32 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     # Ask (Doubt) conversation
     # -------------------------------
-    ask_conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("ask", ask_start),
-            CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
-        ],
-        states={
-            ASK_SUBJECT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
-                CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
-            ],
-            ASK_WAIT: [
-                MessageHandler(filters.PHOTO, ask_receive_photo),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-        name="ask_conv",
-        persistent=False,
-        per_message=False,
-    )
-    _add(ask_conv, group=1)
+    try:
+        ask_conv = ConversationHandler(
+            entry_points=[
+                CommandHandler("ask", ask_start),
+                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
 
+            ],
+            states={
+                ASK_SUBJECT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
+                    CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
+                ],
+                ASK_WAIT: [
+                    MessageHandler(filters.PHOTO, ask_receive_photo),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+            name="ask_conv",
+            persistent=False,
+            per_message=False,
+        )
+        _add(ask_conv, group=1)
+    except Exception:
+        log.exception("Failed to create ask conversation handler; skipping") 
+            
 
     # (Optional) legacy feature router, keep if you still use these buttons
     _add(
@@ -7902,30 +7906,35 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     # Predictor conversation
     # -------------------------------
-    predict_conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("predict", predict_start),
-            CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
-            CommandHandler("mockpredict", predict_mockrank_start),
-            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
-        ],
-        states={
-            ASK_AIR: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-            ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-            ASK_MOCK_SIZE: [
-                CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
+    try:
+        predict_conv = ConversationHandler(
+            entry_points=[
+                CommandHandler("predict", predict_start),
+                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
+                CommandHandler("mockpredict", predict_mockrank_start),
+                CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
+                
             ],
-            ASK_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-            ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-            ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_predict)],
-        name="predict_conv",
-        persistent=False,
-        per_message=False,
-    )
-    _add(predict_conv, group=3)
+            states={
+                ASK_AIR: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+                ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+                ASK_MOCK_SIZE: [
+                    CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
+                ],
+                ASK_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+                ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+                ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel_predict)],
+            name="predict_conv",
+            persistent=False,
+            per_message=False,
+        )
+        _add(predict_conv, group=3)
+    except Exception:
+        log.exception("Failed to create predict conversation handler; skipping")
+        
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
     
     # Predictor follow-ups (AI Coach buttons attached to predict output)
