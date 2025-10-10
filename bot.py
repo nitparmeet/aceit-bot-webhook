@@ -32,6 +32,21 @@ from telegram import Update
 from collections import Counter
 from io import BytesIO
 
+try:
+    from strategies import load_strategies, get_menu, get_plan  # type: ignore
+except ImportError:
+    _strategies_log = logging.getLogger("aceit-bot")
+
+    def load_strategies(*args, **kwargs):
+        _strategies_log.warning("strategies module not found; returning empty strategies list")
+        return []
+
+    def get_menu(*args, **kwargs):
+        return []
+
+    def get_plan(*args, **kwargs):
+        return None
+
 from db import fetch_usage_metrics
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
