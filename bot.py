@@ -4021,12 +4021,21 @@ async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_T
     await show_menu(update, context)
     return ConversationHandler.END
 
+async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Answer callbacks, clear any active flow, and show the main menu."""
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+    unlock_flow(context)
+    await show_menu(update, context)
+    return ConversationHandler.END
+
+
 async def menu_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Hard fallback so we can confirm /menu reaches the bot."""
     chat_id = update.effective_chat.id if update.effective_chat else None
     user_id = update.effective_user.id if update.effective_user else None
-    if text and re.match(r"^/menu(@\w+)?$", text, re.IGNORECASE):
-        return
     log.warning("[menu-debug] /menu reached | chat=%s user=%s", chat_id, user_id)
 
     tgt = update.effective_message
@@ -4034,6 +4043,7 @@ async def menu_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await tgt.reply_text("⏱ Opening menu… (debug handler)")
 
     await menu_exit_conversation(update, context)
+
 
 async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     source = "callback" if update.callback_query else "message"
@@ -4114,10 +4124,13 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
             parse_mode="Markdown"
         )
 
+
 async def log_unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text if update.message else None
     chat_id = update.effective_chat.id if update.effective_chat else None
     user_id = update.effective_user.id if update.effective_user else None
+    if text and re.match(r"^/menu(@\w+)?$", text, re.IGNORECASE):
+        return
     log.warning("[command] Unhandled command %r chat=%s user=%s", text, chat_id, user_id)
     tgt = update.effective_message
     if tgt:
