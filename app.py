@@ -1,4 +1,3 @@
-# app.py
 import os
 import json
 import random
@@ -6,10 +5,8 @@ import logging
 import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from db import init_db, close_db, record_usage_event 
 
-
-from telegram import BotCommand
+from db import init_db, close_db, record_usage_event
 
 from fastapi import FastAPI, Request, HTTPException, Header, Query
 from fastapi.responses import JSONResponse
@@ -18,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update
 from telegram.ext import Application
 
+# -------- Config --------
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
@@ -31,6 +29,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("aceit-bot")
 
+# -------- FastAPI app --------
 app = FastAPI(title="aceit-bot-webhook")
 
 app.add_middleware(
@@ -41,13 +40,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Build the Telegram application once
-tg: Application = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates(True).build()
+# -------- Telegram Application (single instance) --------
+async def _post_init(app: Application):
+    """Runs after Application.initialize(). Logs the bot identity."""
+    me = await app.bot.get_me()
+    log.info("🤖 Bot online as @%s (id=%s)", me.username, me.id)
+
+tg: Application = (
+    Application.builder()
+    .token(TELEGRAM_TOKEN)
+    .concurrent_updates(True)
+    .build()
+)
+tg.post_init = _post_init  # <-- _post_init is defined above (no NameError now)
 
 # Import handler registrars from bot.py and attach them to `tg`
 from bot import register_handlers  # must accept (app: Application)
 register_handlers(tg)
-tg.post_init = _post_init 
 log.info("✅ Handlers registered")
 
 # Optional startup bootstrap from bot.py
@@ -56,7 +65,7 @@ try:
 except Exception:
     bot_on_startup = None
 
-# -------------- quiz pool helpers --------------
+# -------- quiz pool helpers --------
 _POOL: List[Dict[str, Any]] = []
 _INDEX: Dict[str, Dict[str, Any]] = {}
 
@@ -78,7 +87,8 @@ def _load_pool() -> None:
     global _POOL, _INDEX
     if not QUIZ_FILE.exists():
         raise FileNotFoundError(f"quiz file not found at: {QUIZ_FILE}")
-    data = json.load(QUIZ_FILE.open("r", encoding="utf-8"))
+    with QUIZ_FILE.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
     if not isinstance(data, list):
         raise ValueError("quiz.json must be a flat JSON array")
 
@@ -135,11 +145,11 @@ def _strip_answers(qs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         "tags": q.get("tags", []),
     } for q in qs]
 
-# -------------- lifecycle --------------
+# -------- lifecycle --------
 @app.on_event("startup")
 async def _startup():
-    await init_db()  
-    await tg.initialize()
+    await init_db()
+    await tg.initialize()  # triggers tg.post_init
     await tg.start()
     log.info("✅ Telegram Application started")
 
@@ -161,9 +171,9 @@ async def _shutdown():
     await tg.shutdown()
     log.info("🛑 Telegram Application stopped")
 
-    await close_db()   
+    await close_db()
 
-# -------------- webhook --------------
+# -------- webhook --------
 @app.post("/telegram")
 async def telegram_webhook(
     req: Request,
@@ -176,6 +186,7 @@ async def telegram_webhook(
 
     user = update.effective_user
     chat = update.effective_chat
+
     async def _log_usage():
         try:
             user_id = str(user.id) if user and getattr(user, "id", None) is not None else None
@@ -187,12 +198,11 @@ async def telegram_webhook(
             await record_usage_event(user_id, chat_id, event_type, meta)
         except Exception:
             log.exception("usage logging failed")
+
     asyncio.create_task(_log_usage())
 
-    
     await tg.process_update(update)
     return {"ok": True}
-
 
 def _classify_event(update: Update) -> str:
     if update.message:
@@ -212,6 +222,7 @@ def _classify_event(update: Update) -> str:
     if update.poll_answer:
         return "poll_answer"
     return "update"
+
 def _event_meta(update: Update) -> Dict[str, Any]:
     meta: Dict[str, Any] = {}
     msg = update.message
@@ -222,8 +233,7 @@ def _event_meta(update: Update) -> Dict[str, Any]:
         meta["callback_data"] = cq.data[:160]
     return meta
 
-
-# -------------- quiz endpoints --------------
+# -------- quiz endpoints --------
 @app.get("/quiz")
 async def get_quiz(
     count: int = Query(5, pattern="^(5|10)$"),
@@ -274,21 +284,7 @@ async def grade_quiz(payload: Dict[str, Any]):
 
     return JSONResponse(content={"score": score, "total": len(payload["responses"]), "details": details})
 
-
-
-def build_app(token: str) -> Application:
-    load_strategies()
-    application = Application.builder().token(token).build()
-    register_handlers(application)
-    application.post_init = _post_init
-    return application
-
-async def _post_init(app: Application):
-    me = await app.bot.get_me()
-    logger.info("🤖 Bot online as @%s (id=%s)", me.username, me.id)
-
-
-# -------------- health/home --------------
+# -------- health/home --------
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
