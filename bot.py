@@ -1525,7 +1525,7 @@ async def start(update, context):
 async def _debug_unknown_callback(update, context):
     q = update.callback_query
     data = q.data if q else None
-     if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict", "menu_strategy"}:
+    if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict", "menu_strategy"}:
         log.debug("[callback] ignoring known menu_predict payload: %r", data)
         return
     import logging
