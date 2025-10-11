@@ -4007,6 +4007,11 @@ async def show_menu(
 
     await tgt.reply_text(text, reply_markup=main_menu_markup())
 
+async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Universal handler to exit any conversation and jump to the main menu."""
+    await show_menu(update, context)
+    return ConversationHandler.END
+
 async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     story = _pick_josh_story()
     header = "🔥 Josh Zone "
@@ -7755,7 +7760,10 @@ def register_handlers(app: Application) -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("menu", menu_exit_conversation),
+        ],
         name="ask_conv",
         persistent=False,
         per_message=False,
@@ -7814,7 +7822,10 @@ def register_handlers(app: Application) -> None:
             ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
             ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_predict)],
+        fallbacks=[
+            CommandHandler("cancel", cancel_predict),
+            CommandHandler("menu", menu_exit_conversation),
+        ],
         name="predict_conv",
         persistent=False,
         per_message=False,
@@ -7867,7 +7878,10 @@ def register_handlers(app: Application) -> None:
             ],
             PROFILE_SET_PRIMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("menu", menu_exit_conversation),
+        ],
         name="profile_conv",
         persistent=False,
     )
