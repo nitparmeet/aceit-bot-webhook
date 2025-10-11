@@ -50,17 +50,46 @@ try:
     load_strategies, all_strategies, get_strategy = _load_strategy_module()
 
 except Exception:
+    
+    log.warning("strategies module import failed; using JSON fallback")
+    @lru_cache(maxsize=1)
+    def _fallback_strategies() -> List[Dict[str, Any]]:
+        candidates = [
+            Path(__file__).resolve().parent / "strategies.json",
+            Path(__file__).resolve().parent.parent / "strategies.json",
+            Path.cwd() / "strategies.json",
+            Path.cwd().parent / "strategies.json",
+        ]
+        for cand in candidates:
+            try:
+                if cand.exists():
+                    data = json.loads(cand.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        if "strategies" in data and isinstance(data["strategies"], list):
+                            return data["strategies"]
+                        data = [data]
+                    if isinstance(data, list):
+                        return [x for x in data if isinstance(x, dict)]
+            except Exception:
+                log.exception("[strategy] Failed reading %s", cand)
+        return []
+        
     def load_strategies(*args, **kwargs):
-        return []
-
+        _fallback_strategies.cache_clear()
+        return _fallback_strategies()
+    
     def all_strategies() -> List[Dict[str, Any]]:
-        return []
+        return _fallback_strategies()
 
     def get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
+        sid = str(strategy_id or "").strip()
+        if not sid:
+            return None
+        for strat in _fallback_strategies():
+            if str(strat.get("id") or "").strip() == sid:
+                return strat
         return None
-    logging.getLogger("aceit-bot").warning(
-        "strategies module unavailable; strategy features will be disabled"
-    )
+    
 
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
@@ -1496,7 +1525,7 @@ async def start(update, context):
 async def _debug_unknown_callback(update, context):
     q = update.callback_query
     data = q.data if q else None
-    if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
+     if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict", "menu_strategy"}:
         log.debug("[callback] ignoring known menu_predict payload: %r", data)
         return
     import logging
