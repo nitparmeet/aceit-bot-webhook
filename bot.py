@@ -3978,6 +3978,9 @@ async def show_menu(
     text: str = "Choose an option:",
 ) -> None:
     """Show the main menu (can be called from /menu or any callback)."""
+    if context is not None:
+        unlock_flow(context)
+    
     tgt = update.effective_message
     bot = context.bot if context else getattr(update, "get_bot", lambda: None)()
     if tgt is None:
@@ -7898,5 +7901,6 @@ async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT
         await q.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
-
+    
     await _finish_predict_now(update, context)
+    
