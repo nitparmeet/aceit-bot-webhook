@@ -28,18 +28,27 @@ from dotenv import load_dotenv
 from unidecode import unidecode
 from telegram import Update
 from collections import Counter
+import sys
+def _load_strategy_module():
+    try:
+        from strategies import load_strategies, all_strategies, get_strategy  # type: ignore
+        return load_strategies, all_strategies, get_strategy
+    except ImportError:
+        search_dirs = {
+            Path(__file__).resolve().parent,
+            Path(__file__).resolve().parent.parent,
+            Path.cwd(),
+            Path.cwd().parent,
+        }
+        for d in list(search_dirs):
+            if d.exists() and str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+        from strategies import load_strategies, all_strategies, get_strategy  # type: ignore
+        return load_strategies, all_strategies, get_strategy
 
 try:
-    from strategies import load_strategies, get_strategy  # type: ignore
-    try:
-        from strategies import all_strategies as _all_strategies  # type: ignore
-        def all_strategies() -> List[Dict[str, Any]]:
-            data = _all_strategies()
-            return data if isinstance(data, list) else []
-    except ImportError:
-        def all_strategies() -> List[Dict[str, Any]]:
-            data = load_strategies()
-            return data if isinstance(data, list) else []
+    load_strategies, all_strategies, get_strategy = _load_strategy_module()
+
 except Exception:
     def load_strategies(*args, **kwargs):
         return []
