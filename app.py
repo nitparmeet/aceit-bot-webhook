@@ -273,15 +273,7 @@ async def grade_quiz(payload: Dict[str, Any]):
 
     return JSONResponse(content={"score": score, "total": len(payload["responses"]), "details": details})
 
-async def _post_init(app: Application):
-    await app.bot.set_my_commands([
-        BotCommand("menu", "Open main menu"),
-        BotCommand("strategy", "Topper Strategy (macro)"),
-        BotCommand("quiz", "Start a quiz"),
-        BotCommand("predict", "College predictor"),
-        BotCommand("ask", "Counselling Q&A"),
-        BotCommand("profile", "View/update profile"),
-    ])
+
 
 def build_app(token: str) -> Application:
     load_strategies()
