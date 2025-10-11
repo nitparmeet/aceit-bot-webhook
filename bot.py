@@ -4035,17 +4035,13 @@ async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
-async def menu_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Hard fallback so we can confirm /menu reaches the bot."""
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    user_id = update.effective_user.id if update.effective_user else None
-    log.warning("[menu-debug] /menu reached | chat=%s user=%s", chat_id, user_id)
-
-    tgt = update.effective_message
-    if tgt:
-        await tgt.reply_text("⏱ Opening menu… (debug handler)")
-
-    await menu_exit_conversation(update, context)
+async def show_menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Production /menu — no debug text."""
+    try:
+        await show_menu(update, context)  # your existing show_menu() that prints menu + buttons
+    except Exception as e:
+        log.exception("show_menu crashed; falling back: %s", e)
+        await menu_exit_conversation(update, context)
 
 
 async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
