@@ -7846,6 +7846,7 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     # Ask (Doubt) conversation
     # -------------------------------
+    ask_conv = None
     try:
         ask_conv = ConversationHandler(
             entry_points=[
@@ -7868,11 +7869,12 @@ def register_handlers(app: Application) -> None:
             persistent=False,
             per_message=False,
         )
-        _add(ask_conv, group=1)
+        
     except Exception:
         log.exception("Failed to create ask conversation handler; skipping") 
-            
-
+    if ask_conv is not None:
+        _add(ask_conv, group=1)        
+    
     # (Optional) legacy feature router, keep if you still use these buttons
     _add(
         CallbackQueryHandler(
@@ -7906,6 +7908,7 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     # Predictor conversation
     # -------------------------------
+    predict_conv = None
     try:
         predict_conv = ConversationHandler(
             entry_points=[
@@ -7931,10 +7934,12 @@ def register_handlers(app: Application) -> None:
             persistent=False,
             per_message=False,
         )
-        _add(predict_conv, group=3)
+    
     except Exception:
         log.exception("Failed to create predict conversation handler; skipping")
-        
+    if predict_conv is not None:
+        _add(predict_conv, group=3)
+    
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
     
     # Predictor follow-ups (AI Coach buttons attached to predict output)
