@@ -11,6 +11,11 @@ import httpx
 from telegram.error import BadRequest
 import json
 import logging
+log = logging.getLogger("aceit-bot")
+import html
+import asyncio
+import math
+
 import html
 import asyncio
 import math
