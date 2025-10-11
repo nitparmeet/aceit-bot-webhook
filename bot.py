@@ -7695,7 +7695,10 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    
+    _add(CommandHandler("menu", menu_exit_conversation), group=0)
+    _add(CommandHandler("menu_diag", menu_diag), group=0)
+    _add(CommandHandler("handlers_diag", handlers_diag), group=0)
+    _add(MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
@@ -7724,7 +7727,11 @@ def register_handlers(app: Application) -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
+        ],
         name="ask_conv",
         persistent=False,
         per_message=False,
@@ -7783,7 +7790,11 @@ def register_handlers(app: Application) -> None:
             ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
             ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_predict)],
+        fallbacks=[
+            CommandHandler("cancel", cancel_predict),
+            CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
+        ],
         name="predict_conv",
         persistent=False,
         per_message=False,
@@ -7836,7 +7847,11 @@ def register_handlers(app: Application) -> None:
             ],
             PROFILE_SET_PRIMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
+        ],
         name="profile_conv",
         persistent=False,
     )
@@ -7845,6 +7860,8 @@ def register_handlers(app: Application) -> None:
         menu_router,
         pattern=r"^menu_(josh|home)$"
     ), group=1)
+
+    _add(CallbackQueryHandler(handle_unknown_callback), group=9)
 
     
     # -------------------------------
@@ -7872,3 +7889,4 @@ async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT
         pass
 
     await _finish_predict_now(update, context)
+
