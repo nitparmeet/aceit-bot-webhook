@@ -282,6 +282,12 @@ def build_app(token: str) -> Application:
     application.post_init = _post_init
     return application
 
+async def _post_init(app):
+    me = await app.bot.get_me()
+    logger.info("🤖 Bot online as @%s (id=%s)", me.username, me.id)
+
+application.post_init = _post_init
+
 # -------------- health/home --------------
 @app.get("/healthz")
 async def healthz():
