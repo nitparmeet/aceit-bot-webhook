@@ -47,6 +47,7 @@ tg: Application = Application.builder().token(TELEGRAM_TOKEN).concurrent_updates
 # Import handler registrars from bot.py and attach them to `tg`
 from bot import register_handlers  # must accept (app: Application)
 register_handlers(tg)
+tg.post_init = _post_init 
 log.info("✅ Handlers registered")
 
 # Optional startup bootstrap from bot.py
@@ -282,11 +283,10 @@ def build_app(token: str) -> Application:
     application.post_init = _post_init
     return application
 
-async def _post_init(app):
+async def _post_init(app: Application):
     me = await app.bot.get_me()
     logger.info("🤖 Bot online as @%s (id=%s)", me.username, me.id)
 
-application.post_init = _post_init
 
 # -------------- health/home --------------
 @app.get("/healthz")
