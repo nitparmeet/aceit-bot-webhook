@@ -7855,7 +7855,8 @@ def register_handlers(app: Application) -> None:
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
-
+    _add(CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"), group=0)
+    _add(CallbackQueryHandler(predict_mockrank_start, pattern=r"^menu_predict_mock$"), group=0)
     # -------------------------------
     # Ask (Doubt) conversation
     # -------------------------------
