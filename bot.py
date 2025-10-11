@@ -3955,6 +3955,8 @@ async def show_menu(
     text: str = "Choose an option:",
 ) -> None:
     """Show the main menu (can be called from /menu or any callback)."""
+    if context is not None:
+        unlock_flow(context)
     tgt = update.effective_message
     bot = context.bot if context else getattr(update, "get_bot", lambda: None)()
     if tgt is None:
@@ -3980,6 +3982,92 @@ async def show_menu(
         await tgt.reply_text(explanation, disable_web_page_preview=True)
 
     await tgt.reply_text(text, reply_markup=main_menu_markup())
+
+async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Answer callbacks, clear any active flow, and show the main menu."""
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+    unlock_flow(context)
+    await show_menu(update, context)
+    return ConversationHandler.END
+
+
+async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    source = "callback" if update.callback_query else "message"
+    data = update.callback_query.data if update.callback_query else (update.message.text if update.message else None)
+    flow = context.user_data.get(MODE_KEY)
+    keys = sorted(str(k) for k in context.user_data.keys())
+    lines = [
+        "📋 Menu diagnostics:",
+        f"• source: {source}",
+        f"• data: {data!r}",
+        f"• active_flow: {flow or 'none'}",
+        f"• user_data_keys: {', '.join(keys) or 'none'}",
+    ]
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if target:
+        await target.reply_text("\n".join(lines))
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+
+
+async def handlers_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    app = context.application
+    groups = getattr(app, "handlers", None)
+    lines = ["🛠 Handler groups:"]
+    if isinstance(groups, dict):
+        items = sorted(groups.items())
+    elif isinstance(groups, (list, tuple)):
+        items = enumerate(groups)
+    else:
+        items = []
+
+    for group, handlers in items:
+        if not handlers:
+            continue
+        lines.append(f"G{group}: {len(handlers)} handler(s)")
+        for handler in handlers[:8]:
+            cb = getattr(handler, "callback", None)
+            cb_name = getattr(cb, "__name__", repr(cb))
+            details: list[str] = []
+            pattern = getattr(handler, "pattern", None)
+            if pattern is not None:
+                pat = getattr(pattern, "pattern", None) or str(pattern)
+                details.append(f"pattern={pat}")
+            filt = getattr(handler, "filters", None)
+            if filt and not details:
+                details.append(f"filters={filt}")
+            lines.append("  - " + cb_name + (f" ({'; '.join(details)})" if details else ""))
+        if len(handlers) > 8:
+            lines.append("  …")
+    if len(lines) == 1:
+        lines.append("(no handler listing available)")
+
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if target:
+        await target.reply_text("\n".join(lines))
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+
+
+async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+    data = q.data
+    user_id = update.effective_user.id if update.effective_user else None
+    chat_id = q.message.chat_id if q.message else None
+    log.warning("[callback] Unhandled data=%r chat=%s user=%s", data, chat_id, user_id)
+    with contextlib.suppress(Exception):
+        await q.answer()
+    if q.message:
+        await q.message.reply_text("Button action isn’t wired yet. Please use /menu.")
 
 async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     story = _pick_josh_story()
