@@ -1462,7 +1462,7 @@ async def start(update, context):
 async def _debug_unknown_callback(update, context):
     q = update.callback_query
     data = q.data if q else None
-    if data in {"menu_predict", "menu_predict_mock"}:
+    if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict"}:
         return
     import logging
     logging.getLogger("aceit-bot").warning("UNHANDLED CALLBACK: %r", data)
@@ -7937,9 +7937,9 @@ def register_handlers(app: Application) -> None:
     predict_conv = ConversationHandler(
         entry_points=[
             CommandHandler("predict", predict_start),
-            CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
+            CallbackQueryHandler(predict_start, pattern=r"^menu_predict$", block=True),
             CommandHandler("mockpredict", predict_mockrank_start),
-            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
+            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$", block=True),
         ],
         states={
             ASK_AIR: [MessageHandler(TEXT_EXCEPT_MENU, on_air)],
