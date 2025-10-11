@@ -18,8 +18,6 @@ import random
 import time
 import base64
 from openai import OpenAI
-from telegram.ext import Application
-from strategies import load_strategies, get_menu, get_plan
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram import ReplyKeyboardMarkup
 from telegram.constants import ChatAction
@@ -30,34 +28,9 @@ from dotenv import load_dotenv
 from unidecode import unidecode
 from telegram import Update
 from collections import Counter
-from io import BytesIO
-
-try:
-    from strategies import load_strategies, get_menu, get_plan  # type: ignore
-except ImportError:
-    _strategies_log = logging.getLogger("aceit-bot")
-
-    def load_strategies(*args, **kwargs):
-        _strategies_log.warning("strategies module not found; returning empty strategies list")
-        return []
-
-    def get_menu(*args, **kwargs):
-        return []
-
-    def get_plan(*args, **kwargs):
-        return None
-
-from db import fetch_usage_metrics
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 _HANDLERS_ATTACHED = False
-
-async def _strategy_feature_unavailable(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tgt = _target(update)
-    if tgt:
-        await tgt.reply_text("Strategy module is not available right now. Please check back later.")
-globals().setdefault("menu_strategy_handler", _strategy_feature_unavailable)
-globals().setdefault("strategy_plan_handler", _strategy_feature_unavailable)
 
 try:
     log
@@ -559,7 +532,6 @@ def _state_quota_from_cutoffs(round_key: str,
         close_rank = int(row["ClosingRank"])
         state_val = row.get(state_col) or (meta.get("State") if meta else None) or dom_canon
         nirf_val = meta.get("nirf_rank_medical_latest") if meta else None
-        
         def _pick_fee(*sources):
             for src in sources:
                 if src is None:
@@ -1445,42 +1417,6 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
     fee_ln = f"Total Fee { _fmt_money(fee) }"
     return "\n".join([header, cr_ln, fee_ln])
 
-def _render_usage_chart(daily: List[Dict[str, Any]]):
-    if not daily:
-        return None
-
-    import matplotlib.pyplot as plt
-
-    x_labels = [d["day"].strftime("%b %d") if hasattr(d["day"], "strftime") else str(d["day"]) for d in daily]
-    requests = [d.get("requests", 0) for d in daily]
-    dau = [d.get("dau", 0) for d in daily]
-    x = list(range(len(daily)))
-
-    fig, ax1 = plt.subplots(figsize=(8, 4.5))
-    bars = ax1.bar(x, requests, color="#4F81BD", alpha=0.75, label="Requests")
-    ax1.set_ylabel("Requests")
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(x_labels, rotation=45, ha="right")
-
-    ax2 = ax1.twinx()
-    ax2.plot(x, dau, color="#C0504D", marker="o", linewidth=2, label="DAU")
-    ax2.set_ylabel("Active users")
-
-    lines, labels = [], []
-    for ax in (ax1, ax2):
-        lns, lbls = ax.get_legend_handles_labels()
-        lines += lns
-        labels += lbls
-    ax1.legend(lines, labels, loc="upper left")
-    ax1.set_title("Bot usage (last {} days)".format(len(daily)))
-    fig.tight_layout()
-
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=160, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-    
 def _deemed_only(rows):
     out = []
     for r in rows:
@@ -3171,10 +3107,7 @@ def load_cutoff_lookup_from_excel(
             return {}
 
     # --- Closing rank numeric ---
-    close_numeric = pd.to_numeric(df[c_close], errors="coerce")
-    # Some sheets store ranks as floats (e.g., 12345.0). Round safely before casting.
-    close_numeric = close_numeric.where(close_numeric.isna(), close_numeric.round())
-    df["_close"] = close_numeric.astype("Int64")
+    df["_close"] = pd.to_numeric(df[c_close], errors="coerce").astype("Int64")
     df = df.dropna(subset=["_close"])
     if df.empty:
         return {}
@@ -3497,48 +3430,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Choose an option:",
         reply_markup=main_menu_keyboard()
     )
-
-async def show_bot_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tgt = _target(update)
-    if tgt is None:
-        return
-
-    try:
-        metrics = await fetch_usage_metrics(days=14)
-    except Exception:
-        log.exception("analytics fetch failed")
-        await tgt.reply_text("Couldn't fetch analytics right now. Please try later.")
-        return
-
-    total_users = metrics.get("total_users", 0)
-    total_requests = metrics.get("total_requests", 0)
-    active_today = metrics.get("active_today", 0)
-    daily = metrics.get("daily", [])
-
-    lines = [
-        "📈 *Bot Analytics*",
-        f"• Total users: {total_users:,}",
-        f"• Total requests: {total_requests:,}",
-        f"• Active today: {active_today:,}",
-        f"• Window: last {max(1, len(daily))} day(s)",
-    ]
-
-    await tgt.reply_text("\n".join(lines), parse_mode="Markdown")
-
-    if not daily:
-        return
-
-    try:
-        chart_buf = await asyncio.to_thread(_render_usage_chart, daily)
-    except Exception:
-        log.exception("analytics chart render failed")
-        chart_buf = None
-
-    if chart_buf:
-        try:
-            await tgt.reply_photo(photo=chart_buf, caption="Usage trend (requests vs DAU)")
-        except Exception:
-            log.exception("sending analytics chart failed")
 
 # ========================= Excel helpers & loaders =========================
 def _norm_hdr(s: str) -> str:
@@ -4063,11 +3954,10 @@ def _pick_josh_story() -> str:
 
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
-        [InlineKeyboardButton("🧭 Topper Strategy", callback_data="go:strategy")],
-        [InlineKeyboardButton("🔥 Josh Zone:  GET MOTIVATED ", callback_data="menu_josh")],
         [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
         [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
+        [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
+        [InlineKeyboardButton("🔥 Josh Zone:  GET MOTIVATED ", callback_data="menu_josh")],
         [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
     ])
@@ -6894,7 +6784,6 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("domicile_state", None)
         context.user_data.pop("pending_predict_summary", None)
         return await _finish_predict_now(update, context)
-        
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Type your *domicile state* (e.g., Delhi, Uttar Pradesh) or tap *Skip*.",
@@ -7824,15 +7713,9 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    _add(CommandHandler("stats", show_bot_stats), group=0)
-    _add(CommandHandler("josh", show_josh_zone), group=0)
     
-    # --- TOPPER STRATEGY: command + menu router + plan callbacks ---
-    _add(CommandHandler("strategy", strategy_cmd), group=0) 
-    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$"), group=0)
-    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:\d+$"), group=0)
-
-    _add(ask_conv, group=1)
+    _add(CommandHandler("josh", show_josh_zone), group=0)
+  
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
@@ -7841,40 +7724,32 @@ def register_handlers(app: Application) -> None:
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
 
-    
-    
     # -------------------------------
     # Ask (Doubt) conversation
     # -------------------------------
-    ask_conv = None
-    try:
-        ask_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("ask", ask_start),
-                CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
-
+    ask_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("ask", ask_start),
+            CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
+        ],
+        states={
+            ASK_SUBJECT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
+                CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
             ],
-            states={
-                ASK_SUBJECT: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
-                    CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
-                ],
-                ASK_WAIT: [
-                    MessageHandler(filters.PHOTO, ask_receive_photo),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
-                ],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-            name="ask_conv",
-            persistent=False,
-            per_message=False,
-        )
-        
-    except Exception:
-        log.exception("Failed to create ask conversation handler; skipping") 
-    if ask_conv is not None:
-        _add(ask_conv, group=1)        
-    
+            ASK_WAIT: [
+                MessageHandler(filters.PHOTO, ask_receive_photo),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        name="ask_conv",
+        persistent=False,
+        per_message=False,
+    )
+    _add(ask_conv, group=1)
+
+
     # (Optional) legacy feature router, keep if you still use these buttons
     _add(
         CallbackQueryHandler(
@@ -7908,38 +7783,30 @@ def register_handlers(app: Application) -> None:
     # -------------------------------
     # Predictor conversation
     # -------------------------------
-    predict_conv = None
-    try:
-        predict_conv = ConversationHandler(
-            entry_points=[
-                CommandHandler("predict", predict_start),
-                CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
-                CommandHandler("mockpredict", predict_mockrank_start),
-                CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
-                
+    predict_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("predict", predict_start),
+            CallbackQueryHandler(predict_start, pattern=r"^menu_predict$"),
+            CommandHandler("mockpredict", predict_mockrank_start),
+            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
+        ],
+        states={
+            ASK_AIR: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
+            ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+            ASK_MOCK_SIZE: [
+                CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
             ],
-            states={
-                ASK_AIR: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-                ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
-                ASK_MOCK_SIZE: [
-                    CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
-                ],
-                ASK_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-                ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-                ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel_predict)],
-            name="predict_conv",
-            persistent=False,
-            per_message=False,
-        )
-    
-    except Exception:
-        log.exception("Failed to create predict conversation handler; skipping")
-    if predict_conv is not None:
-        _add(predict_conv, group=3)
-    
+            ASK_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
+            ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
+            ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_predict)],
+        name="predict_conv",
+        persistent=False,
+        per_message=False,
+    )
+    _add(predict_conv, group=3)
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
     
     # Predictor follow-ups (AI Coach buttons attached to predict output)
@@ -8023,30 +7890,3 @@ async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT
         pass
 
     await _finish_predict_now(update, context)
-
-async def strategy_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    items = get_menu()
-    rows = []
-    for i in range(0, len(items), 2):
-        row = [InlineKeyboardButton(title, callback_data=f"strategy:{pid}")
-               for pid, title in items[i:i+2]]
-        rows.append(row)
-    await update.message.reply_text("🏁 Choose your Topper Strategy:",
-                                    reply_markup=InlineKeyboardMarkup(rows))
-
-async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
-    _, pid = q.data.split(":")
-    plan = get_plan(int(pid))
-    await q.message.reply_text(f"🧭 {plan['title']}")
-    for m in plan["messages"]:
-        await q.message.reply_text(m)
-        await asyncio.sleep(0.2)
-
-def build_app(token: str) -> Application:
-    load_strategies()
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("strategy", strategy_cmd))
-    app.add_handler(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:\d+$"))
-    return app
-
