@@ -532,20 +532,7 @@ def _state_quota_from_cutoffs(round_key: str,
         close_rank = int(row["ClosingRank"])
         state_val = row.get(state_col) or (meta.get("State") if meta else None) or dom_canon
         nirf_val = meta.get("nirf_rank_medical_latest") if meta else None
-        def _pick_fee(*sources):
-            for src in sources:
-                if src is None:
-                    continue
-                for key in ("total_fee", "Total Fee", "Fee"):
-                    try:
-                        val = src.get(key) if hasattr(src, "get") else None
-                    except Exception:
-                        val = None
-                    if val not in (None, "", "—"):
-                        return val
-            return None
-
-        fee_val = _pick_fee(meta, row)
+        fee_val  = meta.get("total_fee") if meta else None
 
         results.append({
             "college_id":   str(cid).strip() or None if cid not in (None, "") else None,
@@ -3107,17 +3094,7 @@ def load_cutoff_lookup_from_excel(
             return {}
 
     # --- Closing rank numeric ---
-    close_numeric = pd.to_numeric(df[c_close], errors="coerce")
-
-    def _coerce_rank(val):
-        if pd.isna(val):
-            return pd.NA
-        try:
-            return int(round(float(val)))
-        except Exception:
-            return pd.NA
-
-    df["_close"] = close_numeric.apply(_coerce_rank).astype("Int64")
+    df["_close"] = pd.to_numeric(df[c_close], errors="coerce").astype("Int64")
     df = df.dropna(subset=["_close"])
     if df.empty:
         return {}
@@ -3978,9 +3955,6 @@ async def show_menu(
     text: str = "Choose an option:",
 ) -> None:
     """Show the main menu (can be called from /menu or any callback)."""
-    if context is not None:
-        unlock_flow(context)
-    
     tgt = update.effective_message
     bot = context.bot if context else getattr(update, "get_bot", lambda: None)()
     if tgt is None:
@@ -3993,9 +3967,9 @@ async def show_menu(
         "📋 *Menu Options*\n\n"
         "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
         "Get quick AI notes for shortlisted colleges.\n\n"
-        "📈 *Mock Test Rank → College* — Check your NEET style rank that match your mock test rank and predict colleges that you might get with that rank.\n\n"
-        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test) with instant asnhwers and why the correct anser is right and why incorrect asnwers are not, and track streaks.\n\n"
-        "🔥 *Josh Zone (Motivational Adda)* — Get motivated and lag jao tayari mai aur NEET ko fod do.\n\n"
+        "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
+        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
+        "🔥 *Josh Zone (AI Mentor Stories)* — Senior mentor style Hinglish kahaniyan jo motivation aur routine hacks share karti hain.\n\n"
         "💬 *Clear your NEET Doubts* — Ask questions, get instant explanations.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
@@ -4006,95 +3980,6 @@ async def show_menu(
         await tgt.reply_text(explanation, disable_web_page_preview=True)
 
     await tgt.reply_text(text, reply_markup=main_menu_markup())
-
-async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Universal handler to exit any conversation and jump to the main menu."""
-    q = update.callback_query
-    if q:
-        with contextlib.suppress(Exception):
-            await q.answer()
-    if context is not None:
-        unlock_flow(context)
-    await show_menu(update, context)
-    return ConversationHandler.END
-
-async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log-friendly snapshot of the current menu/flow context."""
-    source = "callback" if update.callback_query else "message"
-    data = update.callback_query.data if update.callback_query else (update.message.text if update.message else None)
-    flow = context.user_data.get(MODE_KEY)
-    keys = sorted(str(k) for k in context.user_data.keys())
-    lines = [
-        "📋 Menu diagnostics:",
-        f"• source: {source}",
-        f"• data: {data!r}",
-        f"• active_flow: {flow or 'none'}",
-        f"• user_data_keys: {', '.join(keys) or 'none'}",
-    ]
-    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
-    if target:
-        await target.reply_text("\n".join(lines))
-    else:
-        chat_id = update.effective_chat.id if update.effective_chat else None
-        if chat_id:
-            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
-
-
-async def handlers_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Summarise registered handlers by PTB group to debug routing."""
-    app = context.application
-    groups = getattr(app, "handlers", None)
-    lines = ["🛠 Handler groups:"]
-    if isinstance(groups, dict):
-        items = sorted(groups.items())
-    elif isinstance(groups, (list, tuple)):
-        items = enumerate(groups)
-    else:
-        items = []
-
-    for group, handlers in items:
-        if not handlers:
-            continue
-        lines.append(f"G{group}: {len(handlers)} handler(s)")
-        for h in handlers[:8]:  # cap to keep the message short
-            cb = getattr(h, "callback", None)
-            cb_name = getattr(cb, "__name__", repr(cb))
-            details: list[str] = []
-            pattern = getattr(h, "pattern", None)
-            if pattern is not None:
-                pat = getattr(pattern, "pattern", None) or str(pattern)
-                details.append(f"pattern={pat}")
-            filt = getattr(h, "filters", None)
-            if filt and not details:
-                details.append(f"filters={filt}")
-            lines.append("  - " + cb_name + (f" ({'; '.join(details)})" if details else ""))
-        if len(handlers) > 8:
-            lines.append("  …")
-    if len(lines) == 1:
-        lines.append("(no handler listing available)")
-        
-    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
-    if target:
-        await target.reply_text("\n".join(lines))
-    else:
-        chat_id = update.effective_chat.id if update.effective_chat else None
-        if chat_id:
-            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
-
-
-async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    q = update.callback_query
-    if not q:
-        return
-    data = q.data
-    user_id = update.effective_user.id if update.effective_user else None
-    chat_id = q.message.chat_id if q.message else None
-    log.warning("[callback] Unhandled data=%r chat=%s user=%s", data, chat_id, user_id)
-    with contextlib.suppress(Exception):
-        await q.answer()
-    if q.message:
-        await q.message.reply_text("Button action is unknown now. Please use /menu.")
-
 
 async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     story = _pick_josh_story()
@@ -4709,8 +4594,8 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.message.reply_text("Open profile with /profile.")
         return
 
-    log.warning("[menu_router] Unhandled callback data=%r chat=%s user=%s", data, q.message.chat_id if q.message else None, update.effective_user.id if update.effective_user else None)
-    await q.message.reply_text("Unknown menu item. Please try /menu.")
+    # fallback
+    await q.message.reply_text("Unknown menu item.")
     
 #----------------------------New Quiz end
     # ---------------- small helpers ----------------
@@ -4764,8 +4649,8 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return str(v)
 
     def _fmt_bond_line(bond_years, bond_penalty_lakhs):
-        y = _to_int_or_none(bond_years)
-        p = _to_int_or_none(bond_penalty_lakhs)
+        y = _to_int_or_none(years)
+        p = _to_int_or_none(penalty_lakh)
         if y is None and p is None:
             return "—"
         parts = []
@@ -6881,11 +6766,6 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_CATEGORY
 
     context.user_data["category"] = cat
-    if context.user_data.get("quota") != "State":
-        # Clear any stale domicile and finish without extra prompts for non-state quotas
-        context.user_data.pop("domicile_state", None)
-        context.user_data.pop("pending_predict_summary", None)
-        return await _finish_predict_now(update, context)
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Type your *domicile state* (e.g., Delhi, Uttar Pradesh) or tap *Skip*.",
@@ -7815,10 +7695,7 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-
-    _add(CommandHandler("menu_diag", menu_diag), group=0)
-    _add(CommandHandler("handlers_diag", handlers_diag), group=0)
-    _add(MessageHandler(filters.Regex(r"(?i)^menu$"), show_menu), group=0)
+    
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
@@ -7847,11 +7724,7 @@ def register_handlers(app: Application) -> None:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
             ],
         },
-        fallbacks=[
-            CommandHandler("cancel", cancel),
-            CommandHandler("menu", menu_exit_conversation),
-            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
-        ],
+        fallbacks=[CommandHandler("cancel", cancel)],
         name="ask_conv",
         persistent=False,
         per_message=False,
@@ -7910,11 +7783,7 @@ def register_handlers(app: Application) -> None:
             ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
             ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
         },
-        fallbacks=[
-            CommandHandler("cancel", cancel_predict),
-            CommandHandler("menu", menu_exit_conversation),
-            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
-        ],
+        fallbacks=[CommandHandler("cancel", cancel_predict)],
         name="predict_conv",
         persistent=False,
         per_message=False,
@@ -7967,11 +7836,7 @@ def register_handlers(app: Application) -> None:
             ],
             PROFILE_SET_PRIMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
         },
-        fallbacks=[
-            CommandHandler("cancel", cancel),
-            CommandHandler("menu", menu_exit_conversation),
-            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
-        ],
+        fallbacks=[CommandHandler("cancel", cancel)],
         name="profile_conv",
         persistent=False,
     )
@@ -7981,7 +7846,7 @@ def register_handlers(app: Application) -> None:
         pattern=r"^menu_(josh|home)$"
     ), group=1)
 
-    _add(CallbackQueryHandler(handle_unknown_callback), group=9)
+    
     # -------------------------------
     # Error handler (optional)
     # -------------------------------
@@ -8005,6 +7870,5 @@ async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT
         await q.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
-    
+
     await _finish_predict_now(update, context)
-    
