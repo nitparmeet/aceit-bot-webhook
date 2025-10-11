@@ -20,7 +20,16 @@ import base64
 from openai import OpenAI
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 try:
-    from strategies import load_strategies, all_strategies, get_strategy
+    from strategies import load_strategies, get_strategy  # type: ignore
+    try:
+        from strategies import all_strategies as _all_strategies  # type: ignore
+        def all_strategies() -> List[Dict[str, Any]]:
+            data = _all_strategies()
+            return data if isinstance(data, list) else []
+    except ImportError:
+        def all_strategies() -> List[Dict[str, Any]]:
+            data = load_strategies()
+            return data if isinstance(data, list) else []
 except Exception:
     def load_strategies(*args, **kwargs):
         return []
