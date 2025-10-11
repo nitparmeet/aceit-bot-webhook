@@ -4120,12 +4120,7 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
     log.warning("[callback] Unhandled data=%r chat=%s user=%s", data, chat_id, user_id)
     with contextlib.suppress(Exception):
         await q.answer()
-    if q.message:
-        await q.message.reply_text(
-            "Button action isn’t wired yet. Please use /menu.\n"
-            f"(debug: callback data `{data}`)",
-            parse_mode="Markdown"
-        )
+   
 
 
 async def log_unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
