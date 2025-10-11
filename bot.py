@@ -3107,7 +3107,17 @@ def load_cutoff_lookup_from_excel(
             return {}
 
     # --- Closing rank numeric ---
-    df["_close"] = pd.to_numeric(df[c_close], errors="coerce").astype("Int64")
+    close_numeric = pd.to_numeric(df[c_close], errors="coerce")
+
+    def _coerce_rank(val):
+        if pd.isna(val):
+            return pd.NA
+        try:
+            return int(round(float(val)))
+        except Exception:
+            return pd.NA
+
+    df["_close"] = close_numeric.apply(_coerce_rank).astype("Int64")
     df = df.dropna(subset=["_close"])
     if df.empty:
         return {}
