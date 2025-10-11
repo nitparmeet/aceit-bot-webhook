@@ -4021,6 +4021,17 @@ async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_T
     await show_menu(update, context)
     return ConversationHandler.END
 
+async def menu_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Hard fallback so we can confirm /menu reaches the bot."""
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    user_id = update.effective_user.id if update.effective_user else None
+    log.warning("[menu-debug] /menu reached | chat=%s user=%s", chat_id, user_id)
+
+    tgt = update.effective_message
+    if tgt:
+        await tgt.reply_text("⏱ Opening menu… (debug handler)")
+
+    await menu_exit_conversation(update, context)
 
 async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     source = "callback" if update.callback_query else "message"
@@ -4097,6 +4108,15 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
     if q.message:
         await q.message.reply_text("Button action isn’t wired yet. Please use /menu.")
 
+async def log_unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.message.text if update.message else None
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    user_id = update.effective_user.id if update.effective_user else None
+    log.warning("[command] Unhandled command %r chat=%s user=%s", text, chat_id, user_id)
+    tgt = update.effective_message
+    if tgt:
+        await tgt.reply_text("I didn’t recognize that command. Try /menu.")
+        
 async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     story = _pick_josh_story()
     header = "🔥 Josh Zone "
@@ -7815,10 +7835,10 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    _add(CommandHandler("menu", menu_exit_conversation), group=0)
+    _add(CommandHandler("menu", menu_emergency), group=0)
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
-    _add(MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation), group=0)
+   _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
@@ -7850,7 +7870,7 @@ def register_handlers(app: Application) -> None:
         fallbacks=[
             CommandHandler("cancel", cancel),
             CommandHandler("menu", menu_exit_conversation),
-            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
+            MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation),
         ],
         name="ask_conv",
         persistent=False,
@@ -7913,7 +7933,7 @@ def register_handlers(app: Application) -> None:
         fallbacks=[
             CommandHandler("cancel", cancel_predict),
             CommandHandler("menu", menu_exit_conversation),
-            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
+            MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation),
         ],
         name="predict_conv",
         persistent=False,
@@ -7982,6 +8002,7 @@ def register_handlers(app: Application) -> None:
     ), group=1)
 
     _add(CallbackQueryHandler(handle_unknown_callback), group=9)
+    _add(MessageHandler(filters.COMMAND, log_unknown_command), group=9)
 
     
     # -------------------------------
