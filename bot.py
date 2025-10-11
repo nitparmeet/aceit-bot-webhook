@@ -3094,7 +3094,7 @@ def load_cutoff_lookup_from_excel(
             return {}
 
     # --- Closing rank numeric ---
-     close_numeric = pd.to_numeric(df[c_close], errors="coerce")
+    close_numeric = pd.to_numeric(df[c_close], errors="coerce")
 
     # Some sheets store closing ranks as floats (e.g. 1234.0 or 1234.5). Since
     # rank can't be fractional, coerce any non-integer values down to the
