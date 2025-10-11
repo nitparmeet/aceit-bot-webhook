@@ -4035,14 +4035,20 @@ async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
+
+
 async def show_menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Production /menu — no debug text."""
     try:
-        await show_menu(update, context)  # your existing show_menu() that prints menu + buttons
+        await show_menu(update, context) 
     except Exception as e:
         log.exception("show_menu crashed; falling back: %s", e)
-        await menu_exit_conversation(update, context)
+        await menu_exit_conversation(update, context) 
 
+async def menu_open_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    await show_menu(update, context)
 
 async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     source = "callback" if update.callback_query else "message"
@@ -7849,7 +7855,8 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    _add(CommandHandler("menu", menu_emergency, block=True), group=0)
+    _add(CommandHandler("menu", show_menu_cmd), group=0)  # /menu
+    _add(CallbackQueryHandler(menu_open_cb, pattern=r"^(menu|menu_open|menu:open)$"), group=0)
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
     _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
