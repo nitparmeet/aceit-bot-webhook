@@ -7835,7 +7835,7 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    _add(CommandHandler("menu", menu_emergency), group=0)
+    _add(CommandHandler("menu", menu_emergency, block=True), group=0)
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
     _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
@@ -8003,7 +8003,18 @@ def register_handlers(app: Application) -> None:
 
     _add(CallbackQueryHandler(handle_unknown_callback), group=9)
     _add(MessageHandler(filters.COMMAND, log_unknown_command), group=9)
-
+    # Clean up any legacy handlers that may still point to show_menu
+    try:
+        legacy_removed = 0
+        for handler in list(app.handlers[0]):
+            cb = getattr(handler, "callback", None)
+            if getattr(cb, "__name__", "") == "show_menu":
+                app.handlers[0].remove(handler)
+                legacy_removed += 1
+        if legacy_removed:
+            log.warning("[menu-debug] Removed %d legacy show_menu handler(s)", legacy_removed)
+    except Exception:
+        log.exception("[menu-debug] Failed cleaning legacy show_menu handler")
     
     # -------------------------------
     # Error handler (optional)
