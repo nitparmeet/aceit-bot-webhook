@@ -19,8 +19,22 @@ import time
 import base64
 from openai import OpenAI
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+try:
+    from strategies import load_strategies, all_strategies, get_strategy
+except Exception:
+    def load_strategies(*args, **kwargs):
+        return []
+
+    def all_strategies() -> List[Dict[str, Any]]:
+        return []
+
+    def get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
+        return None
+    logging.getLogger("aceit-bot").warning(
+        "strategies module unavailable; strategy features will be disabled"
+    )
 from telegram import ReplyKeyboardMarkup
-from telegram.constants import ChatAction
+from telegram.constants import ChatAction, ParseMode
 from typing import Dict, Any, List, Optional, Tuple, Iterable
 from telegram import Bot
 import pandas as pd
@@ -3972,9 +3986,10 @@ def _pick_josh_story() -> str:
 
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
+        [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")]
         [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
         [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
+        [InlineKeyboardButton("🧭 Topper Strategy (Macro)", callback_data="menu_strategy")],
         [InlineKeyboardButton("🔥 Josh Zone:  GET MOTIVATED ", callback_data="menu_josh")],
         [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
@@ -4049,6 +4064,120 @@ async def menu_open_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     await show_menu(update, context)
+
+async def menu_strategy_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+        target = q.message
+    else:
+        target = update.effective_message
+
+    try:
+        strategies = all_strategies()
+        if not strategies:
+            load_strategies()
+            strategies = all_strategies()
+    except Exception:
+        log.exception("[strategy] failed to load strategies")
+        strategies = []
+
+    if not strategies:
+        message = "Topper strategies file not found yet. Please try later."
+        if target:
+            await target.reply_text(message)
+        else:
+            chat_id = update.effective_chat.id if update.effective_chat else None
+            if chat_id:
+                await context.bot.send_message(chat_id=chat_id, text=message)
+        return
+
+    buttons: List[List[InlineKeyboardButton]] = []
+    for strat in strategies:
+        sid = str(strat.get("id") or "").strip()
+        title = str(strat.get("title") or "Strategy")
+        if not sid:
+            continue
+        buttons.append([InlineKeyboardButton(f"📋 {title}", callback_data=f"strategy:{sid}")])
+
+    if not buttons:
+        if target:
+            await target.reply_text("Topper strategies file not found yet. Please try later.")
+        return
+
+    buttons.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="menu:back")])
+    markup = InlineKeyboardMarkup(buttons)
+
+    message = "Topper Strategy (Macro): Choose a plan"
+    if target:
+        await target.reply_text(message, reply_markup=markup)
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=markup)
+
+
+async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+
+    with contextlib.suppress(Exception):
+        await q.answer()
+
+    data = (q.data or "").strip()
+    _, _, strategy_id = data.partition(":")
+    strategy_id = strategy_id.strip()
+    if not strategy_id:
+        await q.message.reply_text("Strategy not found.")
+        return
+
+    try:
+        strategy = get_strategy(strategy_id)
+        if not strategy:
+            load_strategies()
+            strategy = get_strategy(strategy_id)
+    except Exception:
+        log.exception("[strategy] failed to fetch strategy", extra={"strategy_id": strategy_id})
+        strategy = None
+
+    if not strategy:
+        await q.message.reply_text("Strategy not found.")
+        return
+
+    title = str(strategy.get("title") or "Strategy")
+    short = str(strategy.get("short_desc") or strategy.get("short_description") or strategy.get("description") or "").strip()
+    bullets = strategy.get("bullets") or strategy.get("points") or []
+    bullet_lines = [str(b).strip() for b in bullets if str(b).strip()]
+
+    try:
+        from telegram.helpers import escape_markdown
+
+        md_parts = [f"*{escape_markdown(title, version=2)}*"]
+        if short:
+            md_parts.append(f"_{escape_markdown(short, version=2)}_")
+        if bullet_lines:
+            md_parts.append("\n".join(f"• {escape_markdown(line, version=2)}" for line in bullet_lines))
+        md_text = "\n\n".join(part for part in md_parts if part)
+        await q.message.reply_text(md_text, parse_mode=ParseMode.MARKDOWN_V2)
+        return
+    except Exception:
+        log.exception("[strategy] markdown formatting failed", extra={"strategy_id": strategy_id})
+
+    plain_parts = [title]
+    if short:
+        plain_parts.append(short)
+    if bullet_lines:
+        plain_parts.append("\n".join(f"• {line}" for line in bullet_lines))
+    await q.message.reply_text("\n\n".join(part for part in plain_parts if part))
+
+
+async def strategy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await menu_strategy_handler(update, context)
+
+
+
 
 async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     source = "callback" if update.callback_query else "message"
@@ -7859,12 +7988,15 @@ def register_handlers(app: Application) -> None:
     _add(CallbackQueryHandler(menu_open_cb, pattern=r"^(menu|menu_open|menu:open)$"), group=0)
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
+    _add(CommandHandler("strategy", strategy_command), group=0)
     _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$", block=True), group=0)
+    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$", block=True), group=0)
     _add(CallbackQueryHandler(
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
@@ -8062,4 +8194,5 @@ async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT
         pass
 
     await _finish_predict_now(update, context)
+
 
