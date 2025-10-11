@@ -34,6 +34,7 @@ from unidecode import unidecode
 from telegram import Update
 from collections import Counter
 import sys
+from functools import lru_cache
 def _load_strategy_module():
     try:
         from strategies import load_strategies, all_strategies, get_strategy  # type: ignore
