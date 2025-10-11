@@ -4009,6 +4009,12 @@ async def show_menu(
 
 async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Universal handler to exit any conversation and jump to the main menu."""
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+    if context is not None:
+        unlock_flow(context)
     await show_menu(update, context)
     return ConversationHandler.END
 
@@ -4037,8 +4043,16 @@ async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def handlers_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Summarise registered handlers by PTB group to debug routing."""
     app = context.application
+    groups = getattr(app, "handlers", None)
     lines = ["🛠 Handler groups:"]
-    for group, handlers in enumerate(app.handlers):
+    if isinstance(groups, dict):
+        items = sorted(groups.items())
+    elif isinstance(groups, (list, tuple)):
+        items = enumerate(groups)
+    else:
+        items = []
+
+    for group, handlers in items:
         if not handlers:
             continue
         lines.append(f"G{group}: {len(handlers)} handler(s)")
@@ -4056,6 +4070,9 @@ async def handlers_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             lines.append("  - " + cb_name + (f" ({'; '.join(details)})" if details else ""))
         if len(handlers) > 8:
             lines.append("  …")
+    if len(lines) == 1:
+        lines.append("(no handler listing available)")
+        
     target = update.effective_message or (update.callback_query.message if update.callback_query else None)
     if target:
         await target.reply_text("\n".join(lines))
@@ -4747,8 +4764,8 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return str(v)
 
     def _fmt_bond_line(bond_years, bond_penalty_lakhs):
-        y = _to_int_or_none(years)
-        p = _to_int_or_none(penalty_lakh)
+        y = _to_int_or_none(bond_years)
+        p = _to_int_or_none(bond_penalty_lakhs)
         if y is None and p is None:
             return "—"
         parts = []
