@@ -7838,7 +7838,7 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("menu", menu_emergency), group=0)
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
-   _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
+    _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
