@@ -4106,7 +4106,11 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
     with contextlib.suppress(Exception):
         await q.answer()
     if q.message:
-        await q.message.reply_text("Button action isn’t wired yet. Please use /menu.")
+        await q.message.reply_text(
+            "Button action isn’t wired yet. Please use /menu.\n"
+            f"(debug: callback data `{data}`)",
+            parse_mode="Markdown"
+        )
 
 async def log_unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text if update.message else None
