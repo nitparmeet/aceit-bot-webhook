@@ -3123,6 +3123,10 @@ def load_cutoff_lookup_from_excel(
     if df.empty:
         return {}
 
+    df = df.dropna(subset=["_close"])
+    if df.empty:
+        return {}
+
     # --- Build strict lookup (prefer the loosest closing rank if duplicates appear) ---
     out: dict[tuple[str,str,str], int] = {}
     used = 0
@@ -7593,6 +7597,10 @@ from telegram.ext import (
     ConversationHandler, filters
 )
 
+# Global filters for menu escape handling
+MENU_TEXT_FILTER = filters.Regex(r"(?i)^menu$")
+TEXT_EXCEPT_MENU = filters.TEXT & ~filters.COMMAND & ~MENU_TEXT_FILTER
+
 log = logging.getLogger("aceit-bot")
 
 # Globals your old code used
@@ -7831,12 +7839,12 @@ def register_handlers(app: Application) -> None:
         ],
         states={
             ASK_SUBJECT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_subject_select),
+                MessageHandler(TEXT_EXCEPT_MENU, ask_subject_select),
                 CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
             ],
             ASK_WAIT: [
                 MessageHandler(filters.PHOTO, ask_receive_photo),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_receive_text),
+                MessageHandler(TEXT_EXCEPT_MENU, ask_receive_text),
             ],
         },
         fallbacks=[
@@ -7892,15 +7900,15 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$"),
         ],
         states={
-            ASK_AIR: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_air)],
-            ASK_MOCK_RANK: [MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_rank)],
+            ASK_AIR: [MessageHandler(TEXT_EXCEPT_MENU, on_air)],
+            ASK_MOCK_RANK: [MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_rank)],
             ASK_MOCK_SIZE: [
                 CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, predict_mockrank_collect_size),
+                MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_size),
             ],
-            ASK_QUOTA: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_quota)],
-            ASK_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_category)],
-            ASK_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, on_domicile)],
+            ASK_QUOTA: [MessageHandler(TEXT_EXCEPT_MENU, on_quota)],
+            ASK_CATEGORY: [MessageHandler(TEXT_EXCEPT_MENU, on_category)],
+            ASK_DOMICILE: [MessageHandler(TEXT_EXCEPT_MENU, on_domicile)],
         },
         fallbacks=[
             CommandHandler("cancel", cancel_predict),
@@ -7948,16 +7956,16 @@ def register_handlers(app: Application) -> None:
             CallbackQueryHandler(setup_profile, pattern=r"^menu_profile$"),
         ],
         states={
-            PROFILE_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_menu)],
-            PROFILE_SET_CATEGORY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_category)],
-            PROFILE_SET_DOMICILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_domicile)],
-            PROFILE_SET_PREF: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_pref)],
-            PROFILE_SET_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_email)],
+            PROFILE_MENU: [MessageHandler(TEXT_EXCEPT_MENU, profile_menu)],
+            PROFILE_SET_CATEGORY: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_category)],
+            PROFILE_SET_DOMICILE: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_domicile)],
+            PROFILE_SET_PREF: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_pref)],
+            PROFILE_SET_EMAIL: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_email)],
             PROFILE_SET_MOBILE: [
                 MessageHandler(filters.CONTACT, profile_set_mobile),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_mobile),
+                MessageHandler(TEXT_EXCEPT_MENU, profile_set_mobile),
             ],
-            PROFILE_SET_PRIMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, profile_set_primary)],
+            PROFILE_SET_PRIMARY: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_primary)],
         },
         fallbacks=[
             CommandHandler("cancel", cancel),
