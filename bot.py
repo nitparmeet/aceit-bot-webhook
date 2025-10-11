@@ -4025,6 +4025,8 @@ async def menu_emergency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Hard fallback so we can confirm /menu reaches the bot."""
     chat_id = update.effective_chat.id if update.effective_chat else None
     user_id = update.effective_user.id if update.effective_user else None
+    if text and re.match(r"^/menu(@\w+)?$", text, re.IGNORECASE):
+        return
     log.warning("[menu-debug] /menu reached | chat=%s user=%s", chat_id, user_id)
 
     tgt = update.effective_message
@@ -7623,6 +7625,7 @@ from telegram.ext import (
 
 # Global filters for menu escape handling
 MENU_TEXT_FILTER = filters.Regex(r"(?i)^menu$")
+MENU_COMMAND_FILTER = filters.Regex(r"^/menu(?:@\w+)?$", re.IGNORECASE)
 TEXT_EXCEPT_MENU = filters.TEXT & ~filters.COMMAND & ~MENU_TEXT_FILTER
 
 log = logging.getLogger("aceit-bot")
@@ -8006,7 +8009,7 @@ def register_handlers(app: Application) -> None:
     ), group=1)
 
     _add(CallbackQueryHandler(handle_unknown_callback), group=9)
-    _add(MessageHandler(filters.COMMAND, log_unknown_command), group=9)
+    _add(MessageHandler(filters.COMMAND & ~MENU_COMMAND_FILTER, log_unknown_command), group=9)
     # Clean up any legacy handlers that may still point to show_menu
     try:
         legacy_removed = 0
