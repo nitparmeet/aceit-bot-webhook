@@ -3094,7 +3094,31 @@ def load_cutoff_lookup_from_excel(
             return {}
 
     # --- Closing rank numeric ---
-    df["_close"] = pd.to_numeric(df[c_close], errors="coerce").astype("Int64")
+     close_numeric = pd.to_numeric(df[c_close], errors="coerce")
+
+    # Some sheets store closing ranks as floats (e.g. 1234.0 or 1234.5). Since
+    # rank can't be fractional, coerce any non-integer values down to the
+    # nearest int so that Pandas can cast into the nullable Int64 dtype.
+    fractional = close_numeric.dropna().apply(lambda x: not float(x).is_integer())
+    if fractional.any():
+        log.warning(
+            "[cutoffs] fractional closing ranks detected (%d rows). Flooring values before cast.",
+            int(fractional.sum()),
+        )
+        close_numeric = close_numeric.apply(lambda x: math.floor(x) if pd.notna(x) else x)
+
+    try:
+        df["_close"] = close_numeric.astype("Int64")
+    except TypeError:
+        # As a fallback, round the values and retry. Any residual failures are
+        # coerced to nullable ints (leaving NaNs we drop below).
+        rounded = close_numeric.round()
+        df["_close"] = pd.to_numeric(rounded, errors="coerce").astype("Int64")
+
+    df = df.dropna(subset=["_close"])
+    if df.empty:
+        return {}
+
     df = df.dropna(subset=["_close"])
     if df.empty:
         return {}
