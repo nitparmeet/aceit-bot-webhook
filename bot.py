@@ -19,6 +19,16 @@ import time
 import base64
 from openai import OpenAI
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+from telegram import ReplyKeyboardMarkup
+from telegram.constants import ChatAction, ParseMode
+from typing import Dict, Any, List, Optional, Tuple, Iterable
+from telegram import Bot
+import pandas as pd
+from dotenv import load_dotenv
+from unidecode import unidecode
+from telegram import Update
+from collections import Counter
+
 try:
     from strategies import load_strategies, get_strategy  # type: ignore
     try:
@@ -42,15 +52,7 @@ except Exception:
     logging.getLogger("aceit-bot").warning(
         "strategies module unavailable; strategy features will be disabled"
     )
-from telegram import ReplyKeyboardMarkup
-from telegram.constants import ChatAction, ParseMode
-from typing import Dict, Any, List, Optional, Tuple, Iterable
-from telegram import Bot
-import pandas as pd
-from dotenv import load_dotenv
-from unidecode import unidecode
-from telegram import Update
-from collections import Counter
+
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 _HANDLERS_ATTACHED = False
