@@ -4012,6 +4012,73 @@ async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_T
     await show_menu(update, context)
     return ConversationHandler.END
 
+async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log-friendly snapshot of the current menu/flow context."""
+    source = "callback" if update.callback_query else "message"
+    data = update.callback_query.data if update.callback_query else (update.message.text if update.message else None)
+    flow = context.user_data.get(MODE_KEY)
+    keys = sorted(str(k) for k in context.user_data.keys())
+    lines = [
+        "📋 Menu diagnostics:",
+        f"• source: {source}",
+        f"• data: {data!r}",
+        f"• active_flow: {flow or 'none'}",
+        f"• user_data_keys: {', '.join(keys) or 'none'}",
+    ]
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if target:
+        await target.reply_text("\n".join(lines))
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+
+
+async def handlers_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Summarise registered handlers by PTB group to debug routing."""
+    app = context.application
+    lines = ["🛠 Handler groups:"]
+    for group, handlers in enumerate(app.handlers):
+        if not handlers:
+            continue
+        lines.append(f"G{group}: {len(handlers)} handler(s)")
+        for h in handlers[:8]:  # cap to keep the message short
+            cb = getattr(h, "callback", None)
+            cb_name = getattr(cb, "__name__", repr(cb))
+            details: list[str] = []
+            pattern = getattr(h, "pattern", None)
+            if pattern is not None:
+                pat = getattr(pattern, "pattern", None) or str(pattern)
+                details.append(f"pattern={pat}")
+            filt = getattr(h, "filters", None)
+            if filt and not details:
+                details.append(f"filters={filt}")
+            lines.append("  - " + cb_name + (f" ({'; '.join(details)})" if details else ""))
+        if len(handlers) > 8:
+            lines.append("  …")
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if target:
+        await target.reply_text("\n".join(lines))
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+
+
+async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+    data = q.data
+    user_id = update.effective_user.id if update.effective_user else None
+    chat_id = q.message.chat_id if q.message else None
+    log.warning("[callback] Unhandled data=%r chat=%s user=%s", data, chat_id, user_id)
+    with contextlib.suppress(Exception):
+        await q.answer()
+    if q.message:
+        await q.message.reply_text("Button action is unknown now. Please use /menu.")
+
+
 async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     story = _pick_josh_story()
     header = "🔥 Josh Zone "
@@ -4625,8 +4692,8 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await q.message.reply_text("Open profile with /profile.")
         return
 
-    # fallback
-    await q.message.reply_text("Unknown menu item.")
+    log.warning("[menu_router] Unhandled callback data=%r chat=%s user=%s", data, q.message.chat_id if q.message else None, update.effective_user.id if update.effective_user else None)
+    await q.message.reply_text("Unknown menu item. Please try /menu.")
     
 #----------------------------New Quiz end
     # ---------------- small helpers ----------------
@@ -7731,7 +7798,10 @@ def register_handlers(app: Application) -> None:
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
     _add(CommandHandler("menu", show_menu), group=0)
-    
+
+    _add(CommandHandler("menu_diag", menu_diag), group=0)
+    _add(CommandHandler("handlers_diag", handlers_diag), group=0)
+    _add(MessageHandler(filters.Regex(r"(?i)^menu$"), show_menu), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
 
@@ -7763,6 +7833,7 @@ def register_handlers(app: Application) -> None:
         fallbacks=[
             CommandHandler("cancel", cancel),
             CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
         ],
         name="ask_conv",
         persistent=False,
@@ -7825,6 +7896,7 @@ def register_handlers(app: Application) -> None:
         fallbacks=[
             CommandHandler("cancel", cancel_predict),
             CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
         ],
         name="predict_conv",
         persistent=False,
@@ -7881,6 +7953,7 @@ def register_handlers(app: Application) -> None:
         fallbacks=[
             CommandHandler("cancel", cancel),
             CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
         ],
         name="profile_conv",
         persistent=False,
@@ -7891,7 +7964,7 @@ def register_handlers(app: Application) -> None:
         pattern=r"^menu_(josh|home)$"
     ), group=1)
 
-    
+    _add(CallbackQueryHandler(handle_unknown_callback), group=9)
     # -------------------------------
     # Error handler (optional)
     # -------------------------------
