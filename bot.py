@@ -8099,6 +8099,8 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
     _add(CommandHandler("strategy", strategy_command), group=0)
     _add(CommandHandler("strategy_where", strategy_where), group=0)
+    _add(CommandHandler("strategy_count", strategy_count), group=0)
+    _add(CommandHandler("strategy_reload", strategy_reload), group=0)
     _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
@@ -8266,6 +8268,7 @@ def register_handlers(app: Application) -> None:
     ), group=1)
 
     _add(CallbackQueryHandler(handle_unknown_callback, pattern=r".+"), group=9)
+    _add(MessageHandler(filters.COMMAND & ~filters.Regex(r"^/menu(@\w+)?$", re.IGNORECASE)), log_unknown_command, group=9)
     _add(MessageHandler(filters.COMMAND & ~MENU_COMMAND_FILTER, log_unknown_command), group=9)
     # Clean up any legacy handlers that may still point to show_menu
     try:
