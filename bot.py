@@ -44,41 +44,61 @@ for _p in list(strategy_search_paths):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-try:
-    from strategies import load_strategies, all_strategies, get_strategy, strategies_path  # type: ignore
-except ImportError:
-    def load_strategies(*args, **kwargs):
-        candidates = [
-            Path(__file__).resolve().parent / "strategies.json",
-            Path(__file__).resolve().parent.parent / "strategies.json",
-            Path.cwd() / "strategies.json",
-            Path.cwd().parent / "strategies.json",
-        ]
-        strategies: List[Dict[str, Any]] = []
-        for cand in candidates:
-            try:
-                if cand.exists():
-                    data = json.loads(cand.read_text(encoding="utf-8"))
-                    if isinstance(data, dict) and "strategies" in data:
-                        data = data["strategies"]
-                    if isinstance(data, list):
-                        strategies = [x for x in data if isinstance(x, dict)]
-                        break
-            except Exception:
-                log.exception("[strategy] Failed reading %s", cand)
-        return strategies
-        
-    def all_strategies() -> List[Dict[str, Any]]:
-        return load_strategies()
+def _fallback_load_strategies(*args, **kwargs):
+    candidates = [
+        Path(__file__).resolve().parent / "strategies.json",
+        Path(__file__).resolve().parent.parent / "strategies.json",
+        Path.cwd() / "strategies.json",
+        Path.cwd().parent / "strategies.json",
+    ]
+    strategies: List[Dict[str, Any]] = []
+    for cand in candidates:
+        try:
+            if cand.exists():
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and "strategies" in data:
+                    data = data["strategies"]
+                if isinstance(data, list):
+                    strategies = [x for x in data if isinstance(x, dict)]
+                    break
+        except Exception:
+            log.exception("[strategy] Failed reading %s", cand)
+    return strategies
 
-    def get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
-        sid = str(strategy_id or "").strip()
-        if not sid:
-            return None
-        for strat in all_strategies():
-            if str(strat.get("id") or "").strip() == sid:
-                return strat
+
+def _fallback_all_strategies() -> List[Dict[str, Any]]:
+    return _fallback_load_strategies()
+
+
+def _fallback_get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
+    sid = str(strategy_id or "").strip()
+    if not sid:
         return None
+    for strat in _fallback_all_strategies():
+        if str(strat.get("id") or "").strip() == sid:
+            return strat
+    return None
+
+
+def _fallback_strategies_path() -> str:
+    override = os.getenv("STRATEGIES_FILE")
+    if override:
+        return override
+    return str(Path(__file__).resolve().parent / "strategies.json")
+
+
+try:  # pragma: no cover - defensive import for flexible deployments
+    import strategies as _strategies_mod  # type: ignore
+except Exception:
+    load_strategies = _fallback_load_strategies  # type: ignore[assignment]
+    all_strategies = _fallback_all_strategies  # type: ignore[assignment]
+    get_strategy = _fallback_get_strategy  # type: ignore[assignment]
+    strategies_path = _fallback_strategies_path  # type: ignore[assignment]
+else:
+    load_strategies = getattr(_strategies_mod, "load_strategies", _fallback_load_strategies)
+    all_strategies = getattr(_strategies_mod, "all_strategies", _fallback_all_strategies)
+    get_strategy = getattr(_strategies_mod, "get_strategy", _fallback_get_strategy)
+    strategies_path = getattr(_strategies_mod, "strategies_path", _fallback_strategies_path)
     
 
 
