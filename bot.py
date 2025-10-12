@@ -45,7 +45,7 @@ for _p in list(strategy_search_paths):
         sys.path.insert(0, str(_p))
 
 try:
-    from strategies import load_strategies, all_strategies, get_strategy  # type: ignore
+    from strategies import load_strategies, all_strategies, get_strategy, strategies_path  # type: ignore
 except ImportError:
     def load_strategies(*args, **kwargs):
         candidates = [
@@ -1085,6 +1085,7 @@ log = logging.getLogger("aceit-bot")
 
 # ---------- Env ----------
 load_dotenv()
+load_strategies(os.getenv("STRATEGIES_FILE"))
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not found in .env")
@@ -4226,7 +4227,10 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def strategy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await menu_strategy_handler(update, context)
 
-
+async def strategy_where(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    if message:
+        await message.reply_text(f"strategies.json → {strategies_path()}")
 
 
 async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -8055,6 +8059,7 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
     _add(CommandHandler("strategy", strategy_command), group=0)
+    _add(CommandHandler("strategy_where", strategy_where), group=0)
     _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
     _add(CommandHandler("josh", show_josh_zone), group=0)
   
