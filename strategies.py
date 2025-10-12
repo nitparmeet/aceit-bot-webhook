@@ -9,7 +9,7 @@ _BASE = Path(__file__).resolve().parent
 _DEFAULT_FILE = _BASE / "strategies.json"
 _FILE = Path(os.getenv("STRATEGIES_FILE") or _DEFAULT_FILE).expanduser()
 
-
+_LAST_ERROR: str | None = None
 _LOADED = False
 
 _PLANS: Dict[int, dict] = {}
@@ -66,7 +66,26 @@ def strategies_path() -> str:
         return str(_FILE.resolve())
     except Exception:
         return str(_FILE)
+        
+def reload_strategies(file_path: str | None = None) -> int:
+    """Force reload and return count; records last error string if any."""
+    global _STRATS, _BY_ID, _LAST_ERROR
+    _STRATS, _BY_ID = [], {}
+    _LAST_ERROR = None
+    try:
+        load_strategies(file_path)
+        return len(_STRATS)
+    except Exception as e:
+        _LAST_ERROR = f"{type(e).__name__}: {e}"
+        _STRATS, _BY_ID = [], {}
+        return 0
 
+def strategies_count() -> int:
+    load_strategies()
+    return len(_STRATS)
+
+def strategies_last_error() -> str | None:
+    return _LAST_ERROR
 
 
 
