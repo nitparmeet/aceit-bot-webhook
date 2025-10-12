@@ -12,6 +12,14 @@
         "Study routine simple rakho: Physics – 1 concept + 5 questions • Chemistry – basic formulas ya reactions • Bio – NCERT padho aur underline karo",
         "Rule yaad rakho: “Zyada padhne se nahi, roz padhne se rank banti hai.” Skip kam karo, jitna ho sake daily touch me raho.",
         "Sunday ko ek chhota recap quiz karo (ACEit se kar lena 😉). 3 mahine me base solid ho jayega!"
+      ],
+      "stories": [
+        {
+          "ref": "shallu-intro",
+          "use_when": [
+            "first_open"
+          ]
+        }
       ]
     },
     {
@@ -60,6 +68,15 @@
         "Focus ke liye chhoti routine rakho: • 1 chapter per day • 10 questions • 1 self-note on what improved today",
         "Motivation kam lag raha hai? Ek chhoti win likho — “Aaj 1 hour padha.” Bas itna hi kaafi hai.",
         "Yaad rakho: “Reset ≠ failure. It means you care again.”"
+      ],
+      "stories": [
+        {
+          "ref": "shallu-intro",
+          "use_when": [
+            "low_streak",
+            "first_open"
+          ]
+        }
       ]
     },
     {
