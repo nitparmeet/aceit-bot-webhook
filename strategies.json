@@ -1,168 +1,77 @@
 {
   "version": "1.0",
-  "generated_at": "2025-10-08T20:52:00.357278Z",
   "language": "hinglish",
-  "plans": [
+  "strategies": [
     {
-      "plan_id": 1,
-      "slug": "beginner-start-plan",
+      "id": "beginner-start-plan",
       "title": "Beginner Start Plan – Zero se Hero 🚀",
-      "audience": "Students just starting NEET prep",
-      "tone": "Friendly, motivating, simple",
-      "stage_keywords": [
-        "beginner",
-        "foundation",
-        "start",
-        "new"
-      ],
-      "remind_default": "daily",
-      "recommended_frequency": "daily",
-      "messages": [
+      "short_desc": "Students just starting NEET prep",
+      "bullets": [
         "Welcome Future Doctor 👋  Tension mat lo, start slow but steady. Toppers bhi day-1 pe expert nahi hote.",
         "Pehle 30 din ka simple rule: 📘 NCERT ke basics samjho • 🧠 Roz padhne ki aadat banao • 💧 Chhoti chhoti wins celebrate karo",
         "Study routine simple rakho: Physics – 1 concept + 5 questions • Chemistry – basic formulas ya reactions • Bio – NCERT padho aur underline karo",
         "Rule yaad rakho: “Zyada padhne se nahi, roz padhne se rank banti hai.” Skip kam karo, jitna ho sake daily touch me raho.",
         "Sunday ko ek chhota recap quiz karo (ACEit se kar lena 😉). 3 mahine me base solid ho jayega!"
-      ],
-      "nudge_lines": [
-        "Bas aaj ka ek chapter conquer kar lo — kal topper banne ke aur paas ho jaoge 💪",
-        "Roz thoda padh lo, compounding magic karega ✨",
-        "Aaj 60 minutes jeet lo — kal AIR tumhari hogi 🩺"
       ]
     },
     {
-      "plan_id": 2,
-      "slug": "balance-plan-school-coaching",
+      "id": "balance-plan-school-coaching",
       "title": "Balance Plan – School + Coaching Combo ⚖️",
-      "audience": "Students juggling school and coaching",
-      "tone": "Practical, empathetic",
-      "stage_keywords": [
-        "school",
-        "coaching",
-        "balance",
-        "time"
-      ],
-      "remind_default": "daily",
-      "recommended_frequency": "daily",
-      "messages": [
+      "short_desc": "Students juggling school and coaching",
+      "bullets": [
         "School aur coaching dono sambhal rahe ho? Respect 🙌  Ab smart planning se dono ko balance karna seekho.",
         "Focus 3 energy slots par rakho: 🌅 Morning – ek concept • 🌇 Evening – coaching homework • 🌃 Night – recap 15 mins",
         "Plan: Mon–Fri → 2 topics per day (1 school, 1 NEET) • Sat–Sun → revision + test day",
         "Rule: “Half consistency is better than zero consistency.” Agar 1 ghanta bhi mila hai, use gold bana do 💛",
         "Har week ek untouched chapter padho — ye hi topper’s secret weapon hai 🔥"
-      ],
-      "nudge_lines": [
-        "Roz thoda padh lo, baaki duniya weekend pe dekhti rahegi 😎",
-        "Aaj ke 45 minutes = kal ki confidence ✅",
-        "Balance ≠ burnout — smart pacing rakho ✌️"
       ]
     },
     {
-      "plan_id": 3,
-      "slug": "sprint-plan-last-3-months",
+      "id": "sprint-plan-last-3-months",
       "title": "Sprint Plan – Last 3 Months ka Tehelka 🏁",
-      "audience": "Students in final 90-day push",
-      "tone": "Intense, focused, coaching",
-      "stage_keywords": [
-        "sprint",
-        "90 days",
-        "revision",
-        "last 3 months"
-      ],
-      "remind_default": "daily",
-      "recommended_frequency": "daily",
-      "messages": [
+      "short_desc": "Students in final 90-day push",
+      "bullets": [
         "90 days = 90 chances to change your destiny 💥  Ab time hai smart aur focused banne ka.",
         "30-45-15 formula yaad rakho: 📆 30 din – High weight NCERT chapters • 📆 45 din – Mock test + error log • 📆 15 din – Revision & rest",
         "Daily routine: Morning – Notes revise (1.5 hr) • Afternoon – Mock/Practice (2 hr) • Evening – Error analysis (1 hr) • Night – Flashcards / Concept recap (30 min)",
         "Last 20 din me koi naya topic mat uthao. Confidence build karo, speed aur accuracy dono par kaam karo.",
         "Toppers mantra: “Galti likho, repeat mat karo.”"
-      ],
-      "nudge_lines": [
-        "Aaj ka test sirf marks ka nahi, mindset ka hai 💪",
-        "Error log banao — wahi tumhe AIR dilayega 📈",
-        "Speed + accuracy = rank booster ⚡"
       ]
     },
     {
-      "plan_id": 4,
-      "slug": "dropper-plan-one-full-year",
+      "id": "dropper-plan-one-full-year",
       "title": "Dropper Plan – Ek Saal, Ek Mauka 🔁",
-      "audience": "Repeaters focusing for a full year",
-      "tone": "Mature, reassuring, long-game",
-      "stage_keywords": [
-        "dropper",
-        "full year",
-        "repeat",
-        "discipline"
-      ],
-      "remind_default": "daily",
-      "recommended_frequency": "daily",
-      "messages": [
+      "short_desc": "Repeaters focusing for a full year",
+      "bullets": [
         "Drop lena failure nahi hota — maturity hoti hai. Ab tumhare paas time hai apni story rewrite karne ka ✍️",
         "Golden Formula: 1–4 months → Concept rebuild • 5–8 months → Full syllabus + mocks • 9–12 months → Revision + speed boost",
         "Har test ka ek “Error Tracker” banao. Toppers apni galtiyon se grow karte hain, ignore nahi.",
         "NCERT ko base rakho, fir coaching notes padho. Kuch bhi new padho to uska 10Q practice zaroor karo.",
         "Jab motivation kam ho, yaad rakho: “Ek saal sacrifice karke poori life upgrade hoti hai.”"
-      ],
-      "nudge_lines": [
-        "Har din ek chhoti jeet lo — kal AIR list tumhara naam likhegi 🩺",
-        "Discipline > motivation. Roz thoda karo ✅",
-        "Process pe trust rakho — result khud aayega 🎯"
       ]
     },
     {
-      "plan_id": 5,
-      "slug": "recovery-plan-comeback-stronger",
+      "id": "recovery-plan-comeback-stronger",
       "title": "Recovery Plan – Comeback Stronger 🔄",
-      "audience": "Students who lost consistency or confidence",
-      "tone": "Warm, healing, supportive",
-      "stage_keywords": [
-        "recovery",
-        "burnout",
-        "restart",
-        "comeback"
-      ],
-      "remind_default": "daily",
-      "recommended_frequency": "daily",
-      "messages": [
+      "short_desc": "Students who lost consistency or confidence",
+      "bullets": [
         "Break liya tha? Koi baat nahi 💛  Topper bhi kabhi kabhi rukte hain, par rukne ke baad wapas aate hain aur tez daudte hain.",
         "Pehle guilt chhodo. Ab restart mode on karo. Aaj se 20-20 rule: Roz 20 pages + 20 mins quiz.",
         "Focus ke liye chhoti routine rakho: • 1 chapter per day • 10 questions • 1 self-note on what improved today",
         "Motivation kam lag raha hai? Ek chhoti win likho — “Aaj 1 hour padha.” Bas itna hi kaafi hai.",
         "Yaad rakho: “Reset ≠ failure. It means you care again.”"
-      ],
-      "nudge_lines": [
-        "Comeback stories hi inspire karti hain — aaj se tumhari shuru 💫",
-        "Guilt ko chhodo, routine ko pakdo 🤝",
-        "Bas aaj ka 1 hour jeet lo 🕒"
       ]
     },
     {
-      "plan_id": 6,
-      "slug": "calm-plan-exam-month-warrior",
+      "id": "calm-plan-exam-month-warrior",
       "title": "Calm Plan – Exam Month Warrior 🧘‍♂️",
-      "audience": "Students 30 days before NEET",
-      "tone": "Calm, confident, minimal",
-      "stage_keywords": [
-        "exam month",
-        "calm",
-        "last 30 days",
-        "revision"
-      ],
-      "remind_default": "daily",
-      "recommended_frequency": "daily",
-      "messages": [
+      "short_desc": "Students 30 days before NEET",
+      "bullets": [
         "Ab time kam hai, par panic se kuch nahi milega. Toppers last month me sirf revise aur relax karte hain.",
         "Focus 3-R Rule pe: 🧠 Revise → Repeat → Relax",
         "Daily routine: • 2 chapters Bio revise • 1 mock test every alternate day • 30 mins light walk / music",
         "Avoid new topics aur heavy material. Bas apne strong areas polish karo.",
         "Mindset tip: “Calm brain = fast recall.” Last month me peace of mind hi topper ka weapon hai."
-      ],
-      "nudge_lines": [
-        "Aaj stress nahi, sirf strategy. Tum ready ho doctor banne ke liye 🩺✨",
-        "Calm dimag, sharp recall — bas yehi game hai 🧠",
-        "Light walk + light mind = heavy marks 📈"
       ]
     }
   ]
