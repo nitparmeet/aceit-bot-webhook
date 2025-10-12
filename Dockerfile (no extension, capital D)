@@ -1,7 +1,12 @@
 FROM python:3.11-slim
-WORKDIR /app
+# Set working directory where FastAPI/PTB runs
+WORKDIR /opt/render/project/src
+# Install dependencies first (leveraging Docker layer cache)
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
+# Copy the entire application into the working directory
+COPY . /opt/render/project/src
+# Ensure strategies.json is always present even if .dockerignore changes later
+COPY strategies.json /opt/render/project/src/strategies.json
 ENV PORT=8080
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
