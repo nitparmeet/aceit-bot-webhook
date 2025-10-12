@@ -4139,7 +4139,18 @@ async def menu_strategy_handler(update: Update, context: ContextTypes.DEFAULT_TY
         strategies = []
 
     if not strategies:
-        message = "Topper strategies file not found yet. Please try later."
+        attempted = [
+            Path(__file__).resolve().parent / "strategies.json",
+            Path(__file__).resolve().parent.parent / "strategies.json",
+            Path.cwd() / "strategies.json",
+            Path.cwd().parent / "strategies.json",
+        ]
+        msg_lines = [
+            "Topper strategies file not found yet. Please try later.",
+            "Checked paths:",
+        ]
+        msg_lines.extend(f"• {cand}" for cand in attempted)
+        message = "\n".join(msg_lines)
         if target:
             await target.reply_text(message)
         else:
