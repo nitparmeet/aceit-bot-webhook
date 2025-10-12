@@ -60,30 +60,30 @@ except Exception:
     log.warning("strategies module import failed; using JSON fallback")
     @lru_cache(maxsize=1)
     def _fallback_strategies() -> List[Dict[str, Any]]:
-        candidates = [
-            Path(__file__).resolve().parent / "strategies.json",
-            Path(__file__).resolve().parent.parent / "strategies.json",
-            Path.cwd() / "strategies.json",
-            Path.cwd().parent / "strategies.json",
-        ]
-        for cand in candidates:
-            try:
-                if cand.exists():
-                    data = json.loads(cand.read_text(encoding="utf-8"))
-                    if isinstance(data, dict):
-                        if "strategies" in data and isinstance(data["strategies"], list):
-                            return data["strategies"]
-                        data = [data]
-                    if isinstance(data, list):
-                        return [x for x in data if isinstance(x, dict)]
-            except Exception:
-                log.exception("[strategy] Failed reading %s", cand)
-        return []
+    candidates = [
+        Path(__file__).resolve().parent / "strategies.json",
+        Path(__file__).resolve().parent.parent / "strategies.json",
+        Path.cwd() / "strategies.json",
+        Path.cwd().parent / "strategies.json",
+    ]
+    for cand in candidates:
+        try:
+            if cand.exists():
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    if "strategies" in data and isinstance(data["strategies"], list):
+                        return data["strategies"]
+                    data = [data]
+                if isinstance(data, list):
+                    return [x for x in data if isinstance(x, dict)]
+        except Exception:
+            log.exception("[strategy] Failed reading %s", cand)
+    return []
         
     def load_strategies(*args, **kwargs):
-        _fallback_strategies.cache_clear()
-        return _fallback_strategies()
-    
+    _fallback_strategies.cache_clear()
+    return _fallback_strategies()
+
     def all_strategies() -> List[Dict[str, Any]]:
         return _fallback_strategies()
 
@@ -4044,7 +4044,7 @@ def main_menu_markup() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
         [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
         [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
-        [InlineKeyboardButton("🧭 Topper Strategy ", callback_data="menu_strategy")],
+        [InlineKeyboardButton("🧭 Topper Strategy (Macro) ", callback_data="menu_strategy")],
         [InlineKeyboardButton("🔥 Josh Zone:  GET MOTIVATED ", callback_data="menu_josh")],
         [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
