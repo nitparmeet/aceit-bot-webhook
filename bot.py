@@ -1532,7 +1532,7 @@ async def _debug_unknown_callback(update, context):
     q = update.callback_query
     data = q.data if q else None
     if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict", "menu_strategy"}:
-        log.debug("[callback] ignoring known menu_predict payload: %r", data)
+        log.debug("[callback] ignoring known menu payload: %r", data)
         return
     import logging
     logging.getLogger("aceit-bot").warning("UNHANDLED CALLBACK: %r", data)
@@ -8060,8 +8060,8 @@ def register_handlers(app: Application) -> None:
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$"), group=0)
-    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$"), group=0)
+    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$", block=True), group=0)
+    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$", block=True), group=0)
     _add(CallbackQueryHandler(
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
