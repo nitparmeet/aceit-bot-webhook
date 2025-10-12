@@ -8049,7 +8049,6 @@ def register_handlers(app: Application) -> None:
 
     # --- Basic commands ---
     _add(CommandHandler("start", start), group=0)
-    _add(CommandHandler("menu", show_menu), group=0)
     _add(CommandHandler("menu", show_menu_cmd), group=0)  # /menu
     _add(CallbackQueryHandler(menu_open_cb, pattern=r"^(menu|menu_open|menu:open)$"), group=0)
     _add(CommandHandler("menu_diag", menu_diag), group=0)
@@ -8061,8 +8060,8 @@ def register_handlers(app: Application) -> None:
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$", block=True), group=0)
-    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$", block=True), group=0)
+    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$"), group=0)
+    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$"), group=0)
     _add(CallbackQueryHandler(
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
@@ -8220,7 +8219,7 @@ def register_handlers(app: Application) -> None:
         pattern=r"^menu_(josh|home)$"
     ), group=1)
 
-    _add(CallbackQueryHandler(handle_unknown_callback), group=9)
+    _add(CallbackQueryHandler(handle_unknown_callback, pattern=r".+"), group=9)
     _add(MessageHandler(filters.COMMAND & ~MENU_COMMAND_FILTER, log_unknown_command), group=9)
     # Clean up any legacy handlers that may still point to show_menu
     try:
