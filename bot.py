@@ -7888,7 +7888,7 @@ from telegram.ext import (
     ConversationHandler, filters
 )
 
-# Global filters for menu escape handling
+
 MENU_TEXT_FILTER = filters.Regex(r"(?i)^menu$")
 MENU_COMMAND_FILTER = filters.Regex(re.compile(r"^/menu(?:@\w+)?$", re.IGNORECASE))
 TEXT_EXCEPT_MENU = filters.TEXT & ~filters.COMMAND & ~MENU_TEXT_FILTER
