@@ -6,18 +6,42 @@ from typing import Dict, List, Optional, Tuple
 
 # Defaults to the same folder as this file unless overridden.
 _BASE = Path(__file__).resolve().parent
-_FILE = Path(os.getenv("STRATEGIES_FILE", _BASE / "strategies.json"))
+_DEFAULT_FILE = _BASE / "strategies.json"
+_FILE = Path(os.getenv("STRATEGIES_FILE") or _DEFAULT_FILE).expanduser()
+
+
+_LOADED = False
 
 _PLANS: Dict[int, dict] = {}
 _META: Dict[str, object] = {}
 
+def _resolve_file(path: Optional[str]) -> Path:
+    if path:
+        return Path(path)
+    env_path = os.getenv("STRATEGIES_FILE")
+    if env_path:
+        return Path(env_path)
+    return _FILE
+
 def load_strategies(path: Optional[str] = None) -> None:
-    p = Path(path) if path else _FILE
-    if not p.exists():
+    global _FILE, _LOADED
+
+    target = _resolve_file(path).expanduser()
+    if target != _FILE:
+        _FILE = target
+        _PLANS.clear()
+        _META.clear()
+        _LOADED = False
+
+    if _LOADED:
+        return
+
+    if not _FILE.exists():
         # Helpful error so you see it in Render logs
-        raise FileNotFoundError(f"strategies.json not found at {p}. "
+        raise FileNotFoundError(f"strategies.json not found at {_FILE}. "
                                 f"Make sure it is committed at repo root.")
-    with p.open("r", encoding="utf-8") as f:
+
+    with _FILE.open("r", encoding="utf-8") as f:
         data = json.load(f)
     _PLANS.clear()
     for plan in data["plans"]:
@@ -26,6 +50,7 @@ def load_strategies(path: Optional[str] = None) -> None:
     for k, v in data.items():
         if k != "plans":
             _META[k] = v
+    _LOADED = True
 
 def get_plan(plan_id: int) -> Optional[dict]:
     if not _PLANS:
