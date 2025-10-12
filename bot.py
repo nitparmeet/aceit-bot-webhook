@@ -4264,7 +4264,10 @@ async def strategy_reload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cnt = reload_strategies(os.getenv("STRATEGIES_FILE"))
     stats = strategies_debug_stats()
     await update.effective_message.reply_text(
-        f"reloaded={cnt}\nraw={stats.get('raw')} filtered={stats.get('filtered')}\nerror={stats.get('error') or '—'}"
+        f"reloaded={cnt}\n"
+        f"path={stats.get('path')}\n"
+        f"raw={stats.get('raw')} filtered={stats.get('filtered')}\n"
+        f"error={stats.get('error') or '—'}"
     )
 
 
