@@ -44,7 +44,7 @@ for _p in list(strategy_search_paths):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-try:  # pragma: no cover - defensive import for flexible deployments
+try:  # STRICT import – fail loudly if strategies.py is broken/missing
     from strategies import (
         load_strategies,
         all_strategies,
@@ -55,40 +55,24 @@ try:  # pragma: no cover - defensive import for flexible deployments
         strategies_last_error,
         strategies_debug_stats,
     )
-except Exception:
-    def load_strategies(file_path: Optional[str] = None) -> None:
-        log.warning("[strategy] strategies module unavailable; load noop (path=%s)", file_path)
+    STRAT_IMPORT_OK = True
+except Exception as e:  # pragma: no cover - log full traceback for visibility
+    import logging as _logging
 
-    def all_strategies() -> List[Dict[str, Any]]:
-        return []
+    STRAT_IMPORT_OK = False
+    _logging.getLogger("aceit-bot").exception("[strategy] import failed", exc_info=e)
 
-    def get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
-        return None
+    def _strategy_import_fail(*_args, **_kwargs):
+        raise RuntimeError("strategies import failed; see logs")
 
-    def strategies_path() -> str:
-        override = os.getenv("STRATEGIES_FILE")
-        if override:
-            return override
-        return str(Path(__file__).resolve().parent / "strategies.json")
-
-    def reload_strategies(file_path: Optional[str] = None) -> int:
-        load_strategies(file_path)
-        return 0
-
-    def strategies_count() -> int:
-        return 0
-
-    def strategies_last_error() -> Optional[str]:
-        return "strategies module unavailable"
-
-    def strategies_debug_stats() -> Dict[str, int | str]:
-        return {
-            "path": strategies_path(),
-            "raw": 0,
-            "loaded": 0,
-            "filtered": 0,
-            "error": strategies_last_error() or "",
-        }
+    load_strategies = _strategy_import_fail  # type: ignore[assignment]
+    all_strategies = _strategy_import_fail  # type: ignore[assignment]
+    get_strategy = _strategy_import_fail  # type: ignore[assignment]
+    strategies_path = _strategy_import_fail  # type: ignore[assignment]
+    reload_strategies = _strategy_import_fail  # type: ignore[assignment]
+    strategies_count = _strategy_import_fail  # type: ignore[assignment]
+    strategies_last_error = _strategy_import_fail  # type: ignore[assignment]
+    strategies_debug_stats = _strategy_import_fail  # type: ignore[assignment]
 
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
@@ -1094,6 +1078,12 @@ log = logging.getLogger("aceit-bot")
 
 # ---------- Env ----------
 load_dotenv()
+p = os.getenv("STRATEGIES_FILE", "/opt/render/project/src/strategies.json")
+try:
+    _strategy_file_size = os.path.getsize(p) if os.path.exists(p) else -1
+except Exception:
+    _strategy_file_size = -2
+log.info("[strategy] import_ok=%s file=%s size=%s", STRAT_IMPORT_OK, p, _strategy_file_size)
 load_strategies(os.getenv("STRATEGIES_FILE"))
 logging.getLogger("aceit-bot").info(
     "strategies.json path -> %s (exists=%s)",
@@ -4233,6 +4223,29 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         plain_parts.append("\n".join(f"• {line}" for line in bullet_lines))
     await q.message.reply_text("\n\n".join(part for part in plain_parts if part))
 
+async def strategy_import_diag(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text(f"strategies import_ok={STRAT_IMPORT_OK}")
+
+
+async def strategy_head(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import os
+    import json  # noqa: F401  # kept for quick interactive debugging
+    import textwrap  # noqa: F401
+
+    p = os.getenv("STRATEGIES_FILE", "/opt/render/project/src/strategies.json")
+    exists = os.path.exists(p)
+    try:
+        size = os.path.getsize(p) if exists else 0
+    except Exception:
+        size = -1
+    head = ""
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            head = f.read(600)
+    except Exception as e:
+        head = f"<read error: {e}>"
+    msg = f"path={p}\nexists={exists} size={size}\n--- first 600 chars ---\n{head}"
+    await update.effective_message.reply_text(msg)
 
 async def strategy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await menu_strategy_handler(update, context)
