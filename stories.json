@@ -1,8 +1,8 @@
 {
   "stories": [
     {
-      "id": "shallu-intro",
-      "title": "Shallu Intro – Belief se Topper Strategy tak",
+      "id": "intro",
+      "title": "Intro – Belief se Topper Strategy tak",
       "tags": ["mindset", "onboarding", "josh_zone"],
       "cta_line": "Yes! Bana Mere Liye Strategy 🚀",
       "use_when": ["first_open", "josh_zone"],
