@@ -1,16 +1,18 @@
 from __future__ import annotations
 import json
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Always resolves to the same folder as this file.
-_JSON_PATH = Path(__file__).with_name("strategies.json")
+# Defaults to the same folder as this file unless overridden.
+_BASE = Path(__file__).resolve().parent
+_FILE = Path(os.getenv("STRATEGIES_FILE", _BASE / "strategies.json"))
 
 _PLANS: Dict[int, dict] = {}
 _META: Dict[str, object] = {}
 
 def load_strategies(path: Optional[str] = None) -> None:
-    p = Path(path) if path else _JSON_PATH
+    p = Path(path) if path else _FILE
     if not p.exists():
         # Helpful error so you see it in Render logs
         raise FileNotFoundError(f"strategies.json not found at {p}. "
@@ -34,3 +36,12 @@ def get_menu() -> List[Tuple[int, str]]:
     if not _PLANS:
         load_strategies()
     return [(pid, _PLANS[pid]["title"]) for pid in sorted(_PLANS.keys())]
+def strategies_path() -> str:
+    try:
+        return str(_FILE.resolve())
+    except Exception:
+        return str(_FILE)
+
+
+
+
