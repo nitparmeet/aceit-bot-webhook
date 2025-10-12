@@ -8281,7 +8281,6 @@ def register_handlers(app: Application) -> None:
     ), group=1)
 
     _add(CallbackQueryHandler(handle_unknown_callback, pattern=r".+"), group=9)
-    _add(MessageHandler(filters.COMMAND & ~filters.Regex(r"^/menu(@\w+)?$", re.IGNORECASE)), log_unknown_command, group=9)
     _add(MessageHandler(filters.COMMAND & ~MENU_COMMAND_FILTER, log_unknown_command), group=9)
     # Clean up any legacy handlers that may still point to show_menu
     try:
