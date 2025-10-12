@@ -1086,6 +1086,11 @@ log = logging.getLogger("aceit-bot")
 # ---------- Env ----------
 load_dotenv()
 load_strategies(os.getenv("STRATEGIES_FILE"))
+logging.getLogger("aceit-bot").info(
+    "strategies.json path -> %s (exists=%s)",
+    strategies_path(),
+    os.path.exists(strategies_path()),
+)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not found in .env")
@@ -4228,9 +4233,16 @@ async def strategy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await menu_strategy_handler(update, context)
 
 async def strategy_where(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    import os as _os
+
     message = update.effective_message
-    if message:
-        await message.reply_text(f"strategies.json → {strategies_path()}")
+    if not message:
+        return
+
+    path = strategies_path()
+    exists = _os.path.exists(path)
+    await message.reply_text(f"strategies.json -> {path}\nexists={exists}")
+
 
 
 async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -8066,12 +8078,13 @@ def register_handlers(app: Application) -> None:
 
     # --- QUIZ: menu + router + answers ---
     _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
-    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$", block=True), group=0)
-    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$", block=True), group=0)
     _add(CallbackQueryHandler(
         quiz_menu_router,
         pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
     ), group=0)
+    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$", block=True), group=0)
+    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$", block=True), group=0)
+    
    
     # -------------------------------
     # Ask (Doubt) conversation
