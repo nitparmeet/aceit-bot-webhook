@@ -44,62 +44,51 @@ for _p in list(strategy_search_paths):
     if _p.exists() and str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-def _fallback_load_strategies(*args, **kwargs):
-    candidates = [
-        Path(__file__).resolve().parent / "strategies.json",
-        Path(__file__).resolve().parent.parent / "strategies.json",
-        Path.cwd() / "strategies.json",
-        Path.cwd().parent / "strategies.json",
-    ]
-    strategies: List[Dict[str, Any]] = []
-    for cand in candidates:
-        try:
-            if cand.exists():
-                data = json.loads(cand.read_text(encoding="utf-8"))
-                if isinstance(data, dict) and "strategies" in data:
-                    data = data["strategies"]
-                if isinstance(data, list):
-                    strategies = [x for x in data if isinstance(x, dict)]
-                    break
-        except Exception:
-            log.exception("[strategy] Failed reading %s", cand)
-    return strategies
-
-
-def _fallback_all_strategies() -> List[Dict[str, Any]]:
-    return _fallback_load_strategies()
-
-
-def _fallback_get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
-    sid = str(strategy_id or "").strip()
-    if not sid:
-        return None
-    for strat in _fallback_all_strategies():
-        if str(strat.get("id") or "").strip() == sid:
-            return strat
-    return None
-
-
-def _fallback_strategies_path() -> str:
-    override = os.getenv("STRATEGIES_FILE")
-    if override:
-        return override
-    return str(Path(__file__).resolve().parent / "strategies.json")
-
-
 try:  # pragma: no cover - defensive import for flexible deployments
-    import strategies as _strategies_mod  # type: ignore
+    from strategies import (
+        load_strategies,
+        all_strategies,
+        get_strategy,
+        strategies_path,
+        reload_strategies,
+        strategies_count,
+        strategies_last_error,
+        strategies_debug_stats,
+    )
 except Exception:
-    load_strategies = _fallback_load_strategies  # type: ignore[assignment]
-    all_strategies = _fallback_all_strategies  # type: ignore[assignment]
-    get_strategy = _fallback_get_strategy  # type: ignore[assignment]
-    strategies_path = _fallback_strategies_path  # type: ignore[assignment]
-else:
-    load_strategies = getattr(_strategies_mod, "load_strategies", _fallback_load_strategies)
-    all_strategies = getattr(_strategies_mod, "all_strategies", _fallback_all_strategies)
-    get_strategy = getattr(_strategies_mod, "get_strategy", _fallback_get_strategy)
-    strategies_path = getattr(_strategies_mod, "strategies_path", _fallback_strategies_path)
-    
+    def load_strategies(file_path: Optional[str] = None) -> None:
+        log.warning("[strategy] strategies module unavailable; load noop (path=%s)", file_path)
+
+    def all_strategies() -> List[Dict[str, Any]]:
+        return []
+
+    def get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
+        return None
+
+    def strategies_path() -> str:
+        override = os.getenv("STRATEGIES_FILE")
+        if override:
+            return override
+        return str(Path(__file__).resolve().parent / "strategies.json")
+
+    def reload_strategies(file_path: Optional[str] = None) -> int:
+        load_strategies(file_path)
+        return 0
+
+    def strategies_count() -> int:
+        return 0
+
+    def strategies_last_error() -> Optional[str]:
+        return "strategies module unavailable"
+
+    def strategies_debug_stats() -> Dict[str, int | str]:
+        return {
+            "path": strategies_path(),
+            "raw": 0,
+            "loaded": 0,
+            "filtered": 0,
+            "error": strategies_last_error() or "",
+        }
 
 
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
@@ -4149,24 +4138,20 @@ async def menu_strategy_handler(update: Update, context: ContextTypes.DEFAULT_TY
         strategies = []
 
     if not strategies:
-        attempted = [
-            Path(__file__).resolve().parent / "strategies.json",
-            Path(__file__).resolve().parent.parent / "strategies.json",
-            Path.cwd() / "strategies.json",
-            Path.cwd().parent / "strategies.json",
+        stats = strategies_debug_stats()
+        hint = [
+            "Topper strategies not available yet.",
+            f"path: {stats.get('path')}",
+            f"raw items: {stats.get('raw')} | loaded: {stats.get('loaded')} | filtered: {stats.get('filtered')}",
         ]
-        msg_lines = [
-            "Topper strategies file not found yet. Please try later.",
-            "Checked paths:",
-        ]
-        msg_lines.extend(f"• {cand}" for cand in attempted)
-        message = "\n".join(msg_lines)
+        if stats.get("error"):
+            hint.append(f"error: {stats['error']}")
         if target:
-            await target.reply_text(message)
+            await target.reply_text("\n".join(hint))
         else:
             chat_id = update.effective_chat.id if update.effective_chat else None
             if chat_id:
-                await context.bot.send_message(chat_id=chat_id, text=message)
+                await context.bot.send_message(chat_id=chat_id, text="\n".join(hint))
         return
 
     buttons: List[List[InlineKeyboardButton]] = []
@@ -4252,16 +4237,35 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def strategy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await menu_strategy_handler(update, context)
 
-async def strategy_where(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    import os as _os
 
-    message = update.effective_message
-    if not message:
-        return
+async def strategy_where(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import os
 
-    path = strategies_path()
-    exists = _os.path.exists(path)
-    await message.reply_text(f"strategies.json -> {path}\nexists={exists}")
+    p = strategies_path()
+    await update.effective_message.reply_text(f"strategies.json -> {p}\nexists={os.path.exists(p)}")
+
+
+async def strategy_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cnt = strategies_count()
+    stats = strategies_debug_stats()
+    ids = [s.get("id") for s in all_strategies()][:5]
+    lines = [
+        f"loaded={cnt}",
+        f"path={stats.get('path')}",
+        f"raw={stats.get('raw')} filtered={stats.get('filtered')}",
+    ]
+    if stats.get("error"):
+        lines.append(f"error={stats['error']}")
+    lines.append(f"first_ids={ids}")
+    await update.effective_message.reply_text("\n".join(lines))
+
+
+async def strategy_reload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cnt = reload_strategies(os.getenv("STRATEGIES_FILE"))
+    stats = strategies_debug_stats()
+    await update.effective_message.reply_text(
+        f"reloaded={cnt}\nraw={stats.get('raw')} filtered={stats.get('filtered')}\nerror={stats.get('error') or '—'}"
+    )
 
 
 
