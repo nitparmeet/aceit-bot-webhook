@@ -34,64 +34,48 @@ from unidecode import unidecode
 from telegram import Update
 from collections import Counter
 import sys
-from functools import lru_cache
-def _load_strategy_module():
-    try:
-        from strategies import load_strategies, all_strategies, get_strategy  # type: ignore
-        return load_strategies, all_strategies, get_strategy
-    except ImportError:
-        search_dirs = {
-            Path(__file__).resolve().parent,
-            Path(__file__).resolve().parent.parent,
-            Path.cwd(),
-            Path.cwd().parent,
-        }
-        for d in list(search_dirs):
-            if d.exists() and str(d) not in sys.path:
-                sys.path.insert(0, str(d))
-        from strategies import load_strategies, all_strategies, get_strategy  # type: ignore
-        return load_strategies, all_strategies, get_strategy
+strategy_search_paths = [
+    Path(__file__).resolve().parent,
+    Path(__file__).resolve().parent.parent,
+    Path.cwd(),
+    Path.cwd().parent,
+]
+for _p in list(strategy_search_paths):
+    if _p.exists() and str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 try:
-    load_strategies, all_strategies, get_strategy = _load_strategy_module()
-
-except Exception:
-    
-    log.warning("strategies module import failed; using JSON fallback")
-    @lru_cache(maxsize=1)
-    def _fallback_strategies() -> List[Dict[str, Any]]:
+    from strategies import load_strategies, all_strategies, get_strategy  # type: ignore
+except ImportError:
+    def load_strategies(*args, **kwargs):
         candidates = [
             Path(__file__).resolve().parent / "strategies.json",
             Path(__file__).resolve().parent.parent / "strategies.json",
             Path.cwd() / "strategies.json",
             Path.cwd().parent / "strategies.json",
         ]
+        strategies: List[Dict[str, Any]] = []
         for cand in candidates:
             try:
                 if cand.exists():
                     data = json.loads(cand.read_text(encoding="utf-8"))
-                    if isinstance(data, dict):
-                        if "strategies" in data and isinstance(data["strategies"], list):
-                            return data["strategies"]
-                        data = [data]
+                    if isinstance(data, dict) and "strategies" in data:
+                        data = data["strategies"]
                     if isinstance(data, list):
-                        return [x for x in data if isinstance(x, dict)]
+                        strategies = [x for x in data if isinstance(x, dict)]
+                        break
             except Exception:
                 log.exception("[strategy] Failed reading %s", cand)
-        return []
+        return strategies
         
-    def load_strategies(*args, **kwargs):
-        _fallback_strategies.cache_clear()
-        return _fallback_strategies()
-
     def all_strategies() -> List[Dict[str, Any]]:
-        return _fallback_strategies()
+        return load_strategies()
 
     def get_strategy(strategy_id: str) -> Optional[Dict[str, Any]]:
         sid = str(strategy_id or "").strip()
         if not sid:
             return None
-        for strat in _fallback_strategies():
+        for strat in all_strategies():
             if str(strat.get("id") or "").strip() == sid:
                 return strat
         return None
@@ -4312,6 +4296,23 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
     if not q:
         return
     data = q.data
+    data = (q.data or "").strip()
+    known_callbacks = {
+        "menu_strategy",
+        "menu_predict",
+        "menu_predict_mock",
+        "menu_mock_predict",
+        "menu_quiz",
+        "menu_josh",
+        "menu_ask",
+        "menu_profile",
+        "menu:back",
+    }
+    if data in known_callbacks:
+        with contextlib.suppress(Exception):
+            await q.answer()
+        return
+    
     user_id = update.effective_user.id if update.effective_user else None
     chat_id = q.message.chat_id if q.message else None
     log.warning("[callback] Unhandled data=%r chat=%s user=%s", data, chat_id, user_id)
