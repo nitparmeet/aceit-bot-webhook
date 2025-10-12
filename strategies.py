@@ -5,80 +5,124 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Defaults to the same folder as this file unless overridden.
-_BASE = Path(__file__).resolve().parent
-_DEFAULT_FILE = _BASE / "strategies.json"
-_FILE = Path(os.getenv("STRATEGIES_FILE") or _DEFAULT_FILE).expanduser()
+_BASE = Path(__file__).parent
+_FILE = Path(os.getenv("STRATEGIES_FILE", str(_BASE / "strategies.json"))).expanduser()
 
-_LAST_ERROR: str | None = None
-_LOADED = False
+_STRATS: List[Dict] = []
+_BY_ID: Dict[str, Dict] = {}
+_LAST_ERROR: Optional[str] = None
+_LAST_RAW_COUNT: int = 0
+_LAST_FILTERED_OUT: int = 0
 
-_PLANS: Dict[int, dict] = {}
-_META: Dict[str, object] = {}
+_logger = logging.getLogger("aceit-bot")
 
-def _resolve_file(path: Optional[str]) -> Path:
-    if path:
-        return Path(path)
-    env_path = os.getenv("STRATEGIES_FILE")
-    if env_path:
-        return Path(env_path)
-    return _FILE
+def _as_list(payload) -> List[Dict]:
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
+    if isinstance(payload, dict):
+        for key in ("strategies", "plans", "macros", "items"):
+            val = payload.get(key)
+            if isinstance(val, list):
+                return [x for x in val if isinstance(x, dict)]
+        return [payload]
+    return []
 
-def load_strategies(path: Optional[str] = None) -> None:
-    global _FILE, _LOADED
 
-    target = _resolve_file(path).expanduser()
-    if target != _FILE:
-        _FILE = target
-        _PLANS.clear()
-        _META.clear()
-        _LOADED = False
+def _normalize(item: Dict) -> Optional[Dict]:
+    sid = str(item.get("id") or "").strip()
+    title = str(item.get("title") or "").strip()
+    if not sid or not title:
+        return None
 
-    if _LOADED:
+    desc = (
+        item.get("description")
+        or item.get("short_desc")
+        or item.get("short_description")
+        or item.get("desc")
+        or ""
+    )
+    bullets = item.get("bullets") or item.get("points") or []
+    if isinstance(bullets, str):
+        bullets = [bullets]
+
+    norm = {
+        "id": sid,
+        "title": title,
+        "description": str(desc).strip(),
+        "bullets": [str(b).strip() for b in bullets if str(b).strip()],
+    }
+    return norm
+
+
+
+def load_strategies(file_path: Optional[str] = None) -> None:
+    global _FILE, _STRATS, _BY_ID, _LAST_ERROR, _LAST_RAW_COUNT, _LAST_FILTERED_OUT
+
+    if _STRATS:
         return
 
+    _LAST_ERROR = None
+    _LAST_RAW_COUNT = 0
+    _LAST_FILTERED_OUT = 0
+
+    if file_path:
+        _FILE = Path(file_path).expanduser()
+
     if not _FILE.exists():
-        # Helpful error so you see it in Render logs
-        raise FileNotFoundError(f"strategies.json not found at {_FILE}. "
-                                f"Make sure it is committed at repo root.")
+        _STRATS, _BY_ID = [], {}
+        _logger.warning("[strategies] file not found at %s", _FILE)
+        return
 
-    with _FILE.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    _PLANS.clear()
-    for plan in data["plans"]:
-        _PLANS[int(plan["plan_id"])] = plan
-    _META.clear()
-    for k, v in data.items():
-        if k != "plans":
-            _META[k] = v
-    _LOADED = True
+    try:
+        text = _FILE.read_text(encoding="utf-8")
+        raw = json.loads(text)
+        rows = _as_list(raw)
+        _LAST_RAW_COUNT = len(rows)
 
-def get_plan(plan_id: int) -> Optional[dict]:
-    if not _PLANS:
-        load_strategies()
-    return _PLANS.get(int(plan_id))
+        normed: List[Dict] = []
+        for it in rows:
+            norm = _normalize(it)
+            if norm:
+                normed.append(norm)
 
-def get_menu() -> List[Tuple[int, str]]:
-    if not _PLANS:
-        load_strategies()
-    return [(pid, _PLANS[pid]["title"]) for pid in sorted(_PLANS.keys())]
+        _LAST_FILTERED_OUT = _LAST_RAW_COUNT - len(normed)
+        _STRATS = normed
+        _BY_ID = {d["id"]: d for d in _STRATS}
+
+        _logger.info(
+            "[strategies] loaded %d item(s); filtered=%d; path=%s",
+            len(_STRATS),
+            _LAST_FILTERED_OUT,
+            _FILE,
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        _LAST_ERROR = f"{type(exc).__name__}: {exc}"
+        _STRATS, _BY_ID = [], {}
+        _logger.exception("[strategies] failed to load: %s", _LAST_ERROR)
+        
+def reload_strategies(file_path: Optional[str] = None) -> int:
+    global _STRATS, _BY_ID
+
+    _STRATS, _BY_ID = [], {}
+    load_strategies(file_path)
+    return len(_STRATS)
+
+
+def all_strategies() -> List[Dict]:
+    load_strategies()
+    return list(_STRATS)
+
+
+def get_strategy(sid: str) -> Optional[Dict]:
+    load_strategies()
+    return _BY_ID.get(str(sid).strip())
+
+
 def strategies_path() -> str:
     try:
         return str(_FILE.resolve())
     except Exception:
         return str(_FILE)
-        
-def reload_strategies(file_path: str | None = None) -> int:
-    """Force reload and return count; records last error string if any."""
-    global _STRATS, _BY_ID, _LAST_ERROR
-    _STRATS, _BY_ID = [], {}
-    _LAST_ERROR = None
-    try:
-        load_strategies(file_path)
-        return len(_STRATS)
-    except Exception as e:
-        _LAST_ERROR = f"{type(e).__name__}: {e}"
-        _STRATS, _BY_ID = [], {}
-        return 0
 
 def strategies_count() -> int:
     load_strategies()
@@ -87,5 +131,13 @@ def strategies_count() -> int:
 def strategies_last_error() -> str | None:
     return _LAST_ERROR
 
+def strategies_debug_stats() -> Dict[str, int | str]:
+    return {
+        "path": strategies_path(),
+        "raw": _LAST_RAW_COUNT,
+        "loaded": len(_STRATS),
+        "filtered": _LAST_FILTERED_OUT,
+        "error": _LAST_ERROR or "",
+    }
 
 
