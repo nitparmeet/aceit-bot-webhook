@@ -91,6 +91,7 @@ QUIZ_POOL: List[Dict[str, Any]] = []
 QUIZ_INDEX: Dict[str, Dict[str, Any]] = {} 
 QUIZ_BY_ID: dict[str, dict] = {}
 QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
+STORIES_FILE_PATH = Path(__file__).parent / "stories.json"
 
 PROFILE_MENU = 1001  # or use Enum
 QUIZ_STATE_PATH = "/tmp/quiz_sessions.json"
@@ -4024,7 +4025,49 @@ def _pick_josh_story() -> str:
         return "Aaj ka mantra: chhote consistent steps hi bada result banate hain."
     return random.choice(JOSH_ZONE_STORIES).strip()
 
+def _load_story_catalog() -> List[Dict[str, str]]:
+    try:
+        raw = json.loads(STORIES_FILE_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        log.debug("[stories] stories.json missing at %s", STORIES_FILE_PATH)
+        return []
+    except Exception:
+        log.exception("[stories] failed to load %s", STORIES_FILE_PATH)
+        return []
 
+    records = raw.get("stories")
+    if not isinstance(records, list):
+        return []
+
+    stories: List[Dict[str, str]] = []
+    seen_ids: set[str] = set()
+    for entry in records:
+        if not isinstance(entry, dict):
+            continue
+        sid = str(entry.get("id") or "").strip()
+        if not sid or sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+        title = str(entry.get("title") or "Story").strip() or "Story"
+        text = entry.get("text")
+        if not isinstance(text, str):
+            text = str(text or "")
+        cta = entry.get("cta_line")
+        if not isinstance(cta, str) or not cta.strip():
+            cta = "Yes! Bana Mere Liye Strategy 🚀"
+        stories.append({"id": sid, "title": title, "text": text, "cta_line": cta})
+
+    return stories
+
+
+def _find_story_by_id(story_id: str) -> Optional[Dict[str, str]]:
+    sid = (story_id or "").strip()
+    if not sid:
+        return None
+    for story in _load_story_catalog():
+        if story.get("id") == sid:
+            return story
+    return None
 
 
 
@@ -4360,6 +4403,8 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
         "menu_mock_predict",
         "menu_quiz",
         "menu_josh",
+        "menu_josh_stories",
+        "menu_home",
         "menu_ask",
         "menu_profile",
         "menu:back",
@@ -4394,6 +4439,7 @@ async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = f"{header}\n\n{story}"
 
     keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Emotional Stories", callback_data="menu_josh_stories")],
         [InlineKeyboardButton("⚡ Another Josh Story", callback_data="menu_josh")],
         [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="menu_home")],
     ])
@@ -4414,7 +4460,75 @@ async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if chat_id:
         with contextlib.suppress(BadRequest):
             await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+async def menu_josh_stories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+        target = q.message
+    else:
+        target = update.effective_message
 
+    stories = _load_story_catalog()
+    if not stories:
+        message = "Emotional stories coming soon. Stay tuned!"
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Josh Zone", callback_data="menu_josh")]])
+    else:
+        top_items = stories[:5]
+        buttons = [[InlineKeyboardButton(f"📖 {item['title']}", callback_data=f"story:{item['id']}")] for item in top_items]
+        buttons.append([InlineKeyboardButton("⬅️ Back to Josh Zone", callback_data="menu_josh")])
+        keyboard = InlineKeyboardMarkup(buttons)
+        message = "Pick an emotional story to read:"
+
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(message, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=keyboard)
+
+
+async def menu_josh_story_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+
+    with contextlib.suppress(Exception):
+        await q.answer()
+
+    data = (q.data or "").strip()
+    _, _, story_id = data.partition(":")
+    story = _find_story_by_id(story_id)
+
+    if not story:
+        target = q.message or update.effective_message
+        if target:
+            await target.reply_text("Story not found. Please try another.")
+        return
+
+    title = story.get("title") or "Story"
+    text_body = story.get("text") or ""
+    message = f"{title}\n\n{text_body}".strip()
+    cta_label = str(story.get("cta_line") or "Yes! Bana Mere Liye Strategy 🚀")
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(cta_label, callback_data="menu_strategy")],
+        [InlineKeyboardButton("⬅️ Back to Stories", callback_data="menu_josh_stories")],
+    ])
+
+    target = q.message or update.effective_message
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(message, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=keyboard)
 
 async def menu_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
@@ -4990,6 +5104,10 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     if data == "menu_josh":
         return await show_josh_zone(update, context)
+    if data == "menu_josh_stories":
+        return await menu_josh_stories(update, context)
+    if data.startswith("story:"):
+        return await menu_josh_story_detail(update, context)
     if data == "menu_home":
         return await show_menu(update, context)
     
