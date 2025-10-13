@@ -4232,6 +4232,9 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not strategy:
             load_strategies()
             strategy = get_strategy(strategy_id)
+        if not strategy or "stories" not in strategy:
+            reload_strategies()
+            strategy = get_strategy(strategy_id)
     except Exception:
         log.exception("[strategy] failed to fetch strategy", extra={"strategy_id": strategy_id})
         strategy = None
@@ -4268,6 +4271,7 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 label = label[:45] + "…"
             story_buttons.append([InlineKeyboardButton(f"📖 {label}", callback_data=f"story:{ref}")])
         if story_buttons:
+            story_buttons.append([InlineKeyboardButton("⬅️ Back to Strategies", callback_data="menu_strategy")])
             story_markup = InlineKeyboardMarkup(story_buttons)
     
     try:
