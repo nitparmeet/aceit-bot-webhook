@@ -4245,6 +4245,31 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     bullets = strategy.get("bullets") or strategy.get("points") or []
     bullet_lines = [str(b).strip() for b in bullets if str(b).strip()]
 
+    story_markup = None
+    story_entries = strategy.get("stories")
+    if isinstance(story_entries, list):
+        story_buttons: List[List[InlineKeyboardButton]] = []
+        for entry in story_entries:
+            if not isinstance(entry, dict):
+                continue
+            ref = str(entry.get("ref") or entry.get("id") or "").strip()
+            if not ref:
+                continue
+            story_obj = _find_story_by_id(ref)
+            label_source = None
+            if story_obj:
+                label_source = story_obj.get("title")
+            if not label_source:
+                label_source = entry.get("title")
+            label = str(label_source or ref).strip()
+            if not label:
+                continue
+            if len(label) > 48:
+                label = label[:45] + "…"
+            story_buttons.append([InlineKeyboardButton(f"📖 {label}", callback_data=f"story:{ref}")])
+        if story_buttons:
+            story_markup = InlineKeyboardMarkup(story_buttons)
+    
     try:
         from telegram.helpers import escape_markdown
 
