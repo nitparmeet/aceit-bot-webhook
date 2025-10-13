@@ -45,6 +45,26 @@ def _normalize(item: Dict) -> Optional[Dict]:
     if isinstance(bullets, str):
         bullets = [bullets]
 
+    stories_field = item.get("stories") or []
+    stories: List[Dict[str, Any]] = []
+    if isinstance(stories_field, list):
+        for entry in stories_field:
+            if not isinstance(entry, dict):
+                continue
+            ref = str(entry.get("ref") or entry.get("id") or "").strip()
+            if not ref:
+                continue
+            story_entry: Dict[str, Any] = {"ref": ref}
+            use_when = entry.get("use_when")
+            if isinstance(use_when, list):
+                values = [str(x).strip() for x in use_when if str(x).strip()]
+                if values:
+                    story_entry["use_when"] = values
+            title_val = entry.get("title")
+            if isinstance(title_val, str) and title_val.strip():
+                story_entry["title"] = title_val.strip()
+            stories.append(story_entry)
+
     norm = {
         "id": sid,
         "title": title,
