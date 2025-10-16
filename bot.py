@@ -4212,6 +4212,37 @@ async def menu_strategy_handler(update: Update, context: ContextTypes.DEFAULT_TY
             await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=markup)
 
 
+async def _send_strategy_story_preview(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: Dict[str, Any]) -> None:
+    story = payload.get("story") or {}
+    title = str(story.get("title") or payload.get("ref") or "Story")
+    text_body = str(story.get("text") or "")
+    message = f"{title}\n\n{text_body}".strip()
+
+    if not message:
+        message = title
+
+    cta_label = str(story.get("cta_line") or "Yes! Bana Mere Liye Strategy 🚀")
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(cta_label, callback_data="menu_strategy")],
+        [InlineKeyboardButton("⬅️ Back to Stories", callback_data="menu_josh_stories")],
+    ])
+
+    target = None
+    if update.callback_query and update.callback_query.message:
+        target = update.callback_query.message
+    elif update.effective_message:
+        target = update.effective_message
+
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(message, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=keyboard)
+
 async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     if not q:
