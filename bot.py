@@ -4280,6 +4280,7 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     bullet_lines = [str(b).strip() for b in bullets if str(b).strip()]
 
     story_markup = None
+    story_payloads: List[Dict[str, Any]] = []
     story_entries = strategy.get("stories")
     if isinstance(story_entries, list):
         story_buttons: List[List[InlineKeyboardButton]] = []
@@ -4301,6 +4302,8 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             if len(label) > 48:
                 label = label[:45] + "…"
             story_buttons.append([InlineKeyboardButton(f"📖 {label}", callback_data=f"story:{ref}")])
+            if story_obj:
+                story_payloads.append({"ref": ref, "story": story_obj})
         if story_buttons:
             story_buttons.append([InlineKeyboardButton("⬅️ Back to Strategies", callback_data="menu_strategy")])
             story_markup = InlineKeyboardMarkup(story_buttons)
@@ -4314,20 +4317,19 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if bullet_lines:
             md_parts.append("\n".join(f"• {escape_markdown(line, version=2)}" for line in bullet_lines))
         md_text = "\n\n".join(part for part in md_parts if part)
-        await q.message.reply_text(md_text, parse_mode=ParseMode.MARKDOWN_V2)
-        return
+        await q.message.reply_text(md_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=story_markup)
     except Exception:
         log.exception("[strategy] markdown formatting failed", extra={"strategy_id": strategy_id})
+        plain_parts = [title]
+        if short:
+            plain_parts.append(short)
+        if bullet_lines:
+            plain_parts.append("\n".join(f"• {line}" for line in bullet_lines))
+        await q.message.reply_text("\n\n".join(part for part in plain_parts if part), reply_markup=story_markup)
 
-    plain_parts = [title]
-    if short:
-        plain_parts.append(short)
-    if bullet_lines:
-        plain_parts.append("\n".join(f"• {line}" for line in bullet_lines))
-    await q.message.reply_text("\n\n".join(part for part in plain_parts if part))
-
-async def strategy_import_diag(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_message.reply_text(f"strategies import_ok={STRAT_IMPORT_OK}")
+    if story_payloads:
+        await _send_strategy_story_preview(update, context, story_payloads[0])
+    return
 
 
 async def strategy_head(update: Update, context: ContextTypes.DEFAULT_TYPE):
