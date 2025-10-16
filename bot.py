@@ -4025,22 +4025,50 @@ def _pick_josh_story() -> str:
         return "Aaj ka mantra: chhote consistent steps hi bada result banate hain."
     return random.choice(JOSH_ZONE_STORIES).strip()
 
-def _load_story_catalog() -> List[Dict[str, str]]:
+_STORY_CACHE_LIST: List[Dict[str, str]] = []
+_STORY_CACHE_MAP: Dict[str, Dict[str, str]] = {}
+_STORY_CACHE_MTIME: Optional[float] = None
+
+def _load_story_catalog(force: bool = False) -> List[Dict[str, str]]:
+    """Load stories.json and cache both ordered list and lookup map."""
+    global _STORY_CACHE_LIST, _STORY_CACHE_MAP, _STORY_CACHE_MTIME
+    path = STORIES_FILE_PATH
+
     try:
-        raw = json.loads(STORIES_FILE_PATH.read_text(encoding="utf-8"))
+        stat = path.stat()
     except FileNotFoundError:
-        log.debug("[stories] stories.json missing at %s", STORIES_FILE_PATH)
+        if _STORY_CACHE_LIST:
+            log.warning("[stories] %s missing; clearing story cache", path)
+        _STORY_CACHE_LIST = []
+        _STORY_CACHE_MAP = {}
+        _STORY_CACHE_MTIME = None
         return []
     except Exception:
-        log.exception("[stories] failed to load %s", STORIES_FILE_PATH)
-        return []
+        log.exception("[stories] failed stating %s", path)
+        return _STORY_CACHE_LIST
+
+    mtime = stat.st_mtime
+    if not force and _STORY_CACHE_LIST and _STORY_CACHE_MTIME == mtime:
+        return _STORY_CACHE_LIST
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        log.exception("[stories] failed to load %s", path)
+        return _STORY_CACHE_LIST
 
     records = raw.get("stories")
     if not isinstance(records, list):
-        return []
+        log.warning("[stories] %s missing 'stories' array", path)
+        _STORY_CACHE_LIST = []
+        _STORY_CACHE_MAP = {}
+        _STORY_CACHE_MTIME = mtime
+        return _STORY_CACHE_LIST
 
-    stories: List[Dict[str, str]] = []
     seen_ids: set[str] = set()
+    result_list: List[Dict[str, str]] = []
+    result_map: Dict[str, Dict[str, str]] = {}
+
     for entry in records:
         if not isinstance(entry, dict):
             continue
@@ -4048,6 +4076,7 @@ def _load_story_catalog() -> List[Dict[str, str]]:
         if not sid or sid in seen_ids:
             continue
         seen_ids.add(sid)
+
         title = str(entry.get("title") or "Story").strip() or "Story"
         text = entry.get("text")
         if not isinstance(text, str):
@@ -4055,9 +4084,15 @@ def _load_story_catalog() -> List[Dict[str, str]]:
         cta = entry.get("cta_line")
         if not isinstance(cta, str) or not cta.strip():
             cta = "Yes! Bana Mere Liye Strategy 🚀"
-        stories.append({"id": sid, "title": title, "text": text, "cta_line": cta})
 
-    return stories
+        story = {"id": sid, "title": title, "text": text, "cta_line": cta}
+        result_list.append(story)
+        result_map[sid] = story
+
+    _STORY_CACHE_LIST = result_list
+    _STORY_CACHE_MAP = result_map
+    _STORY_CACHE_MTIME = mtime
+    return _STORY_CACHE_LIST
 
 
 def _find_story_by_id(story_id: str) -> Optional[Dict[str, str]]:
@@ -4266,6 +4301,7 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if not strategy or "stories" not in strategy:
             reload_strategies()
             strategy = get_strategy(strategy_id)
+            _load_story_catalog(force=True)
     except Exception:
         log.exception("[strategy] failed to fetch strategy", extra={"strategy_id": strategy_id})
         strategy = None
@@ -4283,6 +4319,7 @@ async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     story_payloads: List[Dict[str, Any]] = []
     story_entries = strategy.get("stories")
     if isinstance(story_entries, list):
+        _load_story_catalog()
         story_buttons: List[List[InlineKeyboardButton]] = []
         for entry in story_entries:
             if not isinstance(entry, dict):
@@ -4532,6 +4569,8 @@ async def menu_josh_stories(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         target = update.effective_message
 
     stories = _load_story_catalog()
+    if not stories:
+        stories = _load_story_catalog(force=True)
     if not stories:
         message = "Emotional stories coming soon. Stay tuned!"
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Josh Zone", callback_data="menu_josh")]])
