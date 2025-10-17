@@ -7969,50 +7969,18 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         df_lookup = context.application.bot_data.get("CUTOFFS_DF", None)
 
-        # ---------- No results? Show Deemed (fee low → high) ----------
+       # ---------- No results? Notify user and exit ----------
         if not results:
-            deemed = _sorted_deemed_by_fee(COLLEGES, limit=10)
+            quota = (user or {}).get("quota") or "AIQ"
+            category = (user or {}).get("category") or "General"
 
-            if deemed:
-                # allow formatter to resolve ranks if needed
-                for d in deemed:
-                    d["_df_lookup"] = df_lookup
-
-                # Remember for AI notes
-                context.user_data["LAST_SHORTLIST"] = deemed
-
-                body = "\n\n".join(
-                    f"{i}. {_format_row_multiline(r, user, df_lookup)}"
-                    for i, r in enumerate(deemed, 1)
-                )
-
-                quota = (user or {}).get("quota") or "AIQ"
-                category = (user or {}).get("category") or "General"
-
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=(
-                        f"{header_plain}\n\n"
-                        f"Couldn’t find matches under {quota} / {category}.\n"
-                        f"Here are Deemed colleges (sorted by lowest fee):\n\n{body}"
-                    ),
-                )
-
-                # AI Notes button (keep it in predict, not in main menu)
-                kb = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🧠 Get AI notes on these colleges", callback_data="ai_notes")]]
-                )
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="Want quick expert-style notes on this shortlist?",
-                    reply_markup=kb,
-                )
-
-                _end_flow(context, "predict")
-                return ConversationHandler.END
-
-            # If even deemed list is empty
-            await context.bot.send_message(chat_id=chat_id, text=f"{header_plain}\n\nNo colleges found.")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"{header_plain}\n\n"
+                    f"Couldn’t find matches under {quota} / {category}."
+                ),
+            )
             _end_flow(context, "predict")
             return ConversationHandler.END
 
