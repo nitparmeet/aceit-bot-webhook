@@ -7378,6 +7378,19 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["quota"] = q
 
+    if q == "Deemed":
+        # Deemed quota does not differentiate by category/domicile; go straight to results.
+        context.user_data["category"] = "General"
+        context.user_data.pop("domicile_state", None)
+        context.user_data.pop("pending_predict_summary", None)
+        context.user_data["require_pg_quota"] = None
+        context.user_data["avoid_bond"] = None
+        await update.message.reply_text(
+            "Deemed quota applies to all categories. Fetching eligible colleges…",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return await _finish_predict_now(update, context)
+
     kb = ReplyKeyboardMarkup([["General", "OBC", "EWS", "SC", "ST"]],
                              one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text("Select your category:", reply_markup=kb)
