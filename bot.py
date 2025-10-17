@@ -8483,7 +8483,7 @@ def register_handlers(app: Application) -> None:
     _add(profile_conv, group=4)
     _add(CallbackQueryHandler(
         menu_router,
-        pattern=r"^menu_(josh|home)$"
+        pattern=r"^(menu_(?:josh(?:_stories)?|home)|story:.+)$"
     ), group=1)
 
     _add(CallbackQueryHandler(handle_unknown_callback, pattern=r".+"), group=9)
