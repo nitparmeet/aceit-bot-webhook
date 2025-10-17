@@ -1120,7 +1120,7 @@ NEET_CANDIDATE_POOL_DEFAULT = 2300000
 MOCK_BIAS_FACTOR_MIN = 1.10
 MOCK_BIAS_FACTOR_MAX = 1.40
 MOCK_BIAS_FACTOR_DEFAULT = 1.25
-_ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State" ]
+_ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State", "Open"]
 CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
 ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)
 
@@ -1820,6 +1820,8 @@ def _canon_quota(q: str | None) -> str:
         return "AIQ"
     if s in {"STATE", "SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}:
         return "State"
+    if "OPEN" in s:
+        return "Open"
     # Central / GOI bucket
     if s in {"GOI", "CENTRAL", "DGHS", "CU", "CENTRAL UNIVERSITY", "CENTRAL UNIV"}:
         return "Central"
@@ -6588,7 +6590,7 @@ def get_closing_rank(*,
     Resolve closing rank with strict handling:
       - Quota=='Any' → best among _ALLOWED_ANY_QUOTAS only (no legacy).
       - Quota=='AIQ' → per_quota first, then legacy AIQ fallback allowed.
-      - Quota in {'Deemed','Central'} → per_quota only (NO legacy fallback).
+      - Quota in {'Deemed','Central','Open'} → per_quota only (NO legacy fallback).
     """
     per_quota = (CUTOFFS_Q.get(round_key) or {})
     legacy    = (CUTOFFS.get(round_key)   or {})
@@ -6617,7 +6619,7 @@ def get_closing_rank(*,
         if isinstance(cr, int) and ((air is None) or (air <= cr)):
             return cr, "AIQ", "legacy_aiq"
 
-    # For Deemed/Central/NRI etc, do NOT fall back to AIQ
+    # For Deemed/Central/Open/NRI etc, do NOT fall back to AIQ
     return None, None, "none"
 
 def canonical_quota_ui(text: str) -> str:
@@ -6625,6 +6627,7 @@ def canonical_quota_ui(text: str) -> str:
     if t in {"AIQ","ALL INDIA","ALL INDIA QUOTA"}: return "AIQ"
     if "DEEMED" in t or "PAID" in t or "MANAGEMENT" in t: return "Deemed"
     if "CENTRAL" in t or t == "CU": return "Central"
+    if "OPEN" in t: return "Open"
     if "STATE" in t or t in {"SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}: return "State"  
     #if "AIIMS" in t:   return "AIIMS"
     #if "JIPMER" in t:  return "JIPMER"
@@ -6637,6 +6640,8 @@ def canonical_quota_ui(text: str) -> str:
 def _quota_bucket_from_ui(v: str) -> str:
     t = str(v or "").strip().upper()
     if t in {"AIQ", "ALL INDIA"}: return "AIQ"
+    if "STATE" in t:              return "State"
+    if "OPEN" in t:               return "Open"
     if "CENTRAL" in t:            return "Central"
     if "DEEMED" in t or "PAID" in t or "MANAGEMENT" in t: return "Deemed"
     if t in {"ANY", "ALL"}:       return "Any"
@@ -6644,7 +6649,7 @@ def _quota_bucket_from_ui(v: str) -> str:
 
 def quota_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [["AIQ", "State"], ["Deemed", "Central"]],
+        [["AIQ", "State", "Open"], ["Deemed", "Central"]],
         one_time_keyboard=True,
         resize_keyboard=True,
     )
@@ -7114,7 +7119,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     saved_cat = canonical_category(profile.get("category")) if profile.get("category") else None
     saved_dom = profile.get("domicile_state")
 
-    if saved_quota in {"AIQ", "Deemed", "Central", "State"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
+    if saved_quota in {"AIQ", "Deemed", "Open", "Central", "State"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
         context.user_data["quota"] = saved_quota
         context.user_data["category"] = saved_cat
         if saved_quota == "State":
@@ -7360,6 +7365,7 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Select your admission *quota* for prediction:"
         "\n• *AIQ* = All India Quota (MCC)"
         "\n• *State* = State quota (requires domicile state)"
+        "\n• *Open* = Open quota seats (category applies)"
         "\n• *Deemed* = Deemed Universities"
         "\n• *Central* = Central Universities"
       #  "\n• *AIIMS/JIPMER/ESIC/AFMS* as applicable"
@@ -7882,7 +7888,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     Build shortlist with current context (no scoring, no extra prompts).
     Sends ONE compact message + an 'AI Notes' button.
-    Also: if no results under the chosen quota, suggest Deemed colleges (fee low → high).
+    If no colleges match, notifies the user and ends the flow.
     """
     # ---------- small local helpers (self-contained) ----------
     
