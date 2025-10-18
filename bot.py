@@ -7412,6 +7412,17 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_CATEGORY
 
     context.user_data["category"] = cat
+    quota = context.user_data.get("quota") or "AIQ"
+    if quota != "State":
+        context.user_data.pop("domicile_state", None)
+        context.user_data.pop("pending_predict_summary", None)
+        context.user_data["require_pg_quota"] = None
+        context.user_data["avoid_bond"] = None
+        await update.message.reply_text(
+            "Great! Fetching colleges for your selection…",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return await _finish_predict_now(update, context)
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Type your *domicile state* (e.g., Delhi, Uttar Pradesh) or tap *Skip*.",
