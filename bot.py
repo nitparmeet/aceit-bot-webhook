@@ -7636,7 +7636,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return await _finish_predict_now(update, context)
 
-    
+  
     prompt = (
         "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
         " or tap *Skip* to use the saved value from /profile."
@@ -7671,6 +7671,12 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardRemove(),
         )
         return await _finish_predict_now(update, context)
+    
+    prompt = (
+        "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
+        " or tap *Skip* to use the saved value from /profile."
+    )
+    
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         prompt,
