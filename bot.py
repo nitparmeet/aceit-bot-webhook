@@ -7001,6 +7001,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 continue
         
         
+        
         dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
         if dom_required_pref is not None:
             if dom_required_pref and dom_flag is not True:
@@ -7011,10 +7012,9 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 if quota_ui == "Open" and dom_flag is not False:
                     continue
 
-         if enforce_state_quota and (state_canon is None or state_canon != domicile):
+        if enforce_state_quota and (state_canon is None or state_canon != domicile):
             continue
 
-        
         if authority_pref == "STATE" and state_pref:
             if state_canon is None or state_canon != state_pref:
                 continue
