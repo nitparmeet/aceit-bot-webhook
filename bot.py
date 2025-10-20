@@ -6931,6 +6931,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
     domicile  = _canon_state(user.get("domicile_state"))
     domicile_state_norm = _norm_state_name(domicile) if domicile else None
+    state_pref = _canon_state(user.get("state_counselling_state"))
 
     authority_pref_raw = user.get("counselling_authority")
     authority_pref = _norm_hdr(authority_pref_raw) if authority_pref_raw else ""
@@ -6991,9 +6992,15 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             if state_canon is None or state_canon != domicile:
                 continue
 
+        if authority_pref == "STATE" and state_pref:
+            if state_canon is None or state_canon != state_pref:
+                continue
+        
         if enforce_domicile:
             if state_canon is None or state_canon != domicile:
                 continue
+
+        
         
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
@@ -7051,6 +7058,10 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             state_norm = _canon_state(state_raw) if state_raw else None
             if enforce_state_quota and (state_norm is None or state_norm != domicile):
                 continue
+            if authority_pref == "STATE" and state_pref:
+            if state_canon is None or state_canon != state_pref:
+                continue
+                
             if enforce_domicile and (state_norm is None or state_norm != domicile):
                 continue
             
@@ -7196,12 +7207,20 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     if saved_quota in {"AIQ", "Deemed", "Open", "Central", "State", "Management"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
         context.user_data["quota"] = saved_quota
         context.user_data["category"] = saved_cat
+        context.user_data["awaiting_counselling"] = False
         if saved_quota in {"AIQ", "Deemed", "Central"}:
             context.user_data["counselling_authority"] = "MCC"
             context.user_data["domicile_required"] = None
             context.user_data.pop("domicile_state", None)
+            context.user_data.pop("state_counselling_state", None)
+            context.user_data.pop("state_counselling_state_raw", None)
         else:
             context.user_data["counselling_authority"] = "State"
+            state_norm = _canon_state(saved_dom) if saved_dom else None
+            if state_norm:
+                context_user_state_norm = state_norm
+                context.user_data["state_counselling_state"] = state_norm
+                context.user_data["state_counselling_state_raw"] = saved_dom
             if saved_quota == "Management":
                 context.user_data["domicile_required"] = False
                 context.user_data.pop("domicile_state", None)
@@ -7210,6 +7229,10 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
                 if saved_dom:
                     context.user_data["domicile_state"] = saved_dom
 
+        context.user_data["awaiting_domreq"] = False
+        context.user_data["awaiting_state_name"] = False
+
+        
         dom_ok = True
         if context.user_data.get("counselling_authority") == "State":
             dom_ok = (not context.user_data.get("domicile_required")) or bool(context.user_data.get("domicile_state"))
@@ -7267,7 +7290,24 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return ConversationHandler.END
 
-    for k in ("r", "category", "weights", "require_pg_quota", "avoid_bond", "domicile_state", "quota", "rank_air", "counselling_authority", "domicile_required", "_cat_hint", "awaiting_counselling", "awaiting_domreq"):
+    for k in (
+        "r",
+        "category",
+        "weights",
+        "require_pg_quota",
+        "avoid_bond",
+        "domicile_state",
+        "quota",
+        "rank_air",
+        "counselling_authority",
+        "domicile_required",
+        "_cat_hint",
+        "awaiting_counselling",
+        "awaiting_domreq",
+        "awaiting_state_name",
+        "state_counselling_state",
+        "state_counselling_state_raw",
+    ):
         context.user_data.pop(k, None)
 
     tgt = _target(update)
@@ -7452,6 +7492,9 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("counselling_authority", None)
     context.user_data.pop("domicile_required", None)
     context.user_data.pop("awaiting_domreq", None)
+    context.user_data.pop("awaiting_state_name", None)
+    context.user_data.pop("state_counselling_state", None)
+    context.user_data.pop("state_counselling_state_raw", None)
     context.user_data["awaiting_counselling"] = True
     kb = counselling_authority_keyboard()
     await update.message.reply_text(
@@ -7486,6 +7529,17 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=reply_markup,
                 )
 
+    def _store_state_name(state_input: str) -> tuple[bool, str | None]:
+        cleaned = (state_input or "").strip()
+        if not cleaned:
+            return False, "Please type the counselling state (e.g., Karnataka)."
+        norm = _canon_state(cleaned)
+        if not norm:
+            return False, "Couldn’t recognize that state. Please type full state name (e.g., Karnataka)."
+        context.user_data["state_counselling_state"] = norm
+        context.user_data["state_counselling_state_raw"] = cleaned
+        return True, None
+        
     action: Optional[str] = None
     choice_raw = ""
     text_raw = ""
@@ -7507,9 +7561,23 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await cq.edit_message_reply_markup(None)
 
     else:
-        raw = (message.text if message else "") or ""
+        raw = (message.text if message else "").strip()
         text_raw = raw
-        lower = raw.strip().lower()
+        lower = raw.lower()
+
+        if context.user_data.get("awaiting_state_name"):
+            ok, error_msg = _store_state_name(raw)
+            if not ok:
+                await message.reply_text(error_msg)
+                return ASK_QUOTA
+            context.user_data["awaiting_state_name"] = False
+            context.user_data["awaiting_domreq"] = True
+            context.user_data.pop("domicile_required", None)
+            await message.reply_text(
+                "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
+                reply_markup=domicile_required_keyboard(),
+            )
+            return ASK_QUOTA
         if context.user_data.get("awaiting_counselling"):
             action = "counsel"
             choice_raw = lower
@@ -7524,7 +7592,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             choice_raw = "yes" if lower.startswith("y") else "no"
         else:
             action = "quota"
-            choice_raw = raw.strip()
+            choice_raw = raw
 
     if action == "counsel":
         choice_lower = choice_raw.lower()
@@ -7542,6 +7610,8 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if authority == "MCC":
             context.user_data.pop("domicile_state", None)
+            context.user_data.pop("state_counselling_state", None)
+            context.user_data.pop("state_counselling_state_raw", None)
             msg = (
                 "Select your admission *quota* under MCC counselling:"
                 "\n• *AIQ* = All India Quota (MCC)"
@@ -7553,10 +7623,10 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += cat_hint
             await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("MCC"))
         else:
-            context.user_data["awaiting_domreq"] = True
+            context.user_data["awaiting_state_name"] = True
             await _text_reply(
-                "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
-                reply_markup=domicile_required_keyboard(),
+                "Type your counselling *state* (e.g., Karnataka, Delhi).",
+                parse_mode="Markdown",
             )
         return ASK_QUOTA
 
@@ -7572,21 +7642,20 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dom_required = choice_lower == "yes"
         context.user_data["domicile_required"] = dom_required
         context.user_data["awaiting_domreq"] = False
-        if not dom_required:
-            await _text_reply(
-                msg,
-                parse_mode="Markdown",
-                reply_markup=quota_keyboard("State", dom_required),
-            )
-            return ASK_QUOTA
+        
 
         if dom_required:
+            raw_state = context.user_data.get("state_counselling_state_raw")
+            if raw_state:
+                context.user_data["domicile_state"] = raw_state
+            
             msg = (
                 "Select your *quota* for state counselling (domicile required):"
                 "\n• *State* = Government quota"
                 "\n• *Open* = State private seats requiring domicile"
             )
         else:
+            context.user_data.pop("domicile_state", None)
             msg = (
                 "Select your *quota* for state counselling (no domicile needed):"
                 "\n• *Open* = Private open seats"
@@ -7594,11 +7663,8 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         if cat_hint:
             msg += cat_hint
-        await _text_reply(
-            msg,
-            parse_mode="Markdown",
-            reply_markup=quota_keyboard("State", dom_required),
-        )
+        await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
+
         return ASK_QUOTA
 
     if action != "quota":
@@ -7610,6 +7676,14 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     authority = context.user_data.get("counselling_authority") or "MCC"
     dom_required = context.user_data.get("domicile_required")
 
+    if authority == "State" and not context.user_data.get("state_counselling_state"):
+        context.user_data["awaiting_state_name"] = True
+        await _text_reply(
+            "Please type your counselling state before choosing a quota.",
+            parse_mode="Markdown",
+        )
+        return ASK_QUOTA
+    
     if authority == "State":
         allowed = {"State", "Open"} if dom_required else {"Open", "Management"}
     else:
@@ -7625,6 +7699,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["quota"] = q
     context.user_data.pop("awaiting_counselling", None)
     context.user_data.pop("awaiting_domreq", None)
+    context.user_data.pop("awaiting_state_name", None)
 
     if authority == "MCC" and q == "Deemed":
         # Deemed quota does not differentiate by category/domicile; go straight to results.
@@ -7632,6 +7707,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("domicile_state", None)
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
+        context.user_data["avoid_bond"] = None
         context.user_data.pop("_cat_hint", None)
         await _text_reply(
             "Deemed quota applies to all categories. Fetching eligible colleges…"
@@ -7639,10 +7715,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await _finish_predict_now(update, context)
 
   
-    prompt = (
-        "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
-        " or tap *Skip* to use the saved value from /profile."
-    )
+    
     kb = ReplyKeyboardMarkup(
         [["General", "OBC", "EWS", "SC", "ST"]],
         one_time_keyboard=True,
@@ -7662,8 +7735,8 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["category"] = cat
     quota = context.user_data.get("quota") or "AIQ"
     dom_required = bool(context.user_data.get("domicile_required"))
-    if quota != "State" and not dom_required:
-        context.user_data.pop("domicile_state", None)
+    
+    if (quota == "State" or dom_required) and context.user_data.get("domicile_state"):
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
         context.user_data["avoid_bond"] = None
