@@ -7073,55 +7073,50 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 return []
             # metadata-only fallback (kept for when AIR not provided)
             tmp = []
-    for _, r in colleges_df.iterrows():
-        state_raw = str(r.get(state_col)).strip() if state_col else ""
-        state_norm = _canon_state(state_raw) if state_raw else None
-
-        if enforce_state_quota and (state_norm is None or state_norm != domicile):
-            continue
-
-        if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
-            continue
-
-        authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
-        if authority_pref == "MCC":
-            if not authority_val:
+        for _, r in colleges_df.iterrows():
+            state_raw = str(r.get(state_col)).strip() if state_col else ""
+            state_norm = _canon_state(state_raw) if state_raw else None
+            if enforce_state_quota and (state_norm is None or state_norm != domicile):
                 continue
-            if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+            if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
                 continue
 
-        elif authority_pref == "STATE" and authority_val:
-            if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
-                continue
-
-        dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
-        if dom_required_pref is not None:
-            if dom_required_pref and dom_flag is not True:
-                continue
-            if dom_required_pref is False:
-                if dom_flag is True:
+            authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
+            if authority_pref == "MCC":
+                if not authority_val:
                     continue
-                if quota_ui == "Open" and dom_flag is not False:
+                if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                    continue
+            elif authority_pref == "STATE" and authority_val:
+                if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
                     continue
 
-        if enforce_domicile and (state_norm is None or state_norm != domicile):
-            continue
-            
-            
-        tmp.append({
-            "college_id":   (str(r.get(id_col)) if id_col else None),
-            "college_code": (str(r.get(code_col)) if code_col else None),
-            "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
-            "state":        state_raw or (state_norm or "—"),
-            "close_rank":   None,
-            "category":     category,
-            "quota":        quota_ui,
-            "source":       "fallback",
-            "score":        None,
-            "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
-            "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
-        })
+            dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
+            if dom_required_pref is not None:
+                if dom_required_pref and dom_flag is not True:
+                    continue
+                if dom_required_pref is False:
+                    if dom_flag is True:
+                        continue
+                    if quota_ui == "Open" and dom_flag is not False:
+                        continue
 
+            if enforce_domicile and (state_norm is None or state_norm != domicile):
+                continue
+
+            tmp.append({
+                "college_id":   (str(r.get(id_col)) if id_col else None),
+                "college_code": (str(r.get(code_col)) if code_col else None),
+                "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
+                "state":        state_raw or (state_norm or "—"),
+                "close_rank":   None,
+                "category":     category,
+                "quota":        quota_ui,
+                "source":       "fallback",
+                "score":        None,
+                "nirf_rank":    _safe_int(r.get(nirf_col)) if nirf_col else None,
+                "total_fee":    _safe_int(r.get(fee_col)) if fee_col else None,
+            })
         tmp.sort(key=lambda x: (
             x["nirf_rank"] if x["nirf_rank"] is not None else 10**9,
             x["college_name"] or ""
