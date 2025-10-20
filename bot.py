@@ -7579,13 +7579,27 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "quota":
             # parts[2] may be context (mcc/state); last part is quota choice
             text_raw = parts[-1]
+        
         else:
-            context.user_data["awaiting_domreq"] = True
-            await update.message.reply_text(
-                "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
-                reply_markup=domicile_required_keyboard(),
-            )
-        return ASK_QUOTA
+            return ASK_QUOTA
+
+    else:
+        text_raw = (update.message.text or "").strip()
+        text_lower = text_raw.lower()
+
+        if context.user_data.get("awaiting_counselling"):
+            if text_lower not in {"mcc", "state"}:
+                await update.message.reply_text(
+                    "Pick either MCC or State counselling.",
+                    reply_markup=counselling_authority_keyboard(),
+                )
+                return ASK_QUOTA
+
+            authority = "MCC" if text_lower == "mcc" else "State"
+            context.user_data["counselling_authority"] = authority
+            context.user_data["awaiting_counselling"] = False
+            context.user_data.pop("domicile_required", None)
+            context.user_data.pop("awaiting_domreq", None)
         
             if authority == "MCC":
                 context.user_data.pop("domicile_state", None)
