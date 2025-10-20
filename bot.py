@@ -6968,6 +6968,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             return state_results[:30]
         return []
     enforce_domicile = bool(dom_required_pref and domicile_state_norm)
+    
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
@@ -6981,51 +6982,47 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             or "Unknown college"
         )
 
-        # Prefer code, then id, then normalized name
+       
         college_key = code_key or id_key or _name_key(raw_name)
 
         state_val_raw = str(r.get(state_col)).strip() if state_col else ""
         state_canon = _canon_state(state_val_raw) if state_val_raw else None
 
-        if authority_pref and authority_col:
-            authority_val = _norm_hdr(r.get(authority_col))
-            
-            if authority_pref == "MCC":
-                if not authority_val:
-                    continue
-                if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
-                    continue
-            elif authority_pref == "STATE":
-                if authority_val:
-                    if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
-                        continue
-                    state_token = (_norm_hdr(state_pref) if state_pref else "")
-                    if "STATE" not in authority_val and (not state_token or state_token not in authority_val):
-                        continue
+        authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
 
-        if dom_required_pref is not None and domreq_col:
-            dom_flag = _parse_dom_req(r.get(domreq_col))
+        
+        if authority_pref == "MCC":
+            if not authority_val:
+                continue
+            if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                continue
+            elif authority_pref == "STATE":
+            if authority_val and any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
+                continue
+        
+        
+        dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
+        if dom_required_pref is not None:
             if dom_required_pref and dom_flag is not True:
                 continue
-            if dom_required_pref is False and dom_flag is True:
-                continue
-        
-        
-        if enforce_state_quota:
-            if state_canon is None or state_canon != domicile:
-                continue
+            if dom_required_pref is False:
+                if dom_flag is True:
+                    continue
+                if quota_ui == "Open" and dom_flag is not False:
+                    continue
 
+         if enforce_state_quota and (state_canon is None or state_canon != domicile):
+            continue
+
+        
         if authority_pref == "STATE" and state_pref:
             if state_canon is None or state_canon != state_pref:
                 continue
-        
-        if enforce_domicile:
-            if state_canon is None or state_canon != domicile:
-                continue
 
         
         
-        # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
+        if enforce_domicile and (state_canon is None or state_canon != domicile):
+            continue
         close_rank, quota_used, src = get_closing_rank(
             college_key=college_key,
             round_key=round_key,
@@ -7034,14 +7031,14 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             air=air
         )
 
-        # 2) fallback to the flat lookup provided (CUTOFF_LOOKUP)
+        
         if close_rank is None:
             keys = [k for k in (code_key, id_key, _name_key(raw_name)) if k]
             cr2 = _resolve_from_flat_lookup(keys, quota_ui, category)
             if isinstance(cr2, int):
                 close_rank, quota_used, src = cr2, quota_ui, "flat_lookup"
 
-        # eligibility
+        
         if close_rank is None:
             continue
         if air is not None and air > close_rank:
@@ -7083,14 +7080,26 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 continue
             if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
                 continue
-            if dom_required_pref is not None and domreq_col:
-                dom_flag = _parse_dom_req(r.get(domreq_col))
+            authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
+            if authority_pref == "MCC":
+                if not authority_val:
+                    continue
+                 if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                    continue
+            
+            elif authority_pref == "STATE" and authority_val:
+                if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
+                    continue
+
+            dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
+            if dom_required_pref is not None:
                 if dom_required_pref and dom_flag is not True:
                     continue
-                if dom_required_pref is False and dom_flag is True:
-                    continue
-            if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
-                continue
+                if dom_required_pref is False:
+                    if dom_flag is True:
+                        continue
+                    if quota_ui == "Open" and dom_flag is not False:
+                        continue
             
             if enforce_domicile and (state_norm is None or state_norm != domicile):
                 continue
@@ -7653,11 +7662,19 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += cat_hint
             await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("MCC"))
         else:
-            context.user_data["awaiting_state_name"] = True
-            await _text_reply(
-                "Type your counselling *state* (e.g., Karnataka, Delhi).",
-                parse_mode="Markdown",
-            )
+            if context.user_data.get("state_counselling_state"):
+                context.user_data["awaiting_state_name"] = False
+                context.user_data["awaiting_domreq"] = True
+                await _text_reply(
+                    "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
+                    reply_markup=domicile_required_keyboard(),
+                )
+            else:
+                context.user_data["awaiting_state_name"] = True
+                await _text_reply(
+                    "Type your counselling *state* (e.g., Karnataka, Delhi).",
+                    parse_mode="Markdown",
+                )
         return ASK_QUOTA
 
     if action == "domreq":
