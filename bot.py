@@ -7523,6 +7523,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
         return ASK_QUOTA
 
+        if context.user_data.get("awaiting_counsel"):
             action = "counsel"
             choice_raw = lower
         elif context.user_data.get("awaiting_domreq"):
