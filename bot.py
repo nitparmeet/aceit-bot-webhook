@@ -6989,21 +6989,25 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         if authority_pref and authority_col:
             authority_val = _norm_hdr(r.get(authority_col))
-            if not authority_val:
-                continue
+            
             if authority_pref == "MCC":
+                if not authority_val:
+                    continue
                 if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
                     continue
             elif authority_pref == "STATE":
-                state_token = (_norm_hdr(state_pref) if state_pref else "")
-                if "STATE" not in authority_val and (not state_token or state_token not in authority_val):
-                    continue
+                if authority_val:
+                    if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
+                        continue
+                    state_token = (_norm_hdr(state_pref) if state_pref else "")
+                    if "STATE" not in authority_val and (not state_token or state_token not in authority_val):
+                        continue
 
         if dom_required_pref is not None and domreq_col:
             dom_flag = _parse_dom_req(r.get(domreq_col))
             if dom_required_pref and dom_flag is not True:
                 continue
-            if dom_required_pref is False and dom_flag is not False:
+            if dom_required_pref is False and dom_flag is True:
                 continue
         
         
@@ -7083,7 +7087,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 dom_flag = _parse_dom_req(r.get(domreq_col))
                 if dom_required_pref and dom_flag is not True:
                     continue
-                if dom_required_pref is False and dom_flag is not False:
+                if dom_required_pref is False and dom_flag is True:
                     continue
             if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
                 continue
@@ -7600,7 +7604,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["awaiting_domreq"] = True
             context.user_data.pop("domicile_required", None)
             await message.reply_text(
-                "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
+                "Do you wish to see the seats of state counselling that require domicile? )",
                 reply_markup=domicile_required_keyboard(),
             )
             return ASK_QUOTA
