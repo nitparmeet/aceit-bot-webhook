@@ -7555,7 +7555,10 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardRemove(),
         )
         return await _finish_predict_now(update, context)
-
+    prompt = (
+        "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
+        " or tap *Skip* to use the saved value from /profile."
+    )
     kb = ReplyKeyboardMarkup([["General", "OBC", "EWS", "SC", "ST"]],
                              one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text("Select your category:", reply_markup=kb)
@@ -7585,9 +7588,10 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await _finish_predict_now(update, context)
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
-        "Type your *domicile state* (e.g., Delhi, Uttar Pradesh) or tap *Skip*.",
+        prompt,
         parse_mode="Markdown", reply_markup=kb
     )
+    context.user_data.pop("_cat_hint", None)
     return ASK_DOMICILE
 
 async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7600,10 +7604,11 @@ async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("pending_predict_summary", None)
 
     
-    if context.user_data.get("quota") == "State":
+    dom_required = bool(context.user_data.get("domicile_required"))
+    if context.user_data.get("quota") == "State" or dom_required:
         if not context.user_data.get("domicile_state"):
             await update.message.reply_text(
-                "State quota requires your domicile state. Please type it (e.g., Delhi, Karnataka).",
+                "This selection requires your domicile state. Please type it (e.g., Delhi, Karnataka).",
                 reply_markup=ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
             )
             return ASK_DOMICILE
@@ -7611,6 +7616,7 @@ async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Do NOT ask for PG/bond now; keep features inactive:
     context.user_data["require_pg_quota"] = None
     context.user_data["avoid_bond"] = None
+    context.user_data.pop("_cat_hint", None)
 
     # Go straight to results (no scoring / no preference UI)
     return await _finish_predict_now(update, context)
@@ -8578,6 +8584,8 @@ def register_handlers(app: Application) -> None:
         ],
         states={
             ASK_AIR: [MessageHandler(TEXT_EXCEPT_MENU, on_air)],
+            ASK_COUNSELLING: [MessageHandler(TEXT_EXCEPT_MENU, on_counselling_authority)],
+            ASK_DOMICILE_REQ: [MessageHandler(TEXT_EXCEPT_MENU, on_domicile_required)],
             ASK_MOCK_RANK: [MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_rank)],
             ASK_MOCK_SIZE: [
                 CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
