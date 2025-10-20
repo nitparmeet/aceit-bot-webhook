@@ -6996,7 +6996,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 continue
             if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
                 continue
-            elif authority_pref == "STATE":
+        elif authority_pref == "STATE":
             if authority_val and any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
                 continue
         
