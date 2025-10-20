@@ -7464,22 +7464,26 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cq = update.callback_query
-    target = cq.message if cq and cq.message else update.message
+    message = cq.message if cq and cq.message else update.message
     cat_hint = context.user_data.get("_cat_hint", "")
 
-    
-
-    async def _text_reply(text: str, *, parse_mode: Optional[str] = None, reply_markup: Optional[InlineKeyboardMarkup | ReplyKeyboardMarkup] = None):
-        if target:
-            await target.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+    async def _text_reply(
+        text: str,
+        *,
+        parse_mode: Optional[str] = None,
+        reply_markup: Optional[InlineKeyboardMarkup | ReplyKeyboardMarkup] = None,
+    ) -> None:
+        if message:
+            await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
         else:
             chat = update.effective_chat
             if chat:
                 await context.bot.send_message(chat_id=chat.id, text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-
-    action: Optional[str]
+    
+    action: Optional[str] = None
     choice_raw = ""
     text_raw = ""
+    
     if cq:
         data = cq.data or ""
         parts = data.split(":")
@@ -7489,22 +7493,81 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         action = parts[1]
         if action == "quota":
             choice_raw = parts[-1]
-            text_raw = parts[-1]
-        else:
+            text_raw = choice_raw
+        elif action in {"counsel", "domreq"}:
             choice_raw = parts[2]
-            text_raw = ""
         await cq.answer()
         with contextlib.suppress(Exception):
             await cq.edit_message_reply_markup(None)
 
-        
+    else:
+        raw = (message.text if message else "") or ""
+        text_raw = raw
+        lower = raw.strip().lower()
+        if context.user_data.get("awaiting_counselling"):
+            action = "counsel"
+            choice_raw = lower
+        elif context.user_data.get("awaiting_domreq"):
+            if lower not in {"yes", "y", "no", "n"}:
+                await message.reply_text(
+                    "Please respond with Yes or No.",
+                    reply_markup=domicile_required_keyboard(),
+                )
+                return ASK_QUOTA
+            action = "domreq"
+            choice_raw = "yes" if lower.startswith("y") else "no"
+        else:
+            action = "quota"
+            choice_raw = raw.strip()    
 
+    if action == "counsel":
+        choice_lower = choice_raw.lower()
+        if choice_lower not in {"mcc", "state"}:
+            await _text_reply(
+                "Pick either MCC or State counselling.",
+                reply_markup=counselling_authority_keyboard(),
+            )
+            return ASK_QUOTA
+        authority = "MCC" if choice_lower == "mcc" else "State"
+        context.user_data["counselling_authority"] = authority
+        context.user_data["awaiting_counselling"] = False
+        context.user_data.pop("domicile_required", None)
+        context.user_data.pop("awaiting_domreq", None)
+
+        if authority == "MCC":
+            context.user_data.pop("domicile_state", None)
+            msg = (
+                "Select your admission *quota* under MCC counselling:"
+                "\n• *AIQ* = All India Quota (MCC)"
+                "\n• *Deemed* = Deemed Universities"
+                "\n• *Central* = Central Universities"
+            )
+            if cat_hint:
+                msg += cat_hint
+            await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("MCC"))
+        else:
+            context.user_data["awaiting_domreq"] = True
+            await _text_reply(
+                "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
+                reply_markup=domicile_required_keyboard(),
+            )
+        return ASK_QUOTA
+    
     if action == "domreq":
-        dom_required = choice_raw.lower() == "yes"
+        choice_lower = choice_raw.lower()
+        if choice_lower not in {"yes", "no"}:
+            await _text_reply(
+                "Please respond with Yes or No.",
+                reply_markup=domicile_required_keyboard(),
+            )
+            return ASK_QUOTA
+
+        dom_required = choice_lower == "yes"
         context.user_data["domicile_required"] = dom_required
         context.user_data["awaiting_domreq"] = False
         if not dom_required:
-            context.user_data.pop("domicile_state", None)
+        await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
+        return ASK_QUOTA
 
         if dom_required:
             msg = (
@@ -7523,30 +7586,12 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
         return ASK_QUOTA
 
-        if context.user_data.get("awaiting_counsel"):
-            action = "counsel"
-            choice_raw = lower
-        elif context.user_data.get("awaiting_domreq"):
-            if lower not in {"yes", "y", "no", "n"}:
-                await update.message.reply_text(
-                    "Please respond with Yes or No.",
-                    reply_markup=domicile_required_keyboard(),
-                )
-                return ASK_QUOTA
+    if action != "quota":
+        return ASK_QUOTA
 
-            action = "domreq"
-            choice_raw = "yes" if lower.startswith("y") else "no"
-        else:
-            action = "quota"
-            choice_raw = text_raw
-    if action == "counsel":
-        choice_lower = choice_raw.lower()
-        
-if action != "quota":
-        return ASK_QUOTA        
+    text_raw = (choice_raw or text_raw).strip()
+    q = canonical_quota_ui(text_raw)
     
-    text_raw = choice_raw or text_raw  
-    q = canonical_quota_ui(text_raw.strip())
     authority = context.user_data.get("counselling_authority") or "MCC"
     dom_required = context.user_data.get("domicile_required")
 
@@ -7555,7 +7600,7 @@ if action != "quota":
     else:
         allowed = {"AIQ", "Deemed", "Central"}
 
-    if not q or q not in allowed:
+        if not q or q not in allowed:
         await _text_reply(
             "Pick a valid quota.",
             reply_markup=quota_keyboard(authority, dom_required),
