@@ -7521,6 +7521,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Select your *quota* for state counselling (no domicile needed):"
                 "\n• *Open* = Private open seats"
                 "\n• *Management* = Management / paid seats"
+            )
                 
         if cat_hint:
             msg += cat_hint
