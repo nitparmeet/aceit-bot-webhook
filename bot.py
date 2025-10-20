@@ -1120,9 +1120,9 @@ NEET_CANDIDATE_POOL_DEFAULT = 2300000
 MOCK_BIAS_FACTOR_MIN = 1.10
 MOCK_BIAS_FACTOR_MAX = 1.40
 MOCK_BIAS_FACTOR_DEFAULT = 1.25
-_ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State", "Open"]
+_ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State", "Open", "Management"]
 CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
-ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)
+ASK_MOCK_RANK, ASK_MOCK_SIZE = range(309, 311)
 
 COACH_TOP_N = 40        
 COACH_SHOW_N = 12      
@@ -1809,7 +1809,8 @@ def _canon_quota(q: str | None) -> str:
       - AIQ / All India / 15%         -> 'AIQ'
       - State / Home / 85%            -> 'State'
       - Central / GOI / DGHS / CU     -> 'Central'
-      - Deemed / Management / Paid    -> 'Deemed'
+      - Deemed                        -> 'Deemed'
+      - Management / Paid             -> 'Management'     
       - NRI / OCI / PIO               -> 'NRI'
       - Fallback: Title Case or 'AIQ'
     """
@@ -1825,9 +1826,10 @@ def _canon_quota(q: str | None) -> str:
     # Central / GOI bucket
     if s in {"GOI", "CENTRAL", "DGHS", "CU", "CENTRAL UNIVERSITY", "CENTRAL UNIV"}:
         return "Central"
-    # Deemed / Management bucket
-    if ("DEEMED" in s) or ("MANAGEMENT" in s) or ("PAID" in s):
+    if "DEEMED" in s:
         return "Deemed"
+    if "MANAGEMENT" in s or "PAID" in s:
+        return "Management"
     # NRI etc.
     if s in {"NRI", "OCI", "PIO"}:
         return "NRI"
@@ -4730,7 +4732,7 @@ async def menu_back(update, context):
 ASK_SUBJECT = 1001
 ASK_WAIT    = 1002
 
-ASK_AIR, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF = range(300, 307)
+ASK_AIR, ASK_COUNSELLING, ASK_DOMICILE_REQ, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF = range(300, 309)
 
 PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROFILE_SET_EMAIL, PROFILE_SET_MOBILE, PROFILE_SET_PRIMARY = range(120, 127)
 
@@ -6591,7 +6593,7 @@ def get_closing_rank(*,
     Resolve closing rank with strict handling:
       - Quota=='Any' → best among _ALLOWED_ANY_QUOTAS only (no legacy).
       - Quota=='AIQ' → per_quota first, then legacy AIQ fallback allowed.
-      - Quota in {'Deemed','Central','Open'} → per_quota only (NO legacy fallback).
+      - Quota in {'Deemed','Central','Open','Management'} → per_quota only (NO legacy fallback).
     """
     per_quota = (CUTOFFS_Q.get(round_key) or {})
     legacy    = (CUTOFFS.get(round_key)   or {})
@@ -6620,13 +6622,14 @@ def get_closing_rank(*,
         if isinstance(cr, int) and ((air is None) or (air <= cr)):
             return cr, "AIQ", "legacy_aiq"
 
-    # For Deemed/Central/Open/NRI etc, do NOT fall back to AIQ
+    # For Deemed/Central/Open/Management/NRI etc, do NOT fall back to AIQ
     return None, None, "none"
 
 def canonical_quota_ui(text: str) -> str:
     t = _norm_hdr(text)
     if t in {"AIQ","ALL INDIA","ALL INDIA QUOTA"}: return "AIQ"
-    if "DEEMED" in t or "PAID" in t or "MANAGEMENT" in t: return "Deemed"
+    if "MANAGEMENT" in t or "PAID" in t: return "Management"
+    if "DEEMED" in t: return "Deemed"
     if "CENTRAL" in t or t == "CU": return "Central"
     if "OPEN" in t: return "Open"
     if "STATE" in t or t in {"SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}: return "State"  
@@ -6644,13 +6647,35 @@ def _quota_bucket_from_ui(v: str) -> str:
     if "STATE" in t:              return "State"
     if "OPEN" in t:               return "Open"
     if "CENTRAL" in t:            return "Central"
-    if "DEEMED" in t or "PAID" in t or "MANAGEMENT" in t: return "Deemed"
+    if "MANAGEMENT" in t or "PAID" in t: return "Management"
+    if "DEEMED" in t:             return "Deemed"
     if t in {"ANY", "ALL"}:       return "Any"
     return "AIQ"
 
-def quota_keyboard() -> ReplyKeyboardMarkup:
+def counselling_authority_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [["AIQ", "State", "Open"], ["Deemed", "Central"]],
+        [["MCC", "State"]],
+        one_time_keyboard=True,
+        resize_keyboard=True,
+    )
+
+def domicile_required_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [["Yes", "No"]],
+        one_time_keyboard=True,
+        resize_keyboard=True,
+    )
+
+def quota_keyboard(authority: str = "MCC", domicile_required: Optional[bool] = None) -> ReplyKeyboardMarkup:
+    authority = (authority or "").strip().lower()
+    if authority == "state":
+        if domicile_required:
+            rows = [["State", "Open"]]
+        else:
+            rows = [["Open", "Management"]]
+        return ReplyKeyboardMarkup(rows, one_time_keyboard=True, resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        [["AIQ", "Deemed", "Central"]],
         one_time_keyboard=True,
         resize_keyboard=True,
     )
@@ -6885,6 +6910,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     id_col    = _pick_col_local(cols, "college_id", "College ID", "id")
     nirf_col  = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
     fee_col   = _pick_col_local(cols, "total_fee", "Fee")
+    authority_col = _pick_col_local(cols, "counselling_authority", "counseling_authority", "counselling authority", "Counselling Authority", "authority")
+    domreq_col = _pick_col_local(cols, "domicile_required", "domicile requirement", "domicile_required?", "Domicile Required")
 
     # ---- user prefs ----
     quota_ui  = _canon_quota(user.get("quota") or user.get("pref_quota") or "AIQ")
@@ -6892,13 +6919,25 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     air       = _safe_int(user.get("rank_air") or user.get("air"))
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
     domicile  = _canon_state(user.get("domicile_state"))
+    domicile_state_norm = _norm_state_name(domicile) if domicile else None
+
+    authority_pref_raw = user.get("counselling_authority")
+    authority_pref = _norm_hdr(authority_pref_raw) if authority_pref_raw else ""
+    if authority_pref:
+        authority_pref = "STATE" if "STATE" in authority_pref else "MCC"
+
+    dom_required_pref = user.get("domicile_required")
+    if isinstance(dom_required_pref, str):
+        dom_required_pref = dom_required_pref.strip().lower() in {"y", "yes", "true", "1"}
+    elif dom_required_pref is not None:
+        dom_required_pref = bool(dom_required_pref)
     enforce_state_quota = quota_ui == "State" and domicile is not None
     if enforce_state_quota:
         state_results = _state_quota_from_cutoffs(round_key, domicile, category, air)
         if state_results:
             return state_results[:30]
         return []
-    
+    enforce_domicile = bool(dom_required_pref and domicile_state_norm)
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
@@ -6918,10 +6957,32 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         state_val_raw = str(r.get(state_col)).strip() if state_col else ""
         state_canon = _canon_state(state_val_raw) if state_val_raw else None
 
+        if authority_pref and authority_col:
+            authority_val = _norm_hdr(r.get(authority_col))
+            if not authority_val:
+                continue
+            if authority_pref == "MCC":
+                if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                    continue
+            elif authority_pref == "STATE":
+                if "STATE" not in authority_val:
+                    continue
+
+        if dom_required_pref is not None and domreq_col:
+            dom_raw = str(r.get(domreq_col) or "").strip().lower()
+            if dom_raw:
+                dom_flag = dom_raw in {"y", "yes", "true", "1"}
+                if dom_required_pref != dom_flag:
+                    continue
+        
+        
         if enforce_state_quota:
             if state_canon is None or state_canon != domicile:
                 continue
 
+        if enforce_domicile:
+            if state_canon is None or state_canon != domicile:
+                continue
         
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
         close_rank, quota_used, src = get_closing_rank(
@@ -6979,7 +7040,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             state_norm = _canon_state(state_raw) if state_raw else None
             if enforce_state_quota and (state_norm is None or state_norm != domicile):
                 continue
-            
+            if enforce_domicile and (state_norm is None or state_norm != domicile):
+                continue
             
             
             tmp.append({
@@ -7120,19 +7182,34 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     saved_cat = canonical_category(profile.get("category")) if profile.get("category") else None
     saved_dom = profile.get("domicile_state")
 
-    if saved_quota in {"AIQ", "Deemed", "Open", "Central", "State"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
+    if saved_quota in {"AIQ", "Deemed", "Open", "Central", "State", "Management"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
         context.user_data["quota"] = saved_quota
         context.user_data["category"] = saved_cat
-        if saved_quota == "State":
-            context.user_data["domicile_state"] = saved_dom
+        if saved_quota in {"AIQ", "Deemed", "Central"}:
+            context.user_data["counselling_authority"] = "MCC"
+            context.user_data["domicile_required"] = None
+            context.user_data.pop("domicile_state", None)
+        else:
+            context.user_data["counselling_authority"] = "State"
+            if saved_quota == "Management":
+                context.user_data["domicile_required"] = False
+                context.user_data.pop("domicile_state", None)
+            else:
+                context.user_data["domicile_required"] = True
+                if saved_dom:
+                    context.user_data["domicile_state"] = saved_dom
 
-        if saved_quota != "State" or saved_dom:
-           msg = (
+        dom_ok = True
+        if context.user_data.get("counselling_authority") == "State":
+            dom_ok = (not context.user_data.get("domicile_required")) or bool(context.user_data.get("domicile_state"))
+        
+        if dom_ok:
+            msg = (
                 f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
                 f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,}\n\n"
                 f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
                 )
-        if saved_quota == "State" and saved_dom:
+        if saved_quota in {"State", "Open"} and saved_dom:
             msg += f", domicile *{saved_dom}*"
         msg += "\n\nTap /profile to change defaults."
 
@@ -7148,24 +7225,19 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
         _end_flow(context, "predict")
         return ConversationHandler.END
 
-    kb = quota_keyboard()
-    msg = (
-        f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
-        )
     
-    kb = quota_keyboard()
     msg = (
         f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
         f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
-        "Select your *quota*:"
+        "Select your *counselling authority*:"
     )
     await update.message.reply_text(
         msg,
         parse_mode="Markdown",
-        reply_markup=kb,
+        reply_markup=counselling_authority_keyboard(),
     )
     context.user_data.pop("pending_predict_summary", None)
-    return ASK_QUOTA
+    return ASK_COUNSELLING
     
 
 
@@ -7180,7 +7252,7 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return ConversationHandler.END
 
-    for k in ("r", "category", "weights", "require_pg_quota", "avoid_bond", "domicile_state", "quota", "rank_air"):
+    for k in ("r", "category", "weights", "require_pg_quota", "avoid_bond", "domicile_state", "quota", "rank_air", "counselling_authority", "domicile_required", "_cat_hint"):
         context.user_data.pop(k, None)
 
     tgt = _target(update)
@@ -7361,37 +7433,123 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         cat_hint = ""
 
-    kb = quota_keyboard()
+    context.user_data["_cat_hint"] = cat_hint
+    context.user_data.pop("counselling_authority", None)
+    context.user_data.pop("domicile_required", None)
+
+    kb = counselling_authority_keyboard()
     await update.message.reply_text(
-        "Select your admission *quota* for prediction:"
-        "\n• *AIQ* = All India Quota (MCC)"
-        "\n• *State* = State quota (requires domicile state)"
-        "\n• *Open* = Open quota seats (category applies)"
-        "\n• *Deemed* = Deemed Universities"
-        "\n• *Central* = Central Universities"
-      #  "\n• *AIIMS/JIPMER/ESIC/AFMS* as applicable"
-        f"{cat_hint}",
+        "Select your *counselling authority* for prediction:"
+        "\n• *MCC* = National rounds (AIQ / Deemed / Central)"
+        "\n• *State* = Individual state counselling lists",
         parse_mode="Markdown",
         reply_markup=kb,
+    )
+    return ASK_COUNSELLING
+
+
+async def on_counselling_authority(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw = (update.message.text or "").strip().lower()
+    if raw not in {"mcc", "state"}:
+        await update.message.reply_text(
+            "Pick either MCC or State counselling.",
+            reply_markup=counselling_authority_keyboard(),
+        )
+        return ASK_COUNSELLING
+
+    authority = "MCC" if raw == "mcc" else "State"
+    context.user_data["counselling_authority"] = authority
+    context.user_data.pop("domicile_required", None)
+    cat_hint = context.user_data.get("_cat_hint", "")
+
+    if authority == "MCC":
+        context.user_data.pop("domicile_state", None)
+        msg = (
+            "Select your admission *quota* under MCC counselling:"
+            "\n• *AIQ* = All India Quota (MCC)"
+            "\n• *Deemed* = Deemed Universities"
+            "\n• *Central* = Central Universities"
+        )
+        if cat_hint:
+            msg += cat_hint
+        await update.message.reply_text(
+            msg,
+            parse_mode="Markdown",
+            reply_markup=quota_keyboard("MCC"),
+        )
+        return ASK_QUOTA
+
+    await update.message.reply_text(
+        "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
+        reply_markup=domicile_required_keyboard(),
+    )
+    return ASK_DOMICILE_REQ
+
+
+async def on_domicile_required(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw = (update.message.text or "").strip().lower()
+    if raw not in {"yes", "y", "no", "n"}:
+        await update.message.reply_text(
+            "Please respond with Yes or No.",
+            reply_markup=domicile_required_keyboard(),
+        )
+        return ASK_DOMICILE_REQ
+
+    dom_required = raw.startswith("y")
+    context.user_data["domicile_required"] = dom_required
+    cat_hint = context.user_data.get("_cat_hint", "")
+    if not dom_required:
+        context.user_data.pop("domicile_state", None)
+
+    if dom_required:
+        msg = (
+            "Select your *quota* for state counselling (domicile required):"
+            "\n• *State* = Government quota"
+            "\n• *Open* = State private seats requiring domicile"
+        )
+    else:
+        msg = (
+            "Select your *quota* for state counselling (no domicile needed):"
+            "\n• *Open* = Private open seats"
+            "\n• *Management* = Management / paid seats"
+        )
+    if cat_hint:
+        msg += cat_hint
+
+    await update.message.reply_text(
+        msg,
+        parse_mode="Markdown",
+        reply_markup=quota_keyboard("State", dom_required),
     )
     return ASK_QUOTA
 
 
 async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = canonical_quota_ui(update.message.text or "")
-    if not q:
-        await update.message.reply_text("Pick a valid quota.", reply_markup=quota_keyboard())
+    authority = context.user_data.get("counselling_authority") or "MCC"
+    dom_required = context.user_data.get("domicile_required")
+
+    if authority == "State":
+        allowed = {"State", "Open"} if dom_required else {"Open", "Management"}
+    else:
+        allowed = {"AIQ", "Deemed", "Central"}
+
+    if not q or q not in allowed:
+        await update.message.reply_text(
+            "Pick a valid quota.",
+            reply_markup=quota_keyboard(authority, dom_required),
+        )
         return ASK_QUOTA
 
     context.user_data["quota"] = q
 
-    if q == "Deemed":
+    if authority == "MCC" and q == "Deemed":
         # Deemed quota does not differentiate by category/domicile; go straight to results.
         context.user_data["category"] = "General"
         context.user_data.pop("domicile_state", None)
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
-        context.user_data["avoid_bond"] = None
+        context.user_data.pop("_cat_hint", None)
         await update.message.reply_text(
             "Deemed quota applies to all categories. Fetching eligible colleges…",
             reply_markup=ReplyKeyboardRemove(),
@@ -7413,11 +7571,13 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["category"] = cat
     quota = context.user_data.get("quota") or "AIQ"
-    if quota != "State":
+    dom_required = bool(context.user_data.get("domicile_required"))
+    if quota != "State" and not dom_required:
         context.user_data.pop("domicile_state", None)
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
         context.user_data["avoid_bond"] = None
+        context.user_data.pop("_cat_hint", None)
         await update.message.reply_text(
             "Great! Fetching colleges for your selection…",
             reply_markup=ReplyKeyboardRemove(),
