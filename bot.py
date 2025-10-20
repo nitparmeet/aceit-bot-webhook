@@ -7456,8 +7456,8 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = counselling_authority_keyboard()
     await update.message.reply_text(
         "Select your *counselling authority* for prediction:"
-        "\n• *MCC* = National rounds (AIQ / Deemed / Central)"
-        "\n• *State* = Individual state counselling lists",
+        "\n• *MCC* = National rounds (AIQ / Deemed / Central/Open)"
+        "\n• *State* = Individual state counselling rounds",
         parse_mode="Markdown",
         reply_markup=kb,
     )
