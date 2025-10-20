@@ -6652,33 +6652,43 @@ def _quota_bucket_from_ui(v: str) -> str:
     if t in {"ANY", "ALL"}:       return "Any"
     return "AIQ"
 
-def counselling_authority_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        [["MCC", "State"]],
-        one_time_keyboard=True,
-        resize_keyboard=True,
+def counselling_authority_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton("MCC", callback_data="predict:counsel:mcc"),
+            InlineKeyboardButton("State", callback_data="predict:counsel:state"),
+        ]]
     )
 
-def domicile_required_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        [["Yes", "No"]],
-        one_time_keyboard=True,
-        resize_keyboard=True,
+def domicile_required_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton("Yes", callback_data="predict:domreq:yes"),
+            InlineKeyboardButton("No", callback_data="predict:domreq:no"),
+        ]]
     )
 
-def quota_keyboard(authority: str = "MCC", domicile_required: Optional[bool] = None) -> ReplyKeyboardMarkup:
+def quota_keyboard(authority: str = "MCC", domicile_required: Optional[bool] = None) -> InlineKeyboardMarkup:
     authority = (authority or "").strip().lower()
+    buttons: list[list[InlineKeyboardButton]]
     if authority == "state":
         if domicile_required:
-            rows = [["State", "Open"]]
+            buttons = [[
+                InlineKeyboardButton("State", callback_data="predict:quota:state:State"),
+                InlineKeyboardButton("Open",  callback_data="predict:quota:state:Open"),
+            ]]
         else:
-            rows = [["Open", "Management"]]
-        return ReplyKeyboardMarkup(rows, one_time_keyboard=True, resize_keyboard=True)
-    return ReplyKeyboardMarkup(
-        [["AIQ", "Deemed", "Central"]],
-        one_time_keyboard=True,
-        resize_keyboard=True,
-    )
+            buttons = [[
+                InlineKeyboardButton("Open",       callback_data="predict:quota:state:Open"),
+                InlineKeyboardButton("Management", callback_data="predict:quota:state:Management"),
+            ]]
+    else:
+        buttons = [[
+            InlineKeyboardButton("AIQ",    callback_data="predict:quota:mcc:AIQ"),
+            InlineKeyboardButton("Deemed", callback_data="predict:quota:mcc:Deemed"),
+            InlineKeyboardButton("Central",callback_data="predict:quota:mcc:Central"),
+        ]]
+    return InlineKeyboardMarkup(buttons)
 
 def _pick_category_key(v: str) -> str:
     return _canon_cat(v)
@@ -7453,41 +7463,122 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_QUOTA
 
 async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text_raw = (update.message.text or "").strip()
-    text_lower = text_raw.lower()
+    cq = update.callback_query
+    target = cq.message if cq and cq.message else update.message
     cat_hint = context.user_data.get("_cat_hint", "")
 
-    if context.user_data.get("awaiting_counselling"):
-        if text_lower not in {"mcc", "state"}:
-            await update.message.reply_text(
-                "Pick either MCC or State counselling.",
-                reply_markup=counselling_authority_keyboard(),
-            )
+    text_raw = ""
+
+    async def _text_reply(text: str, *, parse_mode: Optional[str] = None, reply_markup: Optional[InlineKeyboardMarkup | ReplyKeyboardMarkup] = None):
+        if target:
+            await target.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+        else:
+            chat = update.effective_chat
+            if chat:
+                await context.bot.send_message(chat_id=chat.id, text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+
+
+    
+    
+    if cq:
+        data = cq.data or ""
+        parts = data.split(":")
+        if len(parts) < 3 or parts[0] != "predict":
+            await cq.answer()
             return ASK_QUOTA
+        action = parts[1]
+        choice = parts[2] if len(parts) > 2 else ""
+        await cq.answer()
+        with contextlib.suppress(Exception):
+            await cq.edit_message_reply_markup(None)
+
+        if action == "counsel":
+            choice_lower = choice.lower()
+            if choice_lower not in {"mcc", "state"}:
+                await _text_reply(
+                    "Pick either MCC or State counselling.",
+                    reply_markup=counselling_authority_keyboard(),
+                )
+                return ASK_QUOTA
+
+            authority = "MCC" if choice_lower == "mcc" else "State"
+            context.user_data["counselling_authority"] = authority
+            context.user_data["awaiting_counselling"] = False
+            context.user_data.pop("domicile_required", None)
+            context.user_data.pop("awaiting_domreq", None)
+
+            if authority == "MCC":
+                context.user_data.pop("domicile_state", None)
+                msg = (
+                    "Select your admission *quota* under MCC counselling:"
+                    "\n• *AIQ* = All India Quota (MCC)"
+                    "\n• *Deemed* = Deemed Universities"
+                    "\n• *Central* = Central Universities"
+                )
+                if cat_hint:
+                    msg += cat_hint
+                await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("MCC"))
+            else:
+               
+                return ASK_QUOTA
+
+    else:
+        text_raw = (update.message.text or "").strip()
+        text_lower = text_raw.lower()
+
+        if context.user_data.get("awaiting_counselling"):
+            if text_lower not in {"mcc", "state"}:
+                await update.message.reply_text(
+                    "Pick either MCC or State counselling.",
+                    reply_markup=counselling_authority_keyboard(),
+                )
+                return ASK_QUOTA
+
+            authority = "MCC" if text_lower == "mcc" else "State"
+            context.user_data["counselling_authority"] = authority
+            context.user_data["awaiting_counselling"] = False
+            context.user_data.pop("domicile_required", None)
+            context.user_data.pop("awaiting_domreq", None)
 
 
+        if action == "domreq":
+            choice_lower = choice.lower()
+            if choice_lower not in {"yes", "no"}:
+                await _text_reply(
+                    "Please respond with Yes or No.",
+                    reply_markup=domicile_required_keyboard(),
+                )
+                return ASK_QUOTA
 
-        authority = "MCC" if text_lower == "mcc" else "State"
-        context.user_data["counselling_authority"] = authority
-        context.user_data["awaiting_counselling"] = False
-        context.user_data.pop("domicile_required", None)
-        context.user_data.pop("awaiting_domreq", None)
 
-        if authority == "MCC":
-            context.user_data.pop("domicile_state", None)
-            msg = (
-                "Select your admission *quota* under MCC counselling:"
-                "\n• *AIQ* = All India Quota (MCC)"
-                "\n• *Deemed* = Deemed Universities"
-                "\n• *Central* = Central Universities"
-            )
+        
+            dom_required = choice_lower == "yes"
+            context.user_data["domicile_required"] = dom_required
+            context.user_data["awaiting_domreq"] = False
+            if not dom_required:
+                context.user_data.pop("domicile_state", None)
+
+       
+            if dom_required:
+                msg = (
+                    "Select your *quota* for state counselling (domicile required):"
+                    "\n• *State* = Government quota"
+                    "\n• *Open* = State private seats requiring domicile"
+                )
+            else:
+                msg = (
+                    "Select your *quota* for state counselling (no domicile needed):"
+                    "\n• *Open* = Private open seats"
+                    "\n• *Management* = Management / paid seats"
+                )
             if cat_hint:
                 msg += cat_hint
-            await update.message.reply_text(
-                msg,
-                parse_mode="Markdown",
-                reply_markup=quota_keyboard("MCC"),
-            )
+            await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
+            return ASK_QUOTA
+
+        if action == "quota":
+            # parts[2] may be context (mcc/state); last part is quota choice
+            text_raw = parts[-1]
         else:
             context.user_data["awaiting_domreq"] = True
             await update.message.reply_text(
@@ -7495,47 +7586,69 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=domicile_required_keyboard(),
             )
         return ASK_QUOTA
-
-    if context.user_data.get("awaiting_domreq"):
-        if text_lower not in {"yes", "y", "no", "n"}:
-            await update.message.reply_text(
-                "Please respond with Yes or No.",
-                reply_markup=domicile_required_keyboard(),
-            )
+        
+            if authority == "MCC":
+                context.user_data.pop("domicile_state", None)
+                msg = (
+                    "Select your admission *quota* under MCC counselling:"
+                    "\n• *AIQ* = All India Quota (MCC)"
+                    "\n• *Deemed* = Deemed Universities"
+                    "\n• *Central* = Central Universities"
+                )
+                if cat_hint:
+                    msg += cat_hint
+                await update.message.reply_text(
+                    msg,
+                    parse_mode="Markdown",
+                    reply_markup=quota_keyboard("MCC"),
+                )
+            else:
+                context.user_data["awaiting_domreq"] = True
+                await update.message.reply_text(
+                    "Does this state counselling seat require domicile? (Check column 'Domicile Required' in your cutoffs sheet.)",
+                    reply_markup=domicile_required_keyboard(),
+                )
+    
             return ASK_QUOTA
 
-        dom_required = text_lower.startswith("y")
-        context.user_data["domicile_required"] = dom_required
-        context.user_data["awaiting_domreq"] = False
-        if not dom_required:
-            context.user_data.pop("domicile_state", None)
+        if context.user_data.get("awaiting_domreq"):
+            if text_lower not in {"yes", "y", "no", "n"}:
+                await update.message.reply_text(
+                    "Please respond with Yes or No.",
+                    reply_markup=domicile_required_keyboard(),
+                )
+                return ASK_QUOTA
+
+            dom_required = text_lower.startswith("y")
+            context.user_data["domicile_required"] = dom_required
+            context.user_data["awaiting_domreq"] = False
+            if not dom_required:
+                context.user_data.pop("domicile_state", None)
+
+            if dom_required:
+                msg = (
+                    "Select your *quota* for state counselling (domicile required):"
+                    "\n• *State* = Government quota"
+                    "\n• *Open* = State private seats requiring domicile"
+                )
+            else:
+                msg = (
+                    "Select your *quota* for state counselling (no domicile needed):"
+                    "\n• *Open* = Private open seats"
+                    "\n• *Management* = Management / paid seats"
+                )
+            if cat_hint:
+                msg += cat_hint
         
-        if dom_required:
-            msg = (
-                "Select your *quota* for state counselling (domicile required):"
-                "\n• *State* = Government quota"
-                "\n• *Open* = State private seats requiring domicile"
-            )
-        else:
-            msg = (
-                "Select your *quota* for state counselling (no domicile needed):"
-                "\n• *Open* = Private open seats"
-                "\n• *Management* = Management / paid seats"
-            )
-                
-        if cat_hint:
-            msg += cat_hint
-        await update.message.reply_text(
-            msg,
-            parse_mode="Markdown",
-            reply_markup=quota_keyboard("State", dom_required),
-        )
-        return ASK_QUOTA
-
-    
-
-
-    q = canonical_quota_ui(text_raw or "")
+      
+            await update.message.reply_text(
+                msg,
+                parse_mode="Markdown",
+                reply_markup=quota_keyboard("State", dom_required),
+       
+            return ASK_QUOTA
+      
+    q = canonical_quota_ui(text_raw.strip())
     authority = context.user_data.get("counselling_authority") or "MCC"
     dom_required = context.user_data.get("domicile_required")
 
@@ -7545,7 +7658,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         allowed = {"AIQ", "Deemed", "Central"}
 
     if not q or q not in allowed:
-        await update.message.reply_text(
+        await _text_reply(
             "Pick a valid quota.",
             reply_markup=quota_keyboard(authority, dom_required),
         )
@@ -7562,10 +7675,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
         context.user_data.pop("_cat_hint", None)
-        await update.message.reply_text(
-            "Deemed quota applies to all categories. Fetching eligible colleges…",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        await _text_reply("Deemed quota applies to all categories. Fetching eligible colleges…")
         return await _finish_predict_now(update, context)
     prompt = (
         "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
@@ -7573,7 +7683,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     kb = ReplyKeyboardMarkup([["General", "OBC", "EWS", "SC", "ST"]],
                              one_time_keyboard=True, resize_keyboard=True)
-    await update.message.reply_text("Select your category:", reply_markup=kb)
+    await _text_reply("Select your category:", reply_markup=kb)
     return ASK_CATEGORY
 
 async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -8601,7 +8711,10 @@ def register_handlers(app: Application) -> None:
                 CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
                 MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_size),
             ],
-            ASK_QUOTA: [MessageHandler(TEXT_EXCEPT_MENU, on_quota)],
+            ASK_QUOTA: [
+                MessageHandler(TEXT_EXCEPT_MENU, on_quota),
+                CallbackQueryHandler(on_quota, pattern=r"^predict:(counsel|domreq|quota):"),
+            ],
             ASK_CATEGORY: [MessageHandler(TEXT_EXCEPT_MENU, on_category)],
             ASK_DOMICILE: [MessageHandler(TEXT_EXCEPT_MENU, on_domicile)],
         },
