@@ -6922,7 +6922,25 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     nirf_col  = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
     fee_col   = _pick_col_local(cols, "total_fee", "Fee")
     authority_col = _pick_col_local(cols, "counselling_authority", "counseling_authority", "counselling authority", "Counselling Authority", "authority")
-    domreq_col = _pick_col_local(cols, "domicile_required", "domicile requirement", "domicile_required?", "Domicile Required")
+    domreq_col = _pick_col_local(
+        cols,
+        "domicile_required",
+        "domicile requirement",
+        "domicile_required?",
+        "Domicile Required",
+        "domicile req",
+        "dom_req",
+    )
+
+    def _parse_dom_req(val: Any) -> Optional[bool]:
+        raw = str(val or "").strip().lower()
+        if not raw:
+            return None
+        if raw in {"y", "yes", "true", "1"}:
+            return True
+        if raw in {"n", "no", "false", "0"}:
+            return False
+        return None
 
     # ---- user prefs ----
     quota_ui  = _canon_quota(user.get("quota") or user.get("pref_quota") or "AIQ")
@@ -6977,15 +6995,16 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
                     continue
             elif authority_pref == "STATE":
-                if "STATE" not in authority_val:
+                state_token = (_norm_hdr(state_pref) if state_pref else "")
+                if "STATE" not in authority_val and (not state_token or state_token not in authority_val):
                     continue
 
         if dom_required_pref is not None and domreq_col:
-            dom_raw = str(r.get(domreq_col) or "").strip().lower()
-            if dom_raw:
-                dom_flag = dom_raw in {"y", "yes", "true", "1"}
-                if dom_required_pref != dom_flag:
-                    continue
+            dom_flag = _parse_dom_req(r.get(domreq_col))
+            if dom_required_pref and dom_flag is not True:
+                continue
+            if dom_required_pref is False and dom_flag is not False:
+                continue
         
         
         if enforce_state_quota:
@@ -7060,6 +7079,15 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 continue
             if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
                 continue
+            if dom_required_pref is not None and domreq_col:
+                dom_flag = _parse_dom_req(r.get(domreq_col))
+                if dom_required_pref and dom_flag is not True:
+                    continue
+                if dom_required_pref is False and dom_flag is not False:
+                    continue
+            if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
+                continue
+            
             if enforce_domicile and (state_norm is None or state_norm != domicile):
                 continue
             
