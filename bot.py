@@ -7058,10 +7058,8 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             state_norm = _canon_state(state_raw) if state_raw else None
             if enforce_state_quota and (state_norm is None or state_norm != domicile):
                 continue
-            if authority_pref == "STATE" and state_pref:
-            if state_canon is None or state_canon != state_pref:
+            if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
                 continue
-                
             if enforce_domicile and (state_norm is None or state_norm != domicile):
                 continue
             
