@@ -7636,6 +7636,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return await _finish_predict_now(update, context)
 
+    
     prompt = (
         "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
         " or tap *Skip* to use the saved value from /profile."
