@@ -7069,40 +7069,43 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
     if not out:
-        if air is not None:
-            return []
-        # metadata-only fallback (kept for when AIR not provided)
-        tmp = []
-        for _, r in colleges_df.iterrows():
-            state_raw = str(r.get(state_col)).strip() if state_col else ""
-            state_norm = _canon_state(state_raw) if state_raw else None
-            if enforce_state_quota and (state_norm is None or state_norm != domicile):
+    if air is not None:
+        return []
+    # metadata-only fallback (kept for when AIR not provided)
+    tmp = []
+    for _, r in colleges_df.iterrows():
+        state_raw = str(r.get(state_col)).strip() if state_col else ""
+        state_norm = _canon_state(state_raw) if state_raw else None
+
+        if enforce_state_quota and (state_norm is None or state_norm != domicile):
+            continue
+
+        if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
+            continue
+
+        authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
+        if authority_pref == "MCC":
+            if not authority_val:
                 continue
-            if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
+            if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
                 continue
-            authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
-            if authority_pref == "MCC":
-                if not authority_val:
+
+        elif authority_pref == "STATE" and authority_val:
+            if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
+                continue
+
+        dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
+        if dom_required_pref is not None:
+            if dom_required_pref and dom_flag is not True:
+                continue
+            if dom_required_pref is False:
+                if dom_flag is True:
                     continue
-                 if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
-                    continue
-            
-            elif authority_pref == "STATE" and authority_val:
-                if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
+                if quota_ui == "Open" and dom_flag is not False:
                     continue
 
-            dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
-            if dom_required_pref is not None:
-                if dom_required_pref and dom_flag is not True:
-                    continue
-                if dom_required_pref is False:
-                    if dom_flag is True:
-                        continue
-                    if quota_ui == "Open" and dom_flag is not False:
-                        continue
-            
-            if enforce_domicile and (state_norm is None or state_norm != domicile):
-                continue
+        if enforce_domicile and (state_norm is None or state_norm != domicile):
+            continue
             
             
             tmp.append({
