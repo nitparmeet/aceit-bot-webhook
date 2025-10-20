@@ -7478,12 +7478,17 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             chat = update.effective_chat
             if chat:
-                await context.bot.send_message(chat_id=chat.id, text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=text,
+                    parse_mode=parse_mode,
+                    reply_markup=reply_markup,
+                )
+
     action: Optional[str] = None
     choice_raw = ""
     text_raw = ""
-    
+
     if cq:
         data = cq.data or ""
         parts = data.split(":")
@@ -7518,7 +7523,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             choice_raw = "yes" if lower.startswith("y") else "no"
         else:
             action = "quota"
-            choice_raw = raw.strip()    
+            choice_raw = raw.strip()
 
     if action == "counsel":
         choice_lower = choice_raw.lower()
@@ -7552,7 +7557,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=domicile_required_keyboard(),
             )
         return ASK_QUOTA
-    
+
     if action == "domreq":
         choice_lower = choice_raw.lower()
         if choice_lower not in {"yes", "no"}:
@@ -7566,8 +7571,12 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["domicile_required"] = dom_required
         context.user_data["awaiting_domreq"] = False
         if not dom_required:
-        await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
-        return ASK_QUOTA
+            await _text_reply(
+                msg,
+                parse_mode="Markdown",
+                reply_markup=quota_keyboard("State", dom_required),
+            )
+            return ASK_QUOTA
 
         if dom_required:
             msg = (
@@ -7583,7 +7592,11 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         if cat_hint:
             msg += cat_hint
-        await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
+        await _text_reply(
+            msg,
+            parse_mode="Markdown",
+            reply_markup=quota_keyboard("State", dom_required),
+        )
         return ASK_QUOTA
 
     if action != "quota":
@@ -7591,7 +7604,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text_raw = (choice_raw or text_raw).strip()
     q = canonical_quota_ui(text_raw)
-    
+
     authority = context.user_data.get("counselling_authority") or "MCC"
     dom_required = context.user_data.get("domicile_required")
 
@@ -7600,7 +7613,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         allowed = {"AIQ", "Deemed", "Central"}
 
-        if not q or q not in allowed:
+    if not q or q not in allowed:
         await _text_reply(
             "Pick a valid quota.",
             reply_markup=quota_keyboard(authority, dom_required),
@@ -7618,14 +7631,20 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
         context.user_data.pop("_cat_hint", None)
-        await _text_reply("Deemed quota applies to all categories. Fetching eligible colleges…")
+        await _text_reply(
+            "Deemed quota applies to all categories. Fetching eligible colleges…"
+        )
         return await _finish_predict_now(update, context)
+
     prompt = (
         "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
         " or tap *Skip* to use the saved value from /profile."
     )
-    kb = ReplyKeyboardMarkup([["General", "OBC", "EWS", "SC", "ST"]],
-                             one_time_keyboard=True, resize_keyboard=True)
+    kb = ReplyKeyboardMarkup(
+        [["General", "OBC", "EWS", "SC", "ST"]],
+        one_time_keyboard=True,
+        resize_keyboard=True,
+    )
     await _text_reply("Select your category:", reply_markup=kb)
     return ASK_CATEGORY
 
