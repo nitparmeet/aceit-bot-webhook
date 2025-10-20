@@ -6687,6 +6687,7 @@ def quota_keyboard(authority: str = "MCC", domicile_required: Optional[bool] = N
             InlineKeyboardButton("AIQ",    callback_data="predict:quota:mcc:AIQ"),
             InlineKeyboardButton("Deemed", callback_data="predict:quota:mcc:Deemed"),
             InlineKeyboardButton("Central",callback_data="predict:quota:mcc:Central"),
+            InlineKeyboardButton("Open",   callback_data="predict:quota:mcc:Open"),
         ]]
     return InlineKeyboardMarkup(buttons)
 
@@ -7546,6 +7547,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "\n• *AIQ* = All India Quota (MCC)"
                 "\n• *Deemed* = Deemed Universities"
                 "\n• *Central* = Central Universities"
+                "\n• *Open* = MCC Open quota seats"
             )
             if cat_hint:
                 msg += cat_hint
@@ -7611,7 +7613,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if authority == "State":
         allowed = {"State", "Open"} if dom_required else {"Open", "Management"}
     else:
-        allowed = {"AIQ", "Deemed", "Central"}
+        allowed = {"AIQ", "Deemed", "Central", "Open"}
 
     if not q or q not in allowed:
         await _text_reply(
