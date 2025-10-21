@@ -7021,7 +7021,6 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         if authority_pref == "STATE" and state_pref:
             if state_canon is None or state_canon != state_pref:
                 continue
-
         
         
         if enforce_domicile and (state_canon is None or state_canon != domicile):
