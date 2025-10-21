@@ -7764,8 +7764,16 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["category"] = cat
     quota = context.user_data.get("quota") or "AIQ"
     dom_required = bool(context.user_data.get("domicile_required"))
+    domicile_state = context.user_data.get("domicile_state")
+    need_domicile = (quota == "State") or dom_required
+
+    if need_domicile and not domicile_state:
+        raw_state = context.user_data.get("state_counselling_state_raw")
+        if raw_state:
+            context.user_data["domicile_state"] = raw_state
+            domicile_state = raw_state
     
-    if (quota == "State" or dom_required) and context.user_data.get("domicile_state"):
+    if not need_domicile or (need_domicile and domicile_state):
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
         context.user_data["avoid_bond"] = None
