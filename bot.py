@@ -7096,18 +7096,12 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
             if dom_required_pref is not None:
                 if dom_required_pref:
-                if dom_flag is not True:
-                    continue
-            else:
-                # Treat unknown values (None) as eligible for no-domicile requests.
+                    if dom_flag is not True:
+                        continue
+                else:
                     if dom_flag is True:
                         continue
-                    if authority_pref == "STATE":
-                        if quota_ui == "Open" and dom_flag is not False:
-                            continue
-                        if quota_ui == "Management" and dom_flag is True:
-                            continue
-
+                        
             if enforce_domicile and (state_norm is None or state_norm != domicile):
                 continue
 
