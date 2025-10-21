@@ -7068,6 +7068,22 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         })
 
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
+    fallback_allowed_with_air = (
+        air is not None
+        and authority_pref == "STATE"
+        and quota_ui in {"Open", "Management"}
+        and dom_required_pref is False
+    )
+
+    # Allow metadata fallback when AIR is present only for State Open/Management without domicile requirement.
+    if not out:
+        if air is not None and not fallback_allowed_with_air:
+            return []
+        # metadata-only fallback (kept for when AIR not provided)
+        tmp = []
+
+    
+    
     if not out:
         if air is not None:
             return []
