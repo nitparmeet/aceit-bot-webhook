@@ -8811,7 +8811,7 @@ def register_handlers(app: Application) -> None:
             ],
             ASK_QUOTA: [
                 MessageHandler(TEXT_EXCEPT_MENU, on_quota),
-                CallbackQueryHandler(on_quota, pattern=r"^predict:(counsel|domreq|quota):"),
+                CallbackQueryHandler(on_quota, pattern=r"^predict:(?:counsel|domreq|quota):.*$", block=True),
             ],
             ASK_CATEGORY: [MessageHandler(TEXT_EXCEPT_MENU, on_category)],
             ASK_DOMICILE: [MessageHandler(TEXT_EXCEPT_MENU, on_domicile)],
@@ -8827,6 +8827,7 @@ def register_handlers(app: Application) -> None:
     )
     _add(predict_conv, group=3)
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
+    _add(CallbackQueryHandler(on_quota, pattern=r"^predict:(?:counsel|domreq|quota):.*$", block=True), group=3)
     
     # Predictor follow-ups (AI Coach buttons attached to predict output)
     # Handles: predict:ai, predict:ai_coach, predict:coach, predict:refine, predict:alt, predict:details
