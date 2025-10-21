@@ -6992,14 +6992,16 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         
         if authority_pref == "MCC":
-            if not authority_val:
-                continue
-            if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
-                continue
+            if authority_col and authority_val:
+                if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                    continue
         elif authority_pref == "STATE":
             if authority_val and any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
                 continue
-        
+            if authority_val and "STATE" not in authority_val and state_pref:
+                state_token = _norm_hdr(state_pref)
+                if state_token and state_token not in authority_val:
+                    continue
         
         
         dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
@@ -7009,7 +7011,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             if dom_required_pref is False:
                 if dom_flag is True:
                     continue
-                if quota_ui == "Open" and dom_flag is not False:
+                if authority_pref == "STATE" and quota_ui == "Open" and dom_flag is not False:
                     continue
 
         if enforce_state_quota and (state_canon is None or state_canon != domicile):
@@ -7068,11 +7070,11 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         })
 
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
-        if not out:
-            if air is not None:
-                return []
-            # metadata-only fallback (kept for when AIR not provided)
-            tmp = []
+    if not out:
+        if air is not None:
+            return []
+        # metadata-only fallback (kept for when AIR not provided)
+        tmp = []
         for _, r in colleges_df.iterrows():
             state_raw = str(r.get(state_col)).strip() if state_col else ""
             state_norm = _canon_state(state_raw) if state_raw else None
@@ -7083,14 +7085,16 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
             authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
             if authority_pref == "MCC":
-                if not authority_val:
-                    continue
-                if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
-                    continue
+                if authority_col and authority_val:
+                    if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                        continue
             elif authority_pref == "STATE" and authority_val:
                 if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
                     continue
-
+                if "STATE" not in authority_val and state_pref:
+                    state_token = _norm_hdr(state_pref)
+                    if state_token and state_token not in authority_val:
+                        continue
             dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
             if dom_required_pref is not None:
                 if dom_required_pref and dom_flag is not True:
@@ -7098,7 +7102,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 if dom_required_pref is False:
                     if dom_flag is True:
                         continue
-                    if quota_ui == "Open" and dom_flag is not False:
+                    if authority_pref == "STATE" and quota_ui == "Open" and dom_flag is not False:
                         continue
 
             if enforce_domicile and (state_norm is None or state_norm != domicile):
