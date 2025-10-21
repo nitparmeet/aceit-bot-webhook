@@ -6990,7 +6990,6 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
 
-        
         if authority_pref == "MCC":
             if authority_col and authority_val:
                 if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
@@ -7002,8 +7001,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 state_token = _norm_hdr(state_pref)
                 if state_token and state_token not in authority_val:
                     continue
-        
-        
+
         dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
         if dom_required_pref is not None:
             if dom_required_pref and dom_flag is not True:
@@ -7011,8 +7009,11 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             if dom_required_pref is False:
                 if dom_flag is True:
                     continue
-                if authority_pref == "STATE" and quota_ui == "Open" and dom_flag is not False:
-                    continue
+                if authority_pref == "STATE":
+                    if quota_ui == "Open" and dom_flag is not False:
+                        continue
+                    if quota_ui == "Management" and dom_flag is True:
+                        continue
 
         if enforce_state_quota and (state_canon is None or state_canon != domicile):
             continue
@@ -7102,8 +7103,11 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
                 if dom_required_pref is False:
                     if dom_flag is True:
                         continue
-                    if authority_pref == "STATE" and quota_ui == "Open" and dom_flag is not False:
-                        continue
+                    if authority_pref == "STATE":
+                        if quota_ui == "Open" and dom_flag is not False:
+                            continue
+                        if quota_ui == "Management" and dom_flag is True:
+                            continue
 
             if enforce_domicile and (state_norm is None or state_norm != domicile):
                 continue
@@ -7692,29 +7696,30 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dom_required = choice_lower == "yes"
         context.user_data["domicile_required"] = dom_required
         context.user_data["awaiting_domreq"] = False
-        
 
         if dom_required:
             raw_state = context.user_data.get("state_counselling_state_raw")
             if raw_state:
                 context.user_data["domicile_state"] = raw_state
-            
-            msg = (
-                "Select your *quota* for state counselling (domicile required):"
-                "\n• *State* = Government quota"
-                "\n• *Open* = State private seats requiring domicile"
+            context.user_data["quota"] = "State"
+            context.user_data.pop("awaiting_state_name", None)
+            kb = ReplyKeyboardMarkup(
+                [["General", "OBC", "EWS", "SC", "ST"]],
+                one_time_keyboard=True,
+                resize_keyboard=True,
             )
-        else:
-            context.user_data.pop("domicile_state", None)
-            msg = (
-                "Select your *quota* for state counselling (no domicile needed):"
-                "\n• *Open* = Private open seats"
-                "\n• *Management* = Management / paid seats"
-            )
+            await _text_reply("Select your category:", reply_markup=kb)
+            return ASK_CATEGORY
+
+        context.user_data.pop("domicile_state", None)
+        msg = (
+            "Select your *quota* for state counselling (no domicile needed):"
+            "\n• *Open* = Private open seats"
+            "\n• *Management* = Management / paid seats"
+        )
         if cat_hint:
             msg += cat_hint
         await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("State", dom_required))
-
         return ASK_QUOTA
 
     if action != "quota":
