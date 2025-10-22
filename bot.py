@@ -6564,10 +6564,16 @@ def _get_close_from_quota(per_quota_map: Dict[str, Dict[str, Dict[str, int]]],
                           quota: str,
                           college_key: str,
                           category: str) -> Optional[int]:
-    rec = (per_quota_map.get(quota) or {}).get(college_key)
-    if not rec:
-        return None
-    return _get_close_rank_from_rec(rec, category)
+    candidates = [quota]
+    if quota == "Central":
+        candidates.append("Open")
+    elif quota == "Open":
+        candidates.append("Central")
+    for q_key in candidates:
+        rec = (per_quota_map.get(q_key) or {}).get(college_key)
+        if rec:
+            return _get_close_rank_from_rec(rec, category)
+    return None
 
 def _pick_any_quota_record(per_quota_map: Dict[str, Dict[str, Dict[str, int]]],
                            college_key: str,
@@ -6593,7 +6599,7 @@ def get_closing_rank(*,
     Resolve closing rank with strict handling:
       - Quota=='Any' → best among _ALLOWED_ANY_QUOTAS only (no legacy).
       - Quota=='AIQ' → per_quota first, then legacy AIQ fallback allowed.
-      - Quota in {'Deemed','Central','Open','Management'} → per_quota only (NO legacy fallback).
+      - Quota in {'Deemed','Central','Management'} → per_quota only (NO legacy fallback).
     """
     per_quota = (CUTOFFS_Q.get(round_key) or {})
     legacy    = (CUTOFFS.get(round_key)   or {})
@@ -6622,7 +6628,7 @@ def get_closing_rank(*,
         if isinstance(cr, int) and ((air is None) or (air <= cr)):
             return cr, "AIQ", "legacy_aiq"
 
-    # For Deemed/Central/Open/Management/NRI etc, do NOT fall back to AIQ
+    # For Deemed/Central/Management/NRI etc, do NOT fall back to AIQ
     return None, None, "none"
 
 def canonical_quota_ui(text: str) -> str:
@@ -6630,9 +6636,8 @@ def canonical_quota_ui(text: str) -> str:
     if t in {"AIQ","ALL INDIA","ALL INDIA QUOTA"}: return "AIQ"
     if "MANAGEMENT" in t or "PAID" in t: return "Management"
     if "DEEMED" in t: return "Deemed"
-    if "CENTRAL" in t or t == "CU": return "Central"
-    if "OPEN" in t: return "Open"
-    if "STATE" in t or t in {"SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}: return "State"  
+    if "STATE" in t or t in {"SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}: return "State"
+    if "CENTRAL" in t or "OPEN" in t or t == "CU": return "Central"  
     #if "AIIMS" in t:   return "AIIMS"
     #if "JIPMER" in t:  return "JIPMER"
     #if "ESIC" in t:    return "ESIC"
@@ -6645,8 +6650,7 @@ def _quota_bucket_from_ui(v: str) -> str:
     t = str(v or "").strip().upper()
     if t in {"AIQ", "ALL INDIA"}: return "AIQ"
     if "STATE" in t:              return "State"
-    if "OPEN" in t:               return "Open"
-    if "CENTRAL" in t:            return "Central"
+    if "CENTRAL" in t or "OPEN" in t: return "Central"
     if "MANAGEMENT" in t or "PAID" in t: return "Management"
     if "DEEMED" in t:             return "Deemed"
     if t in {"ANY", "ALL"}:       return "Any"
@@ -6684,7 +6688,6 @@ def quota_keyboard(authority: str = "MCC") -> InlineKeyboardMarkup:
             InlineKeyboardButton("AIQ",    callback_data="predict:quota:mcc:AIQ"),
             InlineKeyboardButton("Deemed", callback_data="predict:quota:mcc:Deemed"),
             InlineKeyboardButton("Central",callback_data="predict:quota:mcc:Central"),
-            InlineKeyboardButton("Open",   callback_data="predict:quota:mcc:Open"),
         ]]
     return InlineKeyboardMarkup(buttons)
 
@@ -7256,7 +7259,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     saved_cat = canonical_category(profile.get("category")) if profile.get("category") else None
     saved_dom = profile.get("domicile_state")
 
-    if saved_quota in {"AIQ", "Deemed", "Open", "Central", "State", "Management"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
+    if saved_quota in {"AIQ", "Deemed", "Central", "State", "Management"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
         context.user_data["quota"] = saved_quota
         context.user_data["category"] = saved_cat
         context.user_data["awaiting_counselling"] = False
@@ -7295,7 +7298,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
                 f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,}\n\n"
                 f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
                 )
-        if saved_quota in {"State", "Open"} and saved_dom:
+        if saved_quota == "State" and saved_dom:
             msg += f", domicile *{saved_dom}*"
         msg += "\n\nTap /profile to change defaults."
 
@@ -7551,7 +7554,7 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = counselling_authority_keyboard()
     await update.message.reply_text(
         "Select your *counselling authority* for prediction:"
-        "\n• *MCC* = National rounds (AIQ / Deemed / Central/Open)"
+        "\n• *MCC* = National rounds (AIQ / Deemed / Central)"
         "\n• *State* = Individual state counselling rounds",
         parse_mode="Markdown",
         reply_markup=kb,
@@ -7664,7 +7667,6 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "\n• *AIQ* = All India Quota (MCC)"
                 "\n• *Deemed* = Deemed Universities"
                 "\n• *Central* = Central Universities"
-                "\n• *Open* = MCC Open quota seats"
             )
             if cat_hint:
                 msg += cat_hint
@@ -7704,7 +7706,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if authority == "State":
         allowed = {"State", "Management"}
     else:
-        allowed = {"AIQ", "Deemed", "Central", "Open"}
+        allowed = {"AIQ", "Deemed", "Central"}
 
     if not q or q not in allowed:
         await _text_reply(
@@ -7725,6 +7727,8 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("domicile_state", None)
     else:
         context.user_data.pop("domicile_required", None)
+    if authority == "MCC" and q == "Open":
+        q = "Central"
     
     context.user_data["quota"] = q
     context.user_data.pop("awaiting_counselling", None)
