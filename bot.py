@@ -1400,13 +1400,28 @@ def _fmt_rank_val(v):
     except Exception:
         return "—"
 
+def _indian_number_format(n: int) -> str:
+    """Format integer using Indian digit grouping (e.g. 12,34,567)."""
+    sign = "-" if n < 0 else ""
+    s = str(abs(n))
+    if len(s) <= 3:
+        return f"{sign}{s}"
+    last3 = s[-3:]
+    s = s[:-3]
+    groups: List[str] = []
+    while s:
+        groups.append(s[-2:])
+        s = s[:-2]
+    grouped = ",".join(reversed(groups))
+    return f"{sign}{grouped},{last3}"
+    
 def _fmt_money(v):
     try:
         s = str(v).replace(",", "").strip()
         if not s:
             return "—"
         n = float(s)
-        return f"₹{int(n):,}"
+        return f"₹{_indian_number_format(int(n))}"
     except Exception:
         return "—"
 
@@ -3859,7 +3874,7 @@ if "_fmt_money" not in globals():
             if _is_missing(v):
                 return "—"
             n = float(str(v).replace(",", "").strip())
-            return f"₹{int(n):,}"
+            return f"₹{_indian_number_format(int(n))}"
         except Exception:
             return "—"
 
@@ -3883,7 +3898,7 @@ if "_fmt_bond_line" not in globals():
         if not _is_missing(bond_penalty):
             try:
                 p = float(str(bond_penalty).replace(",", "").strip())
-                parts.append(f"₹{int(p*100000):,}")  # if stored in lakhs
+                parts.append(f"₹{_indian_number_format(int(p * 100000))}")  # if stored in lakhs
             except Exception:
                 parts.append(str(bond_penalty))
         return " + ".join(parts) if parts else "—"
@@ -3956,7 +3971,7 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
     # Fee
     fee = r.get("total_fee") or r.get("Fee")
     if isinstance(fee, (int, float)):
-        fee_str = f"₹{int(fee):,}"
+        fee_str = f"₹{_indian_number_format(int(fee))}"
     elif fee in (None, "", "—"):
         fee_str = "—"
     else:
@@ -4144,7 +4159,8 @@ async def show_menu(
         "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
         "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
         "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
-        "Get quick notes for shortlisted colleges for more details like bond/hostel.\n\n"
+        "Get quick notes for shortlisted colleges for more details like bond/hostel. "
+        "Please note that fees mentioned may not be accurate; please check respective websites for the same.\n\n"
         "💬 *Clear your NEET Doubts* — Ask questions related to counselling and subjects, get instant explanations.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
@@ -5261,7 +5277,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         try:
             if _is_missing(v): return "—"
             n = float(str(v).replace(",", "").strip())
-            return f"₹{int(n):,}"
+            return f"₹{_indian_number_format(int(n))}"
         except Exception:
             return "—"
 
@@ -5288,7 +5304,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         if y is not None:
             parts.append(f"{y} yr" + ("" if y == 1 else "s"))
         if p is not None:
-            parts.append(f"₹{p:,}k")  # penalty in lakhs → print as e.g. 50k
+            parts.append(f"₹{_indian_number_format(int(p))}k")  # penalty in lakhs → print as e.g. 50k
         return " / ".join(parts) if parts else "—"
 
     
@@ -6744,7 +6760,7 @@ def _fmt_money(v):
         if not s:
             return "—"
         n = float(s)
-        return f"₹{int(n):,}"
+        return f"₹{_indian_number_format(int(n))}"
     except Exception:
         return "—"
 
@@ -8322,7 +8338,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
             if _is_missing(v):
                 return "—"
             n = float(str(v).replace(",", "").strip())
-            return f"₹{int(n):,}"
+            return f"₹{_indian_number_format(int(n))}"
         except Exception:
             return "—"
 
