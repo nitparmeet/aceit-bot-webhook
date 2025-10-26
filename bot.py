@@ -4533,6 +4533,17 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
         with contextlib.suppress(Exception):
             await q.answer()
         return
+
+    if data.startswith("predict:"):
+        with contextlib.suppress(Exception):
+            await q.answer()
+        target = q.message
+        if target:
+            with contextlib.suppress(Exception):
+                await target.reply_text(
+                    "That prediction shortcut is no longer active. Start a new session with /predict."
+                )
+        return
     
     user_id = update.effective_user.id if update.effective_user else None
     chat_id = q.message.chat_id if q.message else None
