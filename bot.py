@@ -4698,25 +4698,11 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
         return
 
     if data.startswith("predict:"):
-        ud = context.user_data or {}
-        mode_active = ud.get(MODE_KEY) == "predict"
-        awaiting_flags = any(
-            ud.get(flag)
-            for flag in (
-                "awaiting_counselling",
-                "awaiting_state_quota",
-                "awaiting_state_name",
-                "awaiting_domicile",
-            )
-        )
-        if mode_active or awaiting_flags:
-            try:
-                await on_quota(update, context)
-            except Exception:
-                log.exception("[callback] Failed routing %s to on_quota", data)
-            return
         with contextlib.suppress(Exception):
             await q.answer()
+        ud = context.user_data or {}
+        if ud.get(MODE_KEY) == "predict":
+            return
         target = q.message
         if target:
             with contextlib.suppress(Exception):
