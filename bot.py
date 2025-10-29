@@ -3157,9 +3157,10 @@ def load_college_profiles(
         return profiles
 
     target = None
-    target_lower = sheet_name.strip().lower()
+    target_norm = re.sub(r"[^a-z0-9]+", "", sheet_name.strip().lower())
     for sheet in xl.sheet_names:
-        if sheet.strip().lower() == target_lower:
+        sheet_norm = re.sub(r"[^a-z0-9]+", "", sheet.strip().lower())
+        if sheet_norm == target_norm:
             target = sheet
             break
     if not target:
@@ -5208,6 +5209,19 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
 
         df_lookup = context.application.bot_data.get("CUTOFFS_DF", None)
 
+        global COLLEGE_PROFILES
+        if not COLLEGE_PROFILES:
+            excel_hint = context.application.bot_data.get("EXCEL_PATH")
+            try:
+                source_excel = excel_hint or _resolve_excel_path()
+                COLLEGE_PROFILES = load_college_profiles(source_excel)
+            except Exception:
+                log.exception("[ai_notes] failed to load college profiles on-demand")
+                COLLEGE_PROFILES = {}
+
+
+
+        
         # ---------- cache a master index from COLLEGES ----------
         bot_cache = context.application.bot_data
         idx_cache = bot_cache.get("MASTER_IDX")
@@ -8826,7 +8840,7 @@ async def on_startup(app: Application):
 
     # Resolve Excel
     excel_file = _resolve_excel_path()
-
+    app.bot_data["EXCEL_PATH"] = excel_file
     # 1) Load colleges
     try:
         df = load_colleges_dataset(excel_file)  # provided elsewhere in your code
@@ -9089,7 +9103,6 @@ def register_handlers(app: Application) -> None:
     )
     _add(predict_conv, group=3)
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
-    _add(CallbackQueryHandler(on_quota, pattern=r"^predict:(?:counsel|domreq|quota):.*$", block=True), group=3)
     
     # Predictor follow-ups (AI Coach buttons attached to predict output)
     # Handles: predict:ai, predict:ai_coach, predict:coach, predict:refine, predict:alt, predict:details
