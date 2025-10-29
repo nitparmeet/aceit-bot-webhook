@@ -121,6 +121,7 @@ from pydantic import BaseModel, ValidationError, Field
 CUTOFF_LOOKUP: dict = {}
 COLLEGES: list = []
 COLLEGE_META_INDEX: dict = {}
+COLLEGE_PROFILES: dict = {}
 
 try:
     from openai import OpenAI
@@ -3062,7 +3063,168 @@ def build_name_maps_from_colleges_df(df):
     )
 
 # ---------- Cutoff lookup loader (complete) ----------
+PROFILE_COLUMN_ALIASES = {
+    "code": "college_code",
+    "collegecode": "college_code",
+    "clg_code": "college_code",
+    "college_id": "college_id",
+    "collegeid": "college_id",
+    "id": "college_id",
+    "institute_code": "college_code",
+    "instituteid": "college_id",
+    "name": "college_name",
+    "college_name": "college_name",
+    "institute_name": "college_name",
+    "state_name": "state",
+    "state": "state",
+    "city": "city",
+    "website": "website",
+    "url": "website",
+    "hostel": "hostel_available",
+    "hostel_available": "hostel_available",
+    "hostel_on_campus": "hostel_available",
+    "hostelcapacity": "hostel_capacity",
+    "bond_penalty": "bond_penalty_lakhs",
+    "bond_penalty_lakh": "bond_penalty_lakhs",
+    "bond_penalty_lakhs": "bond_penalty_lakhs",
+    "bond": "bond_summary",
+    "bond_notes": "bond_summary",
+    "bond_year": "bond_years",
+    "bond_years": "bond_years",
+    "pg_quota": "pg_quota",
+    "pgquota": "pg_quota",
+    "pg_seats": "pg_quota",
+    "pg_course": "pg_courses",
+    "summary": "profile_summary",
+    "profile_summary": "profile_summary",
+    "highlights": "profile_highlights",
+    "highlight": "profile_highlights",
+    "notes": "profile_notes",
+    "note": "profile_notes",
+    "tagline": "profile_tagline",
+    "established": "established_year",
+    "year_of_establishment": "established_year",
+    "rating": "profile_rating",
+}
 
+def _normalize_profile_df(df: pd.DataFrame) -> pd.DataFrame:
+    import numpy as np
+
+    def _norm_col(col: str) -> str:
+        base = unidecode(str(col)).lower()
+        base = re.sub(r"[^a-z0-9]+", "_", base).strip("_")
+        return PROFILE_COLUMN_ALIASES.get(base, base)
+
+    cleaned = df.copy()
+    cleaned.columns = [_norm_col(c) for c in cleaned.columns]
+    # strip strings
+    for col in cleaned.columns:
+        if cleaned[col].dtype == object:
+            cleaned[col] = cleaned[col].astype(str).str.strip()
+        else:
+            cleaned[col] = cleaned[col].where(~pd.isna(cleaned[col]), None)
+    # drop completely empty columns
+    cleaned = cleaned.dropna(axis=1, how="all")
+    cleaned = cleaned.replace({np.nan: None})
+    return cleaned
+
+def _profile_is_missing(value: Any) -> bool:
+    try:
+        if value is None:
+            return True
+        if isinstance(value, float) and math.isnan(value):
+            return True
+        s = str(value).strip()
+        return s == "" or s.lower() in {"na", "n/a", "none", "nil", "—"}
+    except Exception:
+        return True
+
+def load_college_profiles(
+    xlsx_path: str,
+    sheet_name: str = "college_profiles",
+) -> dict[str, dict]:
+    """
+    Load optional 'college_profiles' sheet and return a dict keyed by normalized code/id/name.
+    Each entry contains sanitized columns ready for downstream enrichment.
+    """
+    profiles: dict[str, dict] = {}
+    log = logging.getLogger("aceit-bot")
+
+    try:
+        xl = pd.ExcelFile(xlsx_path)
+    except Exception:
+        log.exception("Failed to open Excel '%s' for profiles", xlsx_path)
+        return profiles
+
+    target = None
+    target_lower = sheet_name.strip().lower()
+    for sheet in xl.sheet_names:
+        if sheet.strip().lower() == target_lower:
+            target = sheet
+            break
+    if not target:
+        log.info("Profiles sheet '%s' not found; skipping profile load", sheet_name)
+        return profiles
+
+    try:
+        df = pd.read_excel(xl, sheet_name=target)
+    except Exception:
+        log.exception("Failed reading profiles sheet '%s'", target)
+        return profiles
+
+    if df is None or df.empty:
+        log.warning("Profiles sheet '%s' is empty", target)
+        return profiles
+
+    df = df.dropna(how="all")
+    if df.empty:
+        log.warning("Profiles sheet '%s' only contained blank rows", target)
+        return profiles
+
+    norm_df = _normalize_profile_df(df)
+
+    def _meta_key(value: Any) -> str:
+        return re.sub(r"[^A-Z0-9]+", "", str(value or "").upper())
+
+    for _, row in norm_df.iterrows():
+        record = {k: v for k, v in row.items() if not _profile_is_missing(v)}
+        if not record:
+            continue
+
+        keys: set[str] = set()
+        for key_field in ("college_code", "code", "college_id", "id"):
+            val = record.get(key_field)
+            if not _profile_is_missing(val):
+                mk = _meta_key(val)
+                if mk:
+                    keys.add(mk)
+
+        name_val = record.get("college_name") or record.get("name")
+        if not _profile_is_missing(name_val):
+            mk = _meta_key(name_val)
+            if mk:
+                keys.add(mk)
+
+        if not keys:
+            continue
+
+        for mk in keys:
+            existing = profiles.setdefault(mk, {})
+            for k, v in record.items():
+                if _profile_is_missing(v):
+                    continue
+                existing_val = existing.get(k)
+                if _profile_is_missing(existing_val):
+                    existing[k] = v
+                elif k not in existing:
+                    existing[k] = v
+                else:
+                    # keep existing if already populated; profiles are small so no dedupe needed
+                    pass
+
+    log.info("Loaded %d college profile entries from sheet '%s'", len(profiles), target)
+    return profiles
+    
 def load_cutoff_lookup_from_excel(
     path: str,
     sheet: str,
@@ -5086,6 +5248,37 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
                     return idx_cache["id"][sid]
             nm = _safe_str(r.get("college_name") or r.get("College Name")).lower()
             return idx_cache["name"].get(nm, {})
+        def _resolve_profile_row(r: dict, master: dict) -> dict:
+            if not COLLEGE_PROFILES:
+                return {}
+
+            keys: list[str] = []
+
+            def _add_keys(source: dict | None) -> None:
+                if not isinstance(source, dict):
+                    return
+                for key in ("college_code", "code", "college_id", "institute_code"):
+                    v = source.get(key)
+                    if not _is_missing(v):
+                        keys.append(_norm_meta_key(v))
+                nm = source.get("college_name") or source.get("College Name") or source.get("name")
+                if not _is_missing(nm):
+                    keys.append(_norm_meta_key(nm))
+
+            _add_keys(r)
+            _add_keys(master)
+
+            seen: set[str] = set()
+            profile: dict = {}
+            for key in keys:
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                pdata = COLLEGE_PROFILES.get(key)
+                if isinstance(pdata, dict):
+                    profile.update({k: v for k, v in pdata.items() if not _is_missing(v)})
+            return profile
+            
 
         def _is_missing(v) -> bool:
             try:
@@ -5105,25 +5298,41 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
                 if not _is_missing(v):
                     return v
             return None
+        
+        def _profile_pick(profile: dict, *keys):
+            if not isinstance(profile, dict):
+                return None
+            for key in keys:
+                v = profile.get(key)
+                if not _is_missing(v):
+                    return v
+            return None
 
         # ---------- build blocks ----------
         blocks = []
         for i, r in enumerate(items[:10], 1):
             m = _resolve_master_row(r)
-
-            name   = _safe_str(_pick2(r, m, "college_name", "College Name"), "Unknown college")
-            state  = _safe_str(_pick2(r, m, "state", "State"))
-            city   = _safe_str(_pick2(r, m, "city",  "City"))
+            profile_meta = _resolve_profile_row(r, m)
+            combined_meta = dict(profile_meta)
+            if isinstance(m, dict):
+                combined_meta.update({k: v for k, v in m.items() if not _is_missing(v)})
+            else:
+                combined_meta = profile_meta
+                
+            
+            name   = _safe_str(_pick2(r, combined_meta, "college_name", "College Name"), "Unknown college")
+            state  = _safe_str(_pick2(r, combined_meta, "state", "State"))
+            city   = _safe_str(_pick2(r, combined_meta, "city",  "City"))
             place  = ", ".join([x for x in (city, state) if x])
 
             # closing with robust fallback to cutoffs
-            closing = _pick2(r, m, "ClosingRank", "closing", "closing_rank", "rank")
+            closing = _pick2(r, combined_meta, "ClosingRank", "closing", "closing_rank", "rank")
             if _is_missing(closing):
                 id_candidates = [
                     r.get("college_code"), r.get("code"),
                     r.get("college_id"),   r.get("institute_code"),
-                    m.get("college_code"), m.get("code"),
-                    m.get("college_id"),   m.get("institute_code"),
+                    combined_meta.get("college_code"), combined_meta.get("code"),
+                    combined_meta.get("college_id"),   combined_meta.get("institute_code"),
                     name,  # last resort: name match
                 ]
                 ids = [str(x).strip() for x in id_candidates if not _is_missing(x)]
@@ -5136,11 +5345,13 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
                     closing = None  # stay graceful
 
             fee_raw      = _pick2(r, m, "total_fee", "Fee", "Total Fee")
-            ownership    = _pick2(r, m, "ownership", "Ownership")
-            pg_quota_raw = _pick2(r, m, "pg_quota")
-            bond_years   = _pick2(r, m, "bond_years")
-            bond_penalty = _pick2(r, m, "bond_penalty_lakhs")
-            hostel_raw   = _pick2(r, m, "hostel_available")
+            if _is_missing(fee_raw):
+                fee_raw = _pick2(r, combined_meta, "total_fee", "Fee", "Total Fee")
+            ownership    = _pick2(r, combined_meta, "ownership", "Ownership")
+            pg_quota_raw = _pick2(r, combined_meta, "pg_quota")
+            bond_years   = _pick2(r, combined_meta, "bond_years")
+            bond_penalty = _pick2(r, combined_meta, "bond_penalty_lakhs")
+            hostel_raw   = _pick2(r, combined_meta, "hostel_available")
 
             # normalize boolean-ish fields (handles yes/no/emoji/etc.)
             pg_quota_bool = _truthy_or_none(pg_quota_raw)
@@ -5158,7 +5369,23 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             bond_ln   = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
             hostel_ln = f"Hostel: {_yn(hostel_bool)}"
 
-            blocks.append("\n".join([header, rank_ln, fee_ln, why_ln, vibe_ln, pg_ln, bond_ln, hostel_ln]))
+            highlights = _profile_pick(
+                profile_meta,
+                "profile_highlights",
+                "profile_summary",
+                "profile_notes",
+                "profile_tagline",
+            )
+            lines = [header, rank_ln, fee_ln, why_ln, vibe_ln]
+            if not _is_missing(highlights):
+                hl = str(highlights).strip()
+                if len(hl) > 280:
+                    hl = hl[:277].rstrip() + "…"
+                lines.append(f"Highlights: {hl}")
+            lines.extend([pg_ln, bond_ln, hostel_ln])
+
+            blocks.append("\n".join(lines))
+            
 
         await status.edit_text("\n\n".join(blocks))
 
@@ -8595,7 +8822,7 @@ async def on_startup(app: Application):
     Loads your Excel, builds lookups/DFs, and stores CUTOFFS_DF in app.bot_data.
     Uses ACTIVE_CUTOFF_ROUND_DEFAULT.
     """
-    global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX, CUTOFFS_DF
+    global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX, COLLEGE_PROFILES, CUTOFFS_DF
 
     # Resolve Excel
     excel_file = _resolve_excel_path()
@@ -8617,7 +8844,27 @@ async def on_startup(app: Application):
         build_name_maps_from_colleges_df(COLLEGES)  # provided elsewhere
     except Exception:
         log.exception("Failed building name maps from Colleges DF")
-
+    # 2b) Optional college profiles sheet (enrich metadata for AI notes)
+    try:
+        COLLEGE_PROFILES = load_college_profiles(excel_file)
+    except Exception:
+        log.exception("Failed loading college profiles")
+        COLLEGE_PROFILES = {}
+    else:
+        if not isinstance(COLLEGE_PROFILES, dict):
+            COLLEGE_PROFILES = {}
+        if COLLEGE_PROFILES:
+            for key, pdata in COLLEGE_PROFILES.items():
+                if not isinstance(pdata, dict):
+                    continue
+                meta_entry = COLLEGE_META_INDEX.get(key)
+                if meta_entry is None:
+                    COLLEGE_META_INDEX[key] = dict(pdata)
+                else:
+                    for mk, mv in pdata.items():
+                        if meta_entry.get(mk) in (None, "", "—"):
+                            meta_entry[mk] = mv
+                            
     # 3) Build/Load cutoffs lookup (use your DEFAULT round)
     try:
         CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
