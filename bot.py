@@ -4699,6 +4699,7 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
 
     if data.startswith("predict:"):
         ud = context.user_data or {}
+        mode_active = ud.get(MODE_KEY) == "predict"
         awaiting_flags = any(
             ud.get(flag)
             for flag in (
@@ -4708,7 +4709,7 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
                 "awaiting_domicile",
             )
         )
-        if awaiting_flags:
+        if mode_active or awaiting_flags:
             try:
                 await on_quota(update, context)
             except Exception:
