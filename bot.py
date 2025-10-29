@@ -4697,6 +4697,14 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
         return
 
     if data.startswith("predict:"):
+        parts = data.split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        if action in {"counsel", "domreq", "quota"}:
+            try:
+                await on_quota(update, context)
+            except Exception:
+                log.exception("[callback] Failed routing %s to on_quota", data)
+            return
         with contextlib.suppress(Exception):
             await q.answer()
         target = q.message
