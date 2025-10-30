@@ -1,0 +1,276 @@
+[
+  {
+    "college_id": "DL-AIIMS-0001",
+    "college_name": "AIIMS New Delhi",
+    "state": "Delhi",
+    "city": "New Delhi",
+    "location": {
+      "lat": 28.5672,
+      "lon": 77.21
+    },
+    "website": "https://www.aiims.edu",
+    "nirf": {
+      "rank": 1,
+      "year": 2024
+    },
+    "fees": {
+      "tuition_total": 70000,
+      "hostel_total": 0,
+      "other_total": 0,
+      "notes": "Govt fee; placeholder"
+    },
+    "seat_matrix": {
+      "mbbs_intake": 132,
+      "aiq_seats": 132,
+      "state_seats": 0
+    },
+    "cutoffs": [
+      {
+        "quota": "AIQ",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "AIR",
+        "open_rank": 1,
+        "close_rank": 50
+      },
+      {
+        "quota": "AIQ",
+        "round": "R3",
+        "year": 2024,
+        "category": "OBC",
+        "rank_type": "AIR",
+        "open_rank": 80,
+        "close_rank": 300
+      }
+    ],
+    "policy": {
+      "bond_service": {
+        "has_bond": false,
+        "duration_years": 0,
+        "penalty_inr": 0
+      },
+      "domicile_required": false
+    }
+  },
+  {
+    "college_id": "DL-MAMC-0002",
+    "college_name": "Maulana Azad Medical College (MAMC)",
+    "state": "Delhi",
+    "city": "New Delhi",
+    "location": {
+      "lat": 28.6389,
+      "lon": 77.2419
+    },
+    "website": "https://mamc.ac.in",
+    "nirf": {
+      "rank": 5,
+      "year": 2024
+    },
+    "fees": {
+      "tuition_total": 65000,
+      "hostel_total": 80000,
+      "other_total": 20000,
+      "notes": "Placeholder"
+    },
+    "seat_matrix": {
+      "mbbs_intake": 250,
+      "aiq_seats": 37,
+      "state_seats": 213
+    },
+    "cutoffs": [
+      {
+        "quota": "AIQ",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "AIR",
+        "open_rank": 60,
+        "close_rank": 120
+      },
+      {
+        "quota": "STATE",
+        "state_code": "DL",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "STATE_RANK",
+        "open_rank": 5,
+        "close_rank": 25
+      }
+    ],
+    "policy": {
+      "bond_service": {
+        "has_bond": false,
+        "duration_years": 0,
+        "penalty_inr": 0
+      },
+      "domicile_required": true
+    }
+  },
+  {
+    "college_id": "UP-KGMU-0003",
+    "college_name": "King George’s Medical University (KGMU)",
+    "state": "Uttar Pradesh",
+    "city": "Lucknow",
+    "location": {
+      "lat": 26.8687,
+      "lon": 80.919
+    },
+    "website": "https://kgmu.org",
+    "nirf": {
+      "rank": 9,
+      "year": 2024
+    },
+    "fees": {
+      "tuition_total": 500000,
+      "hostel_total": 250000,
+      "other_total": 150000,
+      "notes": "Placeholder"
+    },
+    "seat_matrix": {
+      "mbbs_intake": 250,
+      "aiq_seats": 37,
+      "state_seats": 213
+    },
+    "cutoffs": [
+      {
+        "quota": "AIQ",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "AIR",
+        "open_rank": 300,
+        "close_rank": 1200
+      },
+      {
+        "quota": "STATE",
+        "state_code": "UP",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "STATE_RANK",
+        "open_rank": 40,
+        "close_rank": 220
+      }
+    ],
+    "policy": {
+      "bond_service": {
+        "has_bond": true,
+        "duration_years": 2,
+        "penalty_inr": 1000000
+      },
+      "domicile_required": true
+    }
+  },
+  {
+    "college_id": "TN-MMC-0004",
+    "college_name": "Madras Medical College",
+    "state": "Tamil Nadu",
+    "city": "Chennai",
+    "location": {
+      "lat": 13.0827,
+      "lon": 80.2707
+    },
+    "website": "https://www.mmc.ac.in",
+    "nirf": {
+      "rank": 12,
+      "year": 2024
+    },
+    "fees": {
+      "tuition_total": 150000,
+      "hostel_total": 60000,
+      "other_total": 40000,
+      "notes": "Placeholder"
+    },
+    "seat_matrix": {
+      "mbbs_intake": 250,
+      "aiq_seats": 37,
+      "state_seats": 213
+    },
+    "cutoffs": [
+      {
+        "quota": "AIQ",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "AIR",
+        "open_rank": 200,
+        "close_rank": 900
+      },
+      {
+        "quota": "STATE",
+        "state_code": "TN",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "STATE_RANK",
+        "open_rank": 10,
+        "close_rank": 60
+      }
+    ],
+    "policy": {
+      "bond_service": {
+        "has_bond": true,
+        "duration_years": 2,
+        "penalty_inr": 500000
+      },
+      "domicile_required": true
+    }
+  },
+  {
+    "college_id": "MH-GSMC-0005",
+    "college_name": "Grant Medical College & Sir JJ Group of Hospitals",
+    "state": "Maharashtra",
+    "city": "Mumbai",
+    "location": {
+      "lat": 18.967,
+      "lon": 72.8365
+    },
+    "website": "https://www.gmcjjh.org",
+    "nirf": {
+      "rank": 15,
+      "year": 2024
+    },
+    "fees": {
+      "tuition_total": 450000,
+      "hostel_total": 150000,
+      "other_total": 100000,
+      "notes": "Placeholder"
+    },
+    "seat_matrix": {
+      "mbbs_intake": 200,
+      "aiq_seats": 30,
+      "state_seats": 170
+    },
+    "cutoffs": [
+      {
+        "quota": "AIQ",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "AIR",
+        "open_rank": 400,
+        "close_rank": 1500
+      },
+      {
+        "quota": "STATE",
+        "state_code": "MH",
+        "round": "R3",
+        "year": 2024,
+        "category": "UR",
+        "rank_type": "STATE_RANK",
+        "open_rank": 15,
+        "close_rank": 100
+      }
+    ],
+    "policy": {
+      "bond_service": {
+        "has_bond": true,
+        "duration_years": 1,
+        "penalty_inr": 500000
+      },
+      "domicile_required": true
+    }
+  }
+]

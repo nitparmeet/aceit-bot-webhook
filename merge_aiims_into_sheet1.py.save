@@ -1,0 +1,392 @@
+#!/usr/bin/env python3
+import re
+import sys
+from pathlib import Path
+
+import pandas as pd
+from rapidfuzz import process, fuzz
+from unidecode import unidecode
+
+
+BASE = Path(__file__).resolve().parent
+SHEET1_FILE = BASE / "College_Seat_New_Merged.xlsx"
+AIIMS_FILE = BASE / "FINAL SEAT MATRIX FOR AIIMS_BHU_JIMPER ROUND 1 UG 2025 (MBBS & BDS).xlsx"
+OUT_FILE = BASE / "College_Seat_New_Merged_with_AIIMS.xlsx"
+
+TARGET_SEAT_COLS = [
+    "EWS", "EWS PwD", "OBC", "OBC PwD", "SC", "SC PwD", "ST", "ST PwD", "TotalSeats"
+]
+
+def norm(s):
+    if pd.isna(s):
+        return ""
+    s = str(s).strip()
+    s = unidecode(s)
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def find_header_row(df: pd.DataFrame) -> int:
+    """
+    Scan first ~50 rows to find a header row that contains 'Institute' (or similar)
+    and at least one of {'Category','UR','EWS','OBC','SC','ST','Total'}.
+    """
+    header_keywords = {"category", "ur", "ews", "obc", "sc", "st", "total", "seats"}
+    for i in range(min(len(df), 50)):
+        row = [norm(x).lower() for x in df.iloc[i].tolist()]
+        row_set = set(row)
+        row_join = " ".join(row)
+        if ("institute" in row_join or "college" in row_join) and any(k in row_join for k in header_keywords):
+            return i
+    # fallback: try to find any row with many non-empty values (wide headers)
+    max_nonempty = -1
+    best_i = None
+    for i in range(min(len(df), 50)):
+        cnt = sum(1 for x in df.iloc[i] if str(x).strip() != "")
+        if cnt > max_nonempty:
+            max_nonempty = cnt
+            best_i = i
+    return best_i if best_i is not None else 0
+
+
+
+
+
+
+
+
+
+def read_aiims_raw(path: Path) -> pd.DataFrame:
+    xls = pd.ExcelFile(path)
+    sheet_name = xls.sheet_names[0]
+
+    # Try reading with header=2 (third row, since Python is 0-based)
+    raw = pd.read_excel(path, sheet_name=sheet_name, header=2)
+
+    # Debug print to confirm we got expected columns
+    print("[DEBUG] Columns from AIIMS file:", list(raw.columns)[:10])
+
+    # Drop all-empty rows/cols
+    raw = raw.dropna(how="all").reset_index(drop=True)
+    raw = raw.loc[:, raw.notna().any(axis=0)]
+
+    return raw
+
+def canonicalize_aiims(raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return a normalized long table with columns:
+      Institute, Category, PwD (Y/N), Seats
+    regardless of whether input is “long” or “wide”.
+    """
+    hdr_idx = find_header_row(raw)
+    df = raw.iloc[hdr_idx:].copy()
+    # Set header row
+    new_cols = [norm(c) for c in df.iloc[0].tolist()]
+    df = df.iloc[1:].copy()
+    df.columns = new_cols
+
+    # remove completely empty columns
+    df = df.loc[:, df.columns.map(lambda c: norm(c) != "")]
+    # drop all empty rows
+    df = df.dropna(how="all")
+    # forward fill Institute if some rows list only categories under same institute
+    # Detect the institute/college column
+    inst_col = None
+    for c in df.columns:
+        cl = c.lower()
+        if ("institute" in cl) or ("college" in cl and "code" not in cl):
+            inst_col = c
+            break
+
+    if inst_col is None:
+        raise ValueError("Could not detect Institute/College column in AIIMS sheet. "
+                         f"Columns found: {list(df.columns)}")
+
+    # Two possible layouts:
+
+    # (A) LONG: has columns like [Institute, Category, PwD (Y/N), Seats]
+    has_category = any("category" in c.lower() for c in df.columns)
+    has_seats = any(c.lower() == "seats" for c in df.columns) or any("seat" in c.lower() for c in df.columns)
+
+    if has_category and has_seats:
+        # Map column names
+        cat_col = None
+        pwd_col = None
+        seats_col = None
+        for c in df.columns:
+            cl = c.lower()
+            if "category" in cl:
+                cat_col = c
+            elif "pwd" in cl or "p.w.d" in cl:
+                pwd_col = c
+            elif cl == "seats" or "seat" in cl:
+                seats_col = c
+        # Keep only needed
+        keep = [inst_col]
+        if cat_col: keep.append(cat_col)
+        if pwd_col: keep.append(pwd_col)
+        if seats_col: keep.append(seats_col)
+        sub = df[keep].copy()
+        sub[inst_col] = sub[inst_col].ffill()
+        # Canonical names
+        sub = sub.rename(columns={
+            inst_col: "Institute",
+            cat_col if cat_col else "Category": "Category",
+            pwd_col if pwd_col else "PwD (Y/N)": "PwD (Y/N)",
+            seats_col if seats_col else "Seats": "Seats"
+        })
+        if "PwD (Y/N)" not in sub.columns:
+            sub["PwD (Y/N)"] = ""
+        # Clean and numeric
+        sub["Institute"] = sub["Institute"].map(norm)
+        sub["Category"] = sub["Category"].map(norm)
+        sub["PwD (Y/N)"] = sub["PwD (Y/N)"].map(norm)
+        sub["Seats"] = pd.to_numeric(sub["Seats"], errors="coerce").fillna(0).astype(int)
+        long_df = sub[["Institute", "Category", "PwD (Y/N)", "Seats"]].copy()
+
+    else:
+        # (B) WIDE: columns like UR/EWS/OBC/SC/ST and possibly separate PwD columns
+        # Identify seat columns
+        cols_lower = {c.lower(): c for c in df.columns}
+        possible = []
+        for c in df.columns:
+            cl = c.lower()
+            if any(k in cl for k in ["ur", "ews", "obc", "sc", "st", "total"]):
+                possible.append(c)
+        if not possible:
+            raise ValueError("Could not detect seat columns (UR/EWS/OBC/SC/ST/Total). "
+                             f"Columns found: {list(df.columns)}")
+
+
+
+        # Keep only valid string column names that actually exist
+        valid_cols = [c for c in possible if isinstance(c, str) and c in df.columns]
+
+        # Debug: show us what we detected
+        print("\n[AIIMS debug] Candidate seat columns (raw):", possible)
+        print("[AIIMS debug] Valid seat columns used:", valid_cols)
+        print("[AIIMS debug] All columns in sheet head:", list(df.columns)[:20])
+
+        if not valid_cols:
+            # Dump the first 12 rows so we can see the raw header region
+            df.head(12).to_csv("aiims_debug_head.csv", index=False)
+            raise ValueError(
+                "No usable seat columns found.\n"
+                f"  possible={possible}\n"
+                f"  df.columns={list(df.columns)}\n"
+                "Wrote aiims_debug_head.csv with the first rows to help inspect headers."
+            )
+
+        # Build the working subset
+        cols_to_keep = [inst_col] + valid_cols
+        sub = df.loc[:, cols_to_keep].copy()
+
+        # Forward-fill the institute/college name down merged cells
+        sub[inst_col] = sub[inst_col].ffill()
+
+        # Normalize the institute column name to 'Institute'
+        sub = sub.rename(columns={inst_col: "Institute"})
+
+        # Normalize whitespace etc.
+        sub["Institute"] = sub["Institute"].map(norm)
+
+        # Melt to long by category-like columns
+        # IMPORTANT: pass the id column as a STRING (not a list) to avoid the dtype issue
+        long = sub.melt(id_vars="Institute", var_name="RawCat", value_name="Seats")
+
+
+
+
+        long["RawCat"] = long["RawCat"].map(norm)
+        long["Seats"] = pd.to_numeric(long["Seats"], errors="coerce").fillna(0).astype(int)
+
+        # Split PwD vs non-PwD if present in header name
+        def parse_cat(raw):
+            r = raw.lower()
+            # normalize common labels
+            r = r.replace("ur", "general")
+            r = r.replace("gen", "general")
+            r = r.replace("ews", "ews")
+            r = r.replace("obc", "obc")
+            r = r.replace("sc", "sc")
+            r = r.replace("st", "st")
+            # detect pwd marker
+            is_pwd = ("pwd" in r) or ("p.w.d" in r) or ("disabled" in r)
+            # pick base cat
+            if "general" in r:
+                base = "General"
+            elif "ews" in r:
+                base = "EWS"
+            elif "obc" in r:
+                base = "OBC"
+            elif "sc" in r:
+                base = "SC"
+            elif "st" in r:
+                base = "ST"
+            elif "total" in r:
+                base = "Total"
+            else:
+                base = raw  # fallback
+            return base, "Y" if is_pwd else "N"
+
+        parsed = long["RawCat"].apply(parse_cat)
+        long["Category"] = parsed.apply(lambda x: x[0])
+        long["PwD (Y/N)"] = parsed.apply(lambda x: x[1])
+
+        # drop totals here; we will recompute totals from parts
+        long = long[long["Category"].str.lower() != "total"].copy()
+
+        long_df = long[["Institute", "Category", "PwD (Y/N)", "Seats"]].copy()
+
+    # Only keep the categories we care about
+    long_df["Category"] = long_df["Category"].str.upper()
+    # Normalize "UR"/"GEN" to "GENERAL"
+    long_df["Category"] = long_df["Category"].replace({
+        "UR": "GENERAL", "GEN": "GENERAL", "OPEN": "GENERAL"
+    })
+    # Keep only GEN/EWS/OBC/SC/ST
+    long_df = long_df[long_df["Category"].isin(["GENERAL", "EWS", "OBC", "SC", "ST"])].copy()
+    # Ensure PwD values are Y/N
+    long_df["PwD (Y/N)"] = long_df["PwD (Y/N)"].str.upper().map(lambda x: "Y" if x == "Y" else "N")
+
+    # Aggregate in case of duplicates
+    agg = long_df.groupby(["Institute", "Category", "PwD (Y/N)"], as_index=False)["Seats"].sum()
+
+    return agg
+
+def to_target_wide(agg: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert long form (Institute, Category, PwD, Seats) -> wide with target columns.
+    """
+    pivot = agg.pivot_table(index="Institute",
+                            columns=["Category", "PwD (Y/N)"],
+                            values="Seats",
+                            aggfunc="sum",
+                            fill_value=0)
+    pivot.columns = [f"{c1}|{c2}" for (c1, c2) in pivot.columns]
+    pivot = pivot.reset_index()
+
+    # Build target columns
+    out = pd.DataFrame({"Institute": pivot["Institute"]})
+    def get(col):
+        return pivot.get(col, pd.Series([0]*len(pivot)))
+
+    # Map
+    out["EWS"]      = get("EWS|N")
+    out["EWS PwD"]  = get("EWS|Y")
+    out["OBC"]      = get("OBC|N")
+    out["OBC PwD"]  = get("OBC|Y")
+    out["SC"]       = get("SC|N")
+    out["SC PwD"]   = get("SC|Y")
+    out["ST"]       = get("ST|N")
+    out["ST PwD"]   = get("ST|Y")
+
+    # Total = General (N+Y) + all others (N+Y)
+    gen_total = get("GENERAL|N") + get("GENERAL|Y")
+    out["TotalSeats"] = (gen_total + out["EWS"] + out["EWS PwD"] +
+                         out["OBC"] + out["OBC PwD"] +
+                         out["SC"] + out["SC PwD"] +
+                         out["ST"] + out["ST PwD"]).astype(int)
+
+    # Ensure ints
+    for c in ["EWS","EWS PwD","OBC","OBC PwD","SC","SC PwD","ST","ST PwD","TotalSeats"]:
+        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
+
+    return out
+
+def fuzzy_left_merge(sheet1: pd.DataFrame, aiims_wide: pd.DataFrame) -> pd.DataFrame:
+    # Build search list from AIIMS
+    aiims_map = {norm(n): i for n, i in zip(aiims_wide["Institute"], aiims_wide.index)}
+    aiims_names = list(aiims_map.keys())
+
+    def best_match(name):
+        cand = norm(name)
+        if not cand:
+            return None, 0
+        match, score, _ = process.extractOne(
+            cand, aiims_names, scorer=fuzz.WRatio
+        )
+        return match, score
+
+    matched_idx = []
+    matched_score = []
+    for nm in sheet1["College Name"].astype(str):
+        m, s = best_match(nm)
+        matched_idx.append(aiims_map.get(m) if m in aiims_map else None)
+        matched_score.append(s)
+
+    sheet1 = sheet1.copy()
+    sheet1["__AIIMS_row"] = matched_idx
+    sheet1["__match_score"] = matched_score
+
+    # Bring AIIMS seats in
+    for col in TARGET_SEAT_COLS:
+        if col not in sheet1.columns:
+            sheet1[col] = 0
+
+    for ridx, row in sheet1.iterrows():
+        i = row["__AIIMS_row"]
+        if i is None:
+            continue
+        src = aiims_wide.iloc[i]
+        # Overwrite seats
+        for col in TARGET_SEAT_COLS:
+            if col in src:
+                try:
+                    val = int(src[col])
+                except Exception:
+                    val = 0
+                sheet1.at[ridx, col] = val
+
+    return sheet1
+
+def main():
+    print(f"Using:\n  College file: {SHEET1_FILE}\n  AIIMS file:   {AIIMS_FILE}\n  Out file:     {OUT_FILE}\n")
+
+    if not SHEET1_FILE.exists():
+        print(f"ERROR: '{SHEET1_FILE.name}' not found in {SHEET1_FILE.parent}")
+        sys.exit(1)
+    if not AIIMS_FILE.exists():
+        print(f"ERROR: '{AIIMS_FILE.name}' not found in {AIIMS_FILE.parent}")
+        sys.exit(1)
+
+    # 1) Read input files
+    sheet1 = pd.read_excel(SHEET1_FILE, sheet_name="Sheet1")
+    # Ensure College Name exists
+    if "College Name" not in sheet1.columns:
+        raise ValueError("Sheet1 must contain a 'College Name' column.")
+
+    raw = read_aiims_raw(AIIMS_FILE)
+    aiims_long = canonicalize_aiims(raw)
+    aiims_wide = to_target_wide(aiims_long)
+
+    # 2) Fuzzy merge into Sheet1
+    merged = fuzzy_left_merge(sheet1, aiims_wide)
+
+    # 3) Write out
+    print(f"Matched {merged['__AIIMS_row'].notna().sum()} colleges (>= something match).")
+    with pd.ExcelWriter(OUT_FILE, engine="openpyxl", mode="w") as xw:
+        # keep original Sheet1 as backup
+        merged_backup = sheet1.copy()
+        merged_backup.to_excel(xw, index=False, sheet_name="Sheet1_backup")
+
+        # write updated Sheet1_with_aiims_seats
+        out_cols = list(sheet1.columns)
+        for c in TARGET_SEAT_COLS:
+            if c not in out_cols:
+                out_cols.append(c)
+        merged[out_cols].to_excel(xw, index=False, sheet_name="Sheet1_with_aiims_seats")
+
+        # also include a small mapping sheet to inspect matches
+        mapping = merged[["College Name", "__match_score"]].copy()
+        mapping["Matched AIIMS Name"] = merged["__AIIMS_row"].map(
+            lambda i: aiims_wide.iloc[i]["Institute"] if pd.notna(i) else ""
+        )
+        mapping.to_excel(xw, index=False, sheet_name="__aiims_match_diagnostics")
+
+    print(f"\nDONE. Wrote: {OUT_FILE.name}")
+    print("Open the sheet 'Sheet1_with_aiims_seats' to see updated seat columns.")
+    print("Diagnostics are in '__aiims_match_diagnostics' (shows best fuzzy match and score).")
+
+if __name__ == "__main__":
+    main()
+

@@ -1,0 +1,142 @@
+[
+  {
+    "name": "All India Institute of Medical Sciences, New Delhi",
+    "state": "Delhi",
+    "category_cutoff": {
+      "General": 100,
+      "OBC": 400,
+      "SC": 1200,
+      "ST": 2000,
+      "EWS": 300
+    },
+    "seats": 107,
+    "fee_per_year": "₹1,50,000",
+    "website": "https://aiims.edu"
+  },
+  {
+    "name": "King George's Medical University",
+    "state": "Uttar Pradesh",
+    "category_cutoff": {
+      "General": 5000,
+      "OBC": 8000,
+      "SC": 15000,
+      "ST": 18000,
+      "EWS": 6000
+    },
+    "seats": 150,
+    "fee_per_year": "₹1,00,000",
+    "website": "https://kgmu.org"
+  },
+  {
+    "name": "Madras Medical College",
+    "state": "Tamil Nadu",
+    "category_cutoff": {
+      "General": 9000,
+      "OBC": 12000,
+      "SC": 20000,
+      "ST": 22000,
+      "EWS": 10000
+    },
+    "seats": 150,
+    "fee_per_year": "₹1,20,000",
+    "website": "http://www.mmc.edu.in"
+  },
+  {
+    "name": "Bangalore Medical College and Research Institute",
+    "state": "Karnataka",
+    "category_cutoff": {
+      "General": 9000,
+      "OBC": 12000,
+      "SC": 18000,
+      "ST": 21000,
+      "EWS": 10000
+    },
+    "seats": 150,
+    "fee_per_year": "₹1,20,000",
+    "website": "https://bangaloremc.org"
+  },
+  {
+    "name": "Grant Medical College",
+    "state": "Maharashtra",
+    "category_cutoff": {
+      "General": 6000,
+      "OBC": 9000,
+      "SC": 14000,
+      "ST": 16000,
+      "EWS": 6500
+    },
+    "seats": 150,
+    "fee_per_year": "₹1,30,000",
+    "website": "https://grantmedicalcollege.edu.in"
+  },
+  {
+    "name": "Lady Hardinge Medical College",
+    "state": "Delhi",
+    "category_cutoff": {
+      "General": 4500,
+      "OBC": 7000,
+      "SC": 12000,
+      "ST": 15000,
+      "EWS": 5000
+    },
+    "seats": 100,
+    "fee_per_year": "₹1,40,000",
+    "website": "http://lhmc-hosp.gov.in"
+  },
+  {
+    "name": "JIPMER, Puducherry",
+    "state": "Puducherry",
+    "category_cutoff": {
+      "General": 3000,
+      "OBC": 4500,
+      "SC": 9000,
+      "ST": 11000,
+      "EWS": 3500
+    },
+    "seats": 150,
+    "fee_per_year": "₹90,000",
+    "website": "https://jipmer.edu.in"
+  },
+  {
+    "name": "Sawai Man Singh Medical College",
+    "state": "Rajasthan",
+    "category_cutoff": {
+      "General": 7500,
+      "OBC": 10000,
+      "SC": 16000,
+      "ST": 19000,
+      "EWS": 8000
+    },
+    "seats": 150,
+    "fee_per_year": "₹80,000",
+    "website": "https://smsmedicalcollegejaipur.in"
+  },
+  {
+    "name": "Govt Medical College, Kozhikode",
+    "state": "Kerala",
+    "category_cutoff": {
+      "General": 9500,
+      "OBC": 12500,
+      "SC": 19000,
+      "ST": 21000,
+      "EWS": 11000
+    },
+    "seats": 150,
+    "fee_per_year": "₹90,000",
+    "website": "https://www.kottakkalmedicalcollege.in"
+  },
+  {
+    "name": "Calcutta Medical College",
+    "state": "West Bengal",
+    "category_cutoff": {
+      "General": 8500,
+      "OBC": 11000,
+      "SC": 17000,
+      "ST": 20000,
+      "EWS": 9500
+    },
+    "seats": 150,
+    "fee_per_year": "₹1,10,000",
+    "website": "https://calcutamedicalcollege.in"
+  }
+]

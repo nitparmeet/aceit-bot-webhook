@@ -1,0 +1,40 @@
+[
+    {
+        "name": "AIIMS Delhi",
+        "state": "Delhi",
+        "city": "New Delhi",
+        "nirf_rank": 1,
+        "total_fees": 7000,
+        "website": "https://www.aiims.edu",
+        "category_cutoff": {
+            "General": 51,
+            "OBC": 218,
+            "SC": 1089,
+            "ST": 1950
+        },
+        "pg_quota": true,
+        "bond": {
+            "years": 0,
+            "penalty": 0
+        }
+    },
+    {
+        "name": "Maulana Azad Medical College",
+        "state": "Delhi",
+        "city": "New Delhi",
+        "nirf_rank": 23,
+        "total_fees": 15000,
+        "website": "https://www.mamc.ac.in",
+        "category_cutoff": {
+            "General": 87,
+            "OBC": 250,
+            "SC": 1250,
+            "ST": 2200
+        },
+        "pg_quota": true,
+        "bond": {
+            "years": 3,
+            "penalty": 500000
+        }
+    }
+]

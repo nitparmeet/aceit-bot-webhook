@@ -1,0 +1,1218 @@
+# -*- coding: utf-8 -# -*- coding: utf-8 -*-
+"""
+populate_cutoffs_from_table2.py
+
+Fill Cutoffs!ClosingRank using "Table 2" (category-wise ranks), taking the MAX
+closing rank per (College, Quota, Category) for a given Year/Round.
+Also writes:
+  - Cutoffs_Populated (a copy of Cutoffs with ClosingRank filled)
+  - Unmatched_Cutoffs (rows in Cutoffs we couldn't populate)
+
+Usage:
+  python3 populate_cutoffs_from_table2.py --file "Cutoffs MCC 2025 R1_August.xlsx" --year 2025 --round R1
+  # Optional if your sheet names differ:
+  # --cutoffs-sheet "Cutoffs" --table2-sheet "Table 2"
+"""
+
+import argparse
+import re
+from typing import Dict, Optional, Tuple, List
+
+import pandas as pd
+from unidecode import unidecode
+
+# --------------------------
+# Helpers
+# --------------------------
+
+def norm_text(x) -> str:
+    if x is None:
+        return ""
+    s = unidecode(str(x)).strip()
+    return s
+
+def name_key(name: str) -> str:
+    """Upper, strip punctuation/spaces; normalize GOVT/GOVERNMENT; remove trailing codes like (123456)."""
+    s = norm_text(name).upper()
+    s = s.replace(" GOVT ", " GOVERNMENT ").replace(" GOVT.", " GOVERNMENT ").replace("GOVT", "GOVERNMENT")
+    s = re.sub(r"\(\s*\d{4,6}\s*\)$", "", s)
+    s = re.sub(r"[^A-Z0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+CAT_GROUPS = {
+    "General": ["GENERAL", "GEN", "UR", "OP", "OPEN"],
+    "EWS":     ["EWS"],
+    "OBC":     ["OBC", "BC"],
+    "SC":      ["SC"],
+    "ST":      ["ST"],
+}
+
+def detect_category(header: str) -> Optional[str]:
+    """Return base category if header mentions it (and is not PwD/PH)."""
+    h = norm_text(header).upper()
+    if "PWD" in h or "PH" in h:
+        return None
+    for base, alts in CAT_GROUPS.items():
+        if any(re.search(rf"\b{alt}\b", h) for alt in alts):
+            return base
+    return None
+
+def canon_quota(val: str) -> Optional[str]:
+    """Map arbitrary quota labels -> one of: AIQ, Central, Deemed, ESIC, AFMS, State."""
+    v = norm_text(val).upper()
+    # exact-ish
+    if "ALL INDIA" in v or "AIQ" in v:
+        return "AIQ"
+    if "CENTRAL" in v or v == "CU":
+        return "Central"
+    if "DEEMED" in v or "PAID" in v or "MANAGEMENT" in v:
+        return "Deemed"
+    if "ESIC" in v or "ESI" in v:
+        return "ESIC"
+    if "AFMS" in v or "ARMED" in v:
+        return "AFMS"
+    if "STATE" in v or v == "SQ":
+        return "State"
+    # unknown: return as-is (shouldn't happen if Table 2 is clean)
+    return v if v else None
+
+def parse_round_cell(value: str) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Returns (year, Rtag) where Rtag like 'R1','R2','STRAY','MOPUP'.
+    Accepts values such as '2025_R1', 'Round 1', 'R-1', 'Mop Up', 'Stray'.
+    """
+    v = norm_text(value).upper()
+    year = None
+    m = re.search(r"(20\d{2})", v)
+    if m:
+        year = int(m.group(1))
+    if "STRAY" in v:
+        return (year, "STRAY")
+    if "MOP" in v:
+        return (year, "MOPUP")
+    m2 = re.search(r"R(?:OUND)?\s*[-_ ]?\s*(\d+)", v)
+    if m2:
+        return (year, f"R{int(m2.group(1))}")
+    m3 = re.search(r"_(R\d+)\b", v)
+    if m3:
+        return (year, m3.group(1))
+    return (year, None)
+
+def pick_col(df: pd.DataFrame, *hints) -> Optional[str]:
+    cols = list(df.columns)
+    low = [unidecode(str(c)).strip().lower() for c in cols]
+    for hint in hints:
+        h = hint.lower()
+        for i, c in enumerate(low):
+            if h in c:
+                return cols[i]
+    return None
+
+# --------------------------
+# Build index from Table 2
+# --------------------------
+
+def build_table2_index(
+    df_t2: pd.DataFrame,
+    year_want: int,
+    round_want: str,
+    col_name: Optional[str] = None,
+    col_quota: Optional[str] = None,
+    col_round: Optional[str] = None,
+) -> Dict[Tuple[str, str, str], int]:
+    """
+    From Table 2 (wide format: multiple category columns), build:
+      (name_key, quota_canon, category_base) -> MAX closing rank (int)
+    Only for matching (year_want, round_want).
+    """
+    df = df_t2.copy()
+    df.columns = [unidecode(str(c)).strip() for c in df.columns]
+
+    # auto-pick important columns if not provided
+    name_col  = col_name  or pick_col(df, "college", "institute", "inst name", "college name", "institute name")
+    quota_col = col_quota or pick_col(df, "quota")
+    round_col = col_round or pick_col(df, "round", "session", "year")
+
+    if not name_col or not quota_col or not round_col:
+        raise ValueError(f"Table 2: couldn't detect required columns. "
+                         f"name_col={name_col}, quota_col={quota_col}, round_col={round_col}")
+
+    # Identify all category rank columns (non-PwD)
+    cat_cols: Dict[str, List[str]] = {b: [] for b in CAT_GROUPS.keys()}
+    for c in df.columns:
+        if c in (name_col, quota_col, round_col):
+            continue
+        base = detect_category(c)
+        if base:
+            cat_cols[base].append(c)
+
+    # numeric-ify these category columns
+    for base, cols in cat_cols.items():
+        for c in cols:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # filter by round/year
+    keys: Dict[Tuple[str, str, str], int] = {}
+
+    for _, r in df.iterrows():
+        nm    = r.get(name_col)
+        quota = r.get(quota_col)
+        rnd   = r.get(round_col)
+
+        if not nm or not quota or rnd is None:
+            continue
+
+        y, rtag = parse_round_cell(rnd)
+        if rtag is None:
+            continue
+        if (year_want is not None) and (y is not None) and (y != year_want):
+            continue
+        if rtag != round_want:
+            continue
+
+        qcanon = canon_quota(quota)
+        if not qcanon:
+            continue
+
+        kname = name_key(nm)
+
+        # For each base category, take the MAX among present columns in this row
+        for base, cols in cat_cols.items():
+            if not cols:
+                continue
+            vals = [r.get(c) for c in cols]
+            vals = [v for v in vals if pd.notna(v)]
+            if not vals:
+                continue
+            vmax = int(max(vals))
+            key = (kname, qcanon, base)
+            if (key not in keys) or (vmax > keys[key]):
+                keys[key] = vmax
+
+    return keys
+
+# --------------------------
+# Populate Cutoffs sheet
+# --------------------------
+
+def populate_cutoffs(
+    df_cut: pd.DataFrame,
+    t2_index: Dict[Tuple[str, str, str], int],
+    year_want: int,
+    round_want: str,
+    cut_name_col: Optional[str] = None,
+    cut_course_col: Optional[str] = None,
+    cut_year_col: Optional[str] = None,
+    cut_quota_col: Optional[str] = None,
+    cut_round_col: Optional[str] = None,
+    cut_cat_col: Optional[str] = None,
+    cut_pwd_col: Optional[str] = None,
+    cut_close_col: Optional[str] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Return (populated_df, unmatched_df).
+    Only fills non-PwD rows, for matching (year, round), Course contains 'MBBS'.
+    """
+    df = df_cut.copy()
+    df.columns = [unidecode(str(c)).strip() for c in df.columns]
+
+    name_col  = cut_name_col  or pick_col(df, "college", "institute", "college name", "institute name")
+    course_col= cut_course_col or pick_col(df, "course", "program", "programme")
+    year_col  = cut_year_col  or pick_col(df, "year", "session")
+    quota_col = cut_quota_col or pick_col(df, "quota")
+    round_col = cut_round_col or pick_col(df, "round")
+    cat_col   = cut_cat_col   or pick_col(df, "category", "cat")
+    pwd_col   = cut_pwd_col   or pick_col(df, "pwd", "ph", "pwd (y/n)")
+    close_col = cut_close_col or pick_col(df, "closingrank", "closing rank", "air", "closing")
+
+    if not name_col or not quota_col or not round_col or not cat_col:
+        raise ValueError("Cutoffs: required columns not found "
+                         f"(name={name_col}, quota={quota_col}, round={round_col}, category={cat_col})")
+
+    if not close_col:
+        # create it if missing
+        close_col = "ClosingRank"
+        if close_col not in df.columns:
+            df[close_col] = pd.NA
+
+    # Build mask for rows we will try to fill
+    mask = pd.Series(True, index=df.index)
+
+    # Course filter: keep MBBS only
+    if course_col and course_col in df.columns:
+        mask &= df[course_col].astype(str).str.contains("MBBS", case=False, na=False)
+
+    # Year & Round
+    if year_col in df.columns:
+        mask &= df[year_col].astype(str).str.contains(str(year_want), case=False, na=False)
+
+    # Round value can be '2025_R1' or 'R1' or 'Round 1'
+    if round_col in df.columns:
+        up = df[round_col].astype(str).str.upper()
+        mask &= (
+            up.str.contains(rf"\b{round_want}\b", regex=True) |
+            up.str.contains("2025_"+round_want, regex=False) |
+            up.str.contains(r"ROUND\s*1", regex=True) if round_want == "R1" else False
+        )
+
+    # Non-PwD only
+    if pwd_col and pwd_col in df.columns:
+        upw = df[pwd_col].astype(str).str.strip().str.upper()
+        mask &= ~upw.isin(["Y", "YES", "TRUE", "1", "PWD", "PH"])
+
+    # Work on filtered subset
+    target = df.loc[mask].copy()
+
+    unmatched = []
+    filled = 0
+
+    def canon_base(cat: str) -> Optional[str]:
+        t = norm_text(cat).upper().replace(" ", "")
+        if t in {"OP","UR","GEN","GENERAL","OPEN"}:
+            return "General"
+        if t in {"EWS"}:
+            return "EWS"
+        if t in {"OBC","BC"}:
+            return "OBC"
+        if t in {"SC"}:
+            return "SC"
+        if t in {"ST"}:
+            return "ST"
+        return None
+
+    for i, r in target.iterrows():
+        nm = r.get(name_col)
+        qt = r.get(quota_col)
+        ct = r.get(cat_col)
+        if not nm or not qt or not ct:
+            unmatched.append((i, "missing col/quota/cat"))
+            continue
+
+        qcanon = canon_quota(qt)
+        base = canon_base(ct)
+        if not qcanon or not base:
+            unmatched.append((i, f"bad quota/cat: {qt}/{ct}"))
+            continue
+
+        k = (name_key(nm), qcanon, base)
+        val = t2_index.get(k)
+        if val is None:
+            unmatched.append((i, f"no match for {k}"))
+            continue
+
+        df.at[i, close_col] = int(val)
+        filled += 1
+
+    unmatched_df = df.loc[[idx for idx, _ in unmatched]].copy() if unmatched else pd.DataFrame(columns=df.columns)
+    # Add reason if we built unmatched list
+    if unmatched and "__Reason" not in unmatched_df.columns:
+        unmatched_df["__Reason"] = [reason for _, reason in unmatched]
+
+    print(f"[info] Populated rows: {filled}  |  Unmatched: {len(unmatched)}")
+    return df, unmatched_df
+
+# --------------------------
+# Main
+# --------------------------
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--file", required=True, help="Excel file path")
+    ap.add_argument("--cutoffs-sheet", default="Cutoffs", help="Cutoffs sheet name (long-form)")
+    ap.add_argument("--table2-sheet", default="Table 2", help="Table 2 sheet name (wide, category columns)")
+    ap.add_argument("--year", type=int, required=True, help="Year to use, e.g., 2025")
+    ap.add_argument("--round", required=True, help='Round tag, e.g. R1 / R2 / MOPUP / STRAY')
+    args = ap.parse_args()
+
+    xl = pd.ExcelFile(args.file)
+    if args.cutoffs_sheet not in xl.sheet_names:
+        raise SystemExit(f"'{args.cutoffs_sheet}' not found. Sheets: {xl.sheet_names}")
+    if args.table2_sheet not in xl.sheet_names:
+        raise SystemExit(f"'{args.table2_sheet}' not found. Sheets: {xl.sheet_names}")
+
+    cut = pd.read_excel(args.file, sheet_name=args.cutoffs_sheet)
+    t2  = pd.read_excel(args.file, sheet_name=args.table2_sheet)
+
+    print("[info] Building index from Table 2 …")
+    index = build_table2_index(
+        df_t2=t2,
+        year_want=args.year,
+        round_want=args.round.upper(),  # e.g., R1
+    )
+    print(f"[info] Index entries: {len(index)}")
+
+    print("[info] Populating Cutoffs …")
+    populated, unmatched = populate_cutoffs(
+        df_cut=cut,
+        t2_index=index,
+        year_want=args.year,
+        round_want=args.round.upper(),
+    )
+
+    # Write back
+    with pd.ExcelWriter(args.file, engine="openpyxl", mode="a", if_sheet_exists="replace") as w:
+        populated.to_excel(w, sheet_name="Cutoffs_Populated", index=False)
+        if not unmatched.empty:
+            unmatched.to_excel(w, sheet_name="Unmatched_Cutoffs", index=False)
+
+    print("[done] Wrote sheets: 'Cutoffs_Populated'" + (", 'Unmatched_Cutoffs'" if not unmatched.empty else ""))
+    print("      Open them in Excel and spot-check a few rows.")
+    
+if __name__ == "__main__":
+    main()
+
+
+Fill Cutoffs!ClosingRank using "Table 2" (category-wise ranks), taking the MAX
+closing rank per (College, Quota, Category) for a given Year/Round.
+Also writes:
+  - Cutoffs_Populated (a copy of Cutoffs with ClosingRank filled)
+  - Unmatched_Cutoffs (rows in Cutoffs we couldn't populate)
+
+Usage:
+  python3 populate_cutoffs_from_table2.py --file "Cutoffs MCC 2025 R1_August.xlsx" --year 2025 --round R1
+  # Optional if your sheet names differ:
+  # --cutoffs-sheet "Cutoffs" --table2-sheet "Table 2"
+"""
+
+import argparse
+import re
+from typing import Dict, Optional, Tuple, List
+
+import pandas as pd
+from unidecode import unidecode
+
+# --------------------------
+# Helpers
+# --------------------------
+
+def norm_text(x) -> str:
+    if x is None:
+        return ""
+    s = unidecode(str(x)).strip()
+    return s
+
+def name_key(name: str) -> str:
+    """Upper, strip punctuation/spaces; normalize GOVT/GOVERNMENT; remove trailing codes like (123456)."""
+    s = norm_text(name).upper()
+    s = s.replace(" GOVT ", " GOVERNMENT ").replace(" GOVT.", " GOVERNMENT ").replace("GOVT", "GOVERNMENT")
+    s = re.sub(r"\(\s*\d{4,6}\s*\)$", "", s)
+    s = re.sub(r"[^A-Z0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+CAT_GROUPS = {
+    "General": ["GENERAL", "GEN", "UR", "OP", "OPEN"],
+    "EWS":     ["EWS"],
+    "OBC":     ["OBC", "BC"],
+    "SC":      ["SC"],
+    "ST":      ["ST"],
+}
+
+def detect_category(header: str) -> Optional[str]:
+    """Return base category if header mentions it (and is not PwD/PH)."""
+    h = norm_text(header).upper()
+    if "PWD" in h or "PH" in h:
+        return None
+    for base, alts in CAT_GROUPS.items():
+        if any(re.search(rf"\b{alt}\b", h) for alt in alts):
+            return base
+    return None
+
+def canon_quota(val: str) -> Optional[str]:
+    """Map arbitrary quota labels -> one of: AIQ, Central, Deemed, ESIC, AFMS, State."""
+    v = norm_text(val).upper()
+    # exact-ish
+    if "ALL INDIA" in v or "AIQ" in v:
+        return "AIQ"
+    if "CENTRAL" in v or v == "CU":
+        return "Central"
+    if "DEEMED" in v or "PAID" in v or "MANAGEMENT" in v:
+        return "Deemed"
+    if "ESIC" in v or "ESI" in v:
+        return "ESIC"
+    if "AFMS" in v or "ARMED" in v:
+        return "AFMS"
+    if "STATE" in v or v == "SQ":
+        return "State"
+    # unknown: return as-is (shouldn't happen if Table 2 is clean)
+    return v if v else None
+
+def parse_round_cell(value: str) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Returns (year, Rtag) where Rtag like 'R1','R2','STRAY','MOPUP'.
+    Accepts values such as '2025_R1', 'Round 1', 'R-1', 'Mop Up', 'Stray'.
+    """
+    v = norm_text(value).upper()
+    year = None
+    m = re.search(r"(20\d{2})", v)
+    if m:
+        year = int(m.group(1))
+    if "STRAY" in v:
+        return (year, "STRAY")
+    if "MOP" in v:
+        return (year, "MOPUP")
+    m2 = re.search(r"R(?:OUND)?\s*[-_ ]?\s*(\d+)", v)
+    if m2:
+        return (year, f"R{int(m2.group(1))}")
+    m3 = re.search(r"_(R\d+)\b", v)
+    if m3:
+        return (year, m3.group(1))
+    return (year, None)
+
+def pick_col(df: pd.DataFrame, *hints) -> Optional[str]:
+    cols = list(df.columns)
+    low = [unidecode(str(c)).strip().lower() for c in cols]
+    for hint in hints:
+        h = hint.lower()
+        for i, c in enumerate(low):
+            if h in c:
+                return cols[i]
+    return None
+
+# --------------------------
+# Build index from Table 2
+# --------------------------
+
+def build_table2_index(
+    df_t2: pd.DataFrame,
+    year_want: int,
+    round_want: str,
+    col_name: Optional[str] = None,
+    col_quota: Optional[str] = None,
+    col_round: Optional[str] = None,
+) -> Dict[Tuple[str, str, str], int]:
+    """
+    From Table 2 (wide format: multiple category columns), build:
+      (name_key, quota_canon, category_base) -> MAX closing rank (int)
+    Only for matching (year_want, round_want).
+    """
+    df = df_t2.copy()
+    df.columns = [unidecode(str(c)).strip() for c in df.columns]
+
+    # auto-pick important columns if not provided
+    name_col  = col_name  or pick_col(df, "college", "institute", "inst name", "college name", "institute name")
+    quota_col = col_quota or pick_col(df, "quota")
+    round_col = col_round or pick_col(df, "round", "session", "year")
+
+    if not name_col or not quota_col or not round_col:
+        raise ValueError(f"Table 2: couldn't detect required columns. "
+                         f"name_col={name_col}, quota_col={quota_col}, round_col={round_col}")
+
+    # Identify all category rank columns (non-PwD)
+    cat_cols: Dict[str, List[str]] = {b: [] for b in CAT_GROUPS.keys()}
+    for c in df.columns:
+        if c in (name_col, quota_col, round_col):
+            continue
+        base = detect_category(c)
+        if base:
+            cat_cols[base].append(c)
+
+    # numeric-ify these category columns
+    for base, cols in cat_cols.items():
+        for c in cols:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # filter by round/year
+    keys: Dict[Tuple[str, str, str], int] = {}
+
+    for _, r in df.iterrows():
+        nm    = r.get(name_col)
+        quota = r.get(quota_col)
+        rnd   = r.get(round_col)
+
+        if not nm or not quota or rnd is None:
+            continue
+
+        y, rtag = parse_round_cell(rnd)
+        if rtag is None:
+            continue
+        if (year_want is not None) and (y is not None) and (y != year_want):
+            continue
+        if rtag != round_want:
+            continue
+
+        qcanon = canon_quota(quota)
+        if not qcanon:
+            continue
+
+        kname = name_key(nm)
+
+        # For each base category, take the MAX among present columns in this row
+        for base, cols in cat_cols.items():
+            if not cols:
+                continue
+            vals = [r.get(c) for c in cols]
+            vals = [v for v in vals if pd.notna(v)]
+            if not vals:
+                continue
+            vmax = int(max(vals))
+            key = (kname, qcanon, base)
+            if (key not in keys) or (vmax > keys[key]):
+                keys[key] = vmax
+
+    return keys
+
+# --------------------------
+# Populate Cutoffs sheet
+# --------------------------
+
+def populate_cutoffs(
+    df_cu_
+# -*- coding: utf-8 -*-
+"""
+populate_cutoffs_from_table2.py
+
+Fill Cutoffs!ClosingRank using "Table 2" (category-wise ranks), taking the MAX
+closing rank per (College, Quota, Category) for a given Year/Round.
+Also writes:
+  - Cutoffs_Populated (a copy of Cutoffs with ClosingRank filled)
+  - Unmatched_Cutoffs (rows in Cutoffs we couldn't populate)
+
+Usage:
+  python3 populate_cutoffs_from_table2.py --file "Cutoffs MCC 2025 R1_August.xlsx" --year 2025 --round R1
+  # Optional if your sheet names differ:
+  # --cutoffs-sheet "Cutoffs" --table2-sheet "Table 2"
+"""
+
+import argparse
+import re
+from typing import Dict, Optional, Tuple, List
+
+import pandas as pd
+from unidecode import unidecode
+
+# --------------------------
+# Helpers
+# --------------------------
+
+def norm_text(x) -> str:
+    if x is None:
+        return ""
+    s = unidecode(str(x)).strip()
+    return s
+
+def name_key(name: str) -> str:
+    """Upper, strip punctuation/spaces; normalize GOVT/GOVERNMENT; remove trailing codes like (123456)."""
+    s = norm_text(name).upper()
+    s = s.replace(" GOVT ", " GOVERNMENT ").replace(" GOVT.", " GOVERNMENT ").replace("GOVT", "GOVERNMENT")
+    s = re.sub(r"\(\s*\d{4,6}\s*\)$", "", s)
+    s = re.sub(r"[^A-Z0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+CAT_GROUPS = {
+    "General": ["GENERAL", "GEN", "UR", "OP", "OPEN"],
+    "EWS":     ["EWS"],
+    "OBC":     ["OBC", "BC"],
+    "SC":      ["SC"],
+    "ST":      ["ST"],
+}
+
+def detect_category(header: str) -> Optional[str]:
+    """Return base category if header mentions it (and is not PwD/PH)."""
+    h = norm_text(header).upper()
+    if "PWD" in h or "PH" in h:
+        return None
+    for base, alts in CAT_GROUPS.items():
+        if any(re.search(rf"\b{alt}\b", h) for alt in alts):
+            return base
+    return None
+
+def canon_quota(val: str) -> Optional[str]:
+    """Map arbitrary quota labels -> one of: AIQ, Central, Deemed, ESIC, AFMS, State."""
+    v = norm_text(val).upper()
+    # exact-ish
+    if "ALL INDIA" in v or "AIQ" in v:
+        return "AIQ"
+    if "CENTRAL" in v or v == "CU":
+        return "Central"
+    if "DEEMED" in v or "PAID" in v or "MANAGEMENT" in v:
+        return "Deemed"
+    if "ESIC" in v or "ESI" in v:
+        return "ESIC"
+    if "AFMS" in v or "ARMED" in v:
+        return "AFMS"
+    if "STATE" in v or v == "SQ":
+        return "State"
+    # unknown: return as-is (shouldn't happen if Table 2 is clean)
+    return v if v else None
+
+def parse_round_cell(value: str) -> Tuple[Optional[int], Optional[str]]:
+    """
+    Returns (year, Rtag) where Rtag like 'R1','R2','STRAY','MOPUP'.
+    Accepts values such as '2025_R1', 'Round 1', 'R-1', 'Mop Up', 'Stray'.
+    """
+    v = norm_text(value).upper()
+    year = None
+    m = re.search(r"(20\d{2})", v)
+    if m:
+        year = int(m.group(1))
+    if "STRAY" in v:
+        return (year, "STRAY")
+    if "MOP" in v:
+        return (year, "MOPUP")
+    m2 = re.search(r"R(?:OUND)?\s*[-_ ]?\s*(\d+)", v)
+    if m2:
+        return (year, f"R{int(m2.group(1))}")
+    m3 = re.search(r"_(R\d+)\b", v)
+    if m3:
+        return (year, m3.group(1))
+    return (year, None)
+
+def pick_col(df: pd.DataFrame, *hints) -> Optional[str]:
+    cols = list(df.columns)
+    low = [unidecode(str(c)).strip().lower() for c in cols]
+    for hint in hints:
+        h = hint.lower()
+        for i, c in enumerate(low):
+            if h in c:
+                return cols[i]
+    return None
+
+# --------------------------
+# Build index from Table 2
+# --------------------------
+
+def build_table2_index(
+    df_t2: pd.DataFrame,
+    year_want: int,
+    round_want: str,
+    col_name: Optional[str] = None,
+    col_quota: Optional[str] = None,
+    col_round: Optional[str] = None,
+) -> Dict[Tuple[str, str, str], int]:
+    """
+    From Table 2 (wide format: multiple category columns), build:
+      (name_key, quota_canon, category_base) -> MAX closing rank (int)
+    Only for matching (year_want, round_want).
+    """
+    df = df_t2.copy()
+    df.columns = [unidecode(str(c)).strip() for c in df.columns]
+
+    # auto-pick important columns if not provided
+    name_col  = col_name  or pick_col(df, "college", "institute", "inst name", "college name", "institute name")
+    quota_col = col_quota or pick_col(df, "quota")
+    round_col = col_round or pick_col(df, "round", "session", "year")
+
+    if not name_col or not quota_col or not round_col:
+        raise ValueError(f"Table 2: couldn't detect required columns. "
+                         f"name_col={name_col}, quota_col={quota_col}, round_col={round_col}")
+
+    # Identify all category rank columns (non-PwD)
+    cat_cols: Dict[str, List[str]] = {b: [] for b in CAT_GROUPS.keys()}
+    for c in df.columns:
+        if c in (name_col, quota_col, round_col):
+            continue
+        base = detect_category(c)
+        if base:
+            cat_cols[base].append(c)
+
+    # numeric-ify these category columns
+    for base, cols in cat_cols.items():
+        for c in cols:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # filter by round/year
+    keys: Dict[Tuple[str, str, str], int] = {}
+
+    for _, r in df.iterrows():
+        nm    = r.ge(name_col)
+        quota = r.get(quota_col)
+        rnd   = r.get(round_col)
+
+        if not nm or not quota or rnd is None:
+            continue
+
+        y, rtag = parse_round_cell(rnd)
+        if rtag is None:
+            continue
+        if (year_want is not None) and (y is not None) and (y != year_want):
+            continue
+        if rtag != round_want:
+            continue
+
+        qcanon = canon_quota(quota)
+        if not qcanon:
+            continue
+
+        kname = name_key(nm)
+
+        # For each base category, take the MAX among present columns in this row
+        for base, cols in cat_cols.items():
+            if not cols:
+                continue
+            vals = [r.get(c) for c in cols]
+            vals = [v for v in vals if pd.notna(v)]
+            if not vals:
+                continue
+            vmax = int(max(vals))
+            key = (kname, qcanon, base)
+            if (key not in keys) or (vmax > keys[key]):
+                keys[key] = vmax
+
+    return keys
+
+# --------------------------
+# Populate Cutoffs sheet
+# --------------------------
+
+def populate_cutoffs(
+    df_cut: pd.DataFrame,
+    t2_index: Dict[Tuple[str, str, str], int],
+    year_want: int,
+    round_want: str,
+    cut_name_col: Optional[str] = None,
+    cut_course_col: Optional[str] = None,
+    cut_year_col: Optional[str] = None,
+    cut_quota_col: Optional[str] = None,
+    cut_round_col: Optional[str] = None,
+    cut_cat_col: Optional[str] = None,
+    cut_pwd_col: Optional[str] = None,
+    cut_close_col: Optional[str] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Return (populated_df, unmatched_df).
+    Only fills non-PwD rows, for matching (year, round), Course contains 'MBBS'.
+    """
+    df = df_cut.copy()
+    df.columns = [unidecode(str(c)).strip() for c in df.columns]
+
+    name_col  = cut_name_col  or pick_col(df, "college", "institute", "college name", "institute name")
+    course_col= cut_course_col or pick_col(df, "course", "program", "programme")
+    year_col  = cut_year_col  or pick_col(df, "year", "session")
+    quota_col = cut_quota_col or pick_col(df, "quota")
+    round_col = cut_round_col or pick_col(df, "round")
+    cat_col   = cut_cat_col   or pick_col(df, "category", "cat")
+    pwd_col   = cut_pwd_col   or pick_col(df, "pwd", "ph", "pwd (y/n)")
+    close_col = cut_close_col or pick_col(df, "closingrank", "closing rank", "air", "closing")
+
+    if not name_col or not quota_col or not round_col or not cat_col:
+        raise ValueError("Cutoffs: required columns not found "
+                         f"(name={name_col}, quota={quota_col}, round={round_col}, category={cat_col})")
+
+    if not close_col:
+        # create it if missing
+        close_col = "ClosingRank"
+        if close_col not in df.columns:
+            df[close_col] = pd.NA
+
+    # Build mask for rows we will try to fill
+    mask = pd.Series(True, index=df.index)
+
+    # Course filter: keep MBBS only
+    if course_col and course_col in df.columns:
+        mask &= df[course_col].astype(str).str.contains("MBBS", case=False, na=False)
+
+    # Year & Round
+    if year_col in df.columns:
+        mask &= df[year_col].astype(str).str.contains(str(year_want), case=False, na=False)
+
+    # Round value can be '2025_R1' or 'R1' or 'Round 1'
+    if round_col in df.columns:
+        up = df[round_col].astype(str).str.upper()
+        mask &= (
+            up.str.contains(rf"\b{round_want}\b", regex=True) |
+            up.str.contains("2025_"+round_want, regex=False) |
+            up.str.contains(r"ROUND\s*1", regex=True) if round_want == "R1" else False
+        )
+
+    # Non-PwD only
+    if pwd_col and pwd_col in df.columns:
+        upw = df[pwd_col].astype(str).str.strip().str.upper()
+        mask &= ~upw.isin(["Y", "YES", "TRUE", "1", "PWD", "PH"])
+
+    # Work on filtered subset
+    target = df.loc[mask].copy()
+
+    unmatched = []
+    filled = 0
+
+    def canon_base(cat: str) -> Optional[str]:
+        t = norm_text(cat).upper().replace(" ", "")
+        if t in {"OP","UR","GEN","GENERAL","OPEN"}:
+            return "General"
+        if t in {"EWS"}:
+            return "EWS"
+        if t in {"OBC","BC"}:
+            return "OBC"
+        if t in {"SC"}:
+            return "SC"
+        if t in {"ST"}:
+            return "ST"
+        return None
+
+    for i, r in target.iterrows():
+        nm = r.get(name_col)
+        qt = r.get(quota_col)
+        ct = r.get(cat_col)
+        if not nm or not qt or not ct:
+            unmatched.append((i, "missing col/quota/cat"))
+            continue
+
+        qcanon = canon_quota(qt)
+        base = canon_base(ct)
+        if not qcanon or not base:
+            unmatched.append((i, f"bad quota/cat: {qt}/{ct}"))
+            continue
+
+        k = (name_key(nm), qcanon, base)
+        val = t2_index.get(k)
+        if val is None:
+            unmatched.append((i, f"no match for {k}"))
+            continue
+
+        df.at[i, close_col] = int(val)
+        filled += 1
+
+    unmatched_df = df.loc[[idx for idx, _ in unmatched]].copy() if unmatched else pd.DataFrame(columns=df.columns)
+    # Add reason if we built unmatched list
+    if unmatched and "__Reason" not in unmatched_df.columns:
+        unmatched_df["__Reason"] = [reason for _, reason in unmatched]
+
+    print(f"[info] Populated rows: {filled}  |  Unmatched: {len(unmatched)}")
+    return df, unmatched_df
+
+# --------------------------
+# Main
+# --------------------------
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--file", required=True, help="Excel file path")
+    ap.add_argument("--cutoffs-sheet", default="Cutoffs", help="Cutoffs sheet name (long-form)")
+    ap.add_argument("--table2-sheet", default="Table 2", help="Table 2 sheet name (wide, category columns)")
+    ap.add_argument("--year", type=int, required=True, help="Year to use, e.g., 2025")
+    ap.add_argument("--round", required=True, help='Round tag, e.g. R1 / R2 / MOPUP / STRAY')
+    args = ap.parse_args()
+
+    xl = pd.ExcelFile(args.file)
+    if args.cutoffs_sheet not in xl.sheet_names:
+        raise SystemExit(f"'{args.cutoffs_sheet}' not found. Sheets: {xl.sheet_names}")
+    if args.table2_sheet not in xl.sheet_names:
+        raise SystemExit(f"'{args.table2_sheet}' not found. Sheets: {xl.sheet_names}")
+
+    cut = pd.read_excel(args.file, sheet_name=args.cutoffs_sheet)
+    t2  = pd.read_excel(args.file, sheet_name=args.table2_sheet)
+
+    print("[info] Building index from Table 2 …")
+    index = build_table2_index(
+        df_t2=t2,
+        year_want=args.year,
+        round_want=args.round.upper(),  # e.g., R1
+    )
+    print(f"[info] Index entries: {len(index)}")
+
+    print("[info] Populating Cutoffs …")
+    populated, unmatched = populate_cutoffs(
+        df_cut=cut,
+        t2_index=index,
+        year_want=args.year,
+        round_want=args.round.upper(),
+    )
+
+    # Write back
+    with pd.ExcelWriter(args.file, engine="openpyxl", mode="a", if_sheet_exists="replace") as w:
+        populated.to_excel(w, sheet_name="Cutoffs_Populated", index=False)
+        if not unmatched.empty:
+            unmatched.to_excel(w, sheet_name="Unmatched_Cutoffs", index=False)
+
+    print("[done] Wrote sheets: 'Cutoffs_Populated'" + (", 'Unmatched_Cutoffs'" if not unmatched.empty else ""))
+    print("      Open them in Excel and spot-check a few rows.")
+    
+if __name__ == "__main__":
+    main(# -*- coding: utf-8 -*-
+"""
+populate_cutoffs_from_table2.py
+
+Populates Cutoffs!ClosingRank (Column L) by joining against "Table 2" using:
+- Fuzzy college-name matching (rapidfuzz)
+- Robust quota & category normalization
+- PwD defaulting (N) and quota defaulting (AIQ) for strays
+- Optional year/round filtering when present
+
+Outputs:
+- Adds/overwrites a new sheet:  Cutoffs_Populated
+- Writes unmatched rows to:     cutoffs_unmatched_rows.csv
+
+Usage:
+  pip install pandas openpyxl unidecode rapidfuzz
+  python3 populate_cutoffs_from_table2.py --file "Cutoffs MCC 2025 R1_August.xlsx" \
+      --cutoffs-sheet "Cutoffs" --table2-sheet "Table 2" --year 2025 --round "R1"
+"""
+
+import argparse
+import re
+from typing import Optional, Tuple, Dict
+import pandas as pd
+from unidecode import unidecode
+from rapidfuzz import process, fuzz
+
+# ----------------------------- Normalizers -----------------------------
+CAT_BASES = {
+    "GENERAL": ["GEN", "GENERAL", "UR", "OPEN", "OP"],
+    "EWS": ["EWS"],
+    "OBC": ["OBC", "BC", "SEBC"],
+    "SC": ["SC"],
+    "ST": ["ST"],
+}
+
+QUOTA_ALIASES = {
+    "AIQ": ["AIQ", "ALL INDIA QUOTA", "ALL INDIA", "15% AIQ", "AIQ (15%)"],
+    "CENTRAL": ["CENTRAL INSTITUTION", "CENTRAL", "CENTRAL INSTITUTIONS", "CENTRAL UNIVERSITY", "CU"],
+    "DEEMED": ["DEEMED", "DEEMED/PAID SEATS QUOTA", "DEEMED UNIVERSITY", "PAID SEATS", "DEEMED / PAID"],
+    "ESIC": ["ESIC", "ESI"],
+    "AFMS": ["AFMS", "ARMED FORCES"],
+    "STATE": ["STATE", "STATE QUOTA", "SQ"],
+}
+
+def norm_txt(x: str) -> str:
+    if x is None:
+        return ""
+    s = unidecode(str(x)).strip()
+    return s
+
+def keyify_name(name: str) -> str:
+    s = norm_txt(name).upper()
+    s = re.sub(r"\bGOVT\b", "GOVERNMENT", s)
+    s = re.sub(r"[^A-Z0-9 ]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def canon_category(cat_raw: str) -> str:
+    c = norm_txt(cat_raw).upper()
+    c = re.sub(r"[^A-Z0-9 ]+", " ", c)
+    c = re.sub(r"\s+", " ", c).strip()
+    # detect PwD and strip it out here; we treat PwD separately if you want later
+    c = re.sub(r"\b(PWD|PH)\b", "", c).strip()
+    # exact/alias
+    for base, alts in CAT_BASES.items():
+        if c == base:
+            return base
+        for a in alts:
+            if c == a or re.search(rf"\b{a}\b", c):
+                return base
+    # last resort: token guess
+    for t in c.split():
+        for base, alts in CAT_BASES.items():
+            if t == base or t in alts:
+                return base
+    return "GENERAL"  # safe default
+
+def canon_quota(q_raw: str) -> str:
+    q = norm_txt(q_raw).upper()
+    # exact matches
+    for key, alts in QUOTA_ALIASES.items():
+        if q == key:
+            return key
+        for a in alts:
+            if q == a:
+                return key
+    # contains
+    if "ALL INDIA" in q or "AIQ" in q:
+        return "AIQ"
+    if "CENTRAL" in q:
+        return "CENTRAL"
+    if "DEEMED" in q or "PAID" in q:
+        return "DEEMED"
+    if "ESIC" in q or "ESI" in q:
+        return "ESIC"
+    if "AFMS" in q or "ARMED FORCES" in q:
+        return "AFMS"
+    if "STATE" in q or q == "SQ":
+        return "STATE"
+    # default heuristic: AIQ (common)
+    return "AIQ"
+
+# ----------------------------- Loader/Joiner -----------------------------
+def build_table2_index(df_t2: pd.DataFrame,
+                       col_college: str,
+                       col_category: str,
+                       col_quota: str,
+                       col_rank: str,
+                       col_year: Optional[str] = None,
+                       col_round: Optional[str] = None,
+                       want_year: Optional[int] = None,
+                       want_round: Optional[str] = None) -> Dict[Tuple[str, str, str], int]:
+    """
+    Builds a dict: (name_key, category, quota) -> best closing rank (max AIR)
+    We keep the *largest* rank observed per key (closing rank is usually the max AIR that got in).
+    Optional year/round narrowing.
+    """
+    df = df_t2.copy()
+    # Standardize essential columns
+    df[col_college]  = df[col_college].map(keyify_name)
+    df[col_category] = df[col_category].map(canon_category)
+    df[col_quota]    = df[col_quota].map(canon_quota)
+
+    # Optional year/round filter
+    if want_year and col_year in df.columns:
+        def _year_from_cell(x):
+            s = str(x)
+            m = re.search(r"(20\d{2})", s)
+            return int(m.group(1)) if m else None
+        yrs = df[col_year].map(_year_from_cell)
+        df = df[yrs.eq(want_year) | yrs.isna()]
+
+    if want_round and col_round in df.columns:
+        wr = want_round.upper().replace("ROUND ", "R").replace(" ", "")
+        col_round_up = df[col_round].astype(str).str.upper().str.replace("ROUND ", "R", regex=False).str.replace(" ", "", regex=False)
+        df = df[col_round_up.str.contains(wr, na=False)]
+
+    # Parse rank as int; keep rows with a valid integer
+    ranks = pd.to_numeric(df[col_rank], errors="coerce").astype("Int64")
+    df = df.assign(__rank=ranks).dropna(subset=["__rank"])
+    df["__rank"] = df["__rank"].astype(int)
+
+    # Aggregate: keep max (largest AIR) per (name_key, category, quota)
+    idx: Dict[Tuple[str, str, str], int] = {}
+    for _, r in df.iterrows():
+        key = (r[col_college], r[col_category], r[col_quota])
+        val = int(r["__rank"])
+        if key not in idx or val > idx[key]:
+            idx[key] = val
+    return idx
+
+def populate_from_index(df_cut: pd.DataFrame,
+                        idx_table2: Dict[Tuple[str, str, str], int],
+                        col_college: str,
+                        col_quota: str,
+                        col_category: str,
+                        out_col_rank: str,
+                        fuzzy_choices: Optional[pd.Series] = None,
+                        fuzzy_threshold: int = 92) -> pd.DataFrame:
+    """
+    For each row in Cutoffs, attempts:
+      1) exact (name_key, category, quota)
+      2) exact (name_key, category, quota=AIQ) if quota missing/unknown
+      3) fuzzy(name_key) within threshold, same category & quota
+      4) fuzzy(name_key) with quota=AIQ if quota missing
+    """
+    df = df_cut.copy()
+
+    name_keys = df[col_college].map(keyify_name)
+    cats      = df[col_category].map(canon_category)
+    quotas    = df[col_quota].map(lambda q: canon_quota(q) if str(q).strip() else "AIQ")
+
+    # Prepare fuzzy choices from Table2 keys if not supplied
+    if fuzzy_choices is None:
+        # Derive set of name_keys present in index
+        t2_name_keys = sorted(set(k[0] for k in idx_table2.keys()))
+        fuzzy_choices = pd.Series(t2_name_keys, name="t2_choices")
+
+    out_vals = []
+    unmatched = []
+
+    # Pre-build a grouped dict for faster lookups by (cat, quota)
+    # e.g., index_by_cq[("GENERAL","AIQ")] -> { name_key: rank, ... }
+    index_by_cq: Dict[Tuple[str, str], Dict[str, int]] = {}
+    for (nk, cat, quo), rank in idx_table2.items():
+        index_by_cq.setdefault((cat, quo), {})[nk] = rank
+
+    for i, (nk, cat, quo) in enumerate(zip(name_keys, cats, quotas)):
+        rank_val = None
+
+        # (1) exact, full key
+        if (nk, cat, quo) in idx_table2:
+            rank_val = idx_table2[(nk, cat, quo)]
+        else:
+            # (2) try defaulting quota to AIQ if current quota has no match
+            if (nk, cat, "AIQ") in idx_table2:
+                rank_val = idx_table2[(nk, cat, "AIQ")]
+            else:
+                # (3) fuzzy on name within same (cat, quo)
+                options = index_by_cq.get((cat, quo), {})
+                if options:
+                    m = process.extractOne(nk, list(options.keys()), scorer=fuzz.token_sort_ratio)
+                    if m and m[1] >= fuzzy_threshold:
+                        rank_val = options[m[0]]
+                if rank_val is None:
+                    # (4) fuzzy with AIQ as last resort
+                    options_aiq = index_by_cq.get((cat, "AIQ"), {})
+                    if options_aiq:
+                        m2 = process.extractOne(nk, list(options_aiq.keys()), scorer=fuzz.token_sort_ratio)
+                        if m2 and m2[1] >= fuzzy_threshold:
+                            rank_val = options_aiq[m2[0]]
+
+        if rank_val is None:
+            # Keep for CSV audit
+            unmatched.append({
+                "row_index": i,
+                "College Name": df.at[i, col_college],
+                "Category": df.at[i, col_category],
+                "Quota": df.at[i, col_quota],
+                "name_key": nk,
+                "canon_category": cat,
+                "canon_quota": quo,
+            })
+        out_vals.append(rank_val)
+
+    df[out_col_rank] = out_vals
+    return df, pd.DataFrame(unmatched)
+
+# ----------------------------- CLI -----------------------------
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--file", required=True, help="Workbook path")
+    ap.add_argument("--cutoffs-sheet", default="Cutoffs", help="Cutoffs sheet name")
+    ap.add_argument("--table2-sheet", default="Table 2", help="Table 2 sheet name")
+    ap.add_argument("--year", type=int, default=None, help="Filter Table 2 by year (e.g., 2025)")
+    ap.add_argument("--round", default=None, help='Filter Table 2 by round, e.g., "R1" or "Round 1"')
+    # Column names in Cutoffs
+    ap.add_argument("--cutoffs-college", default="College Name")
+    ap.add_argument("--cutoffs-category", default="Category")
+    ap.add_argument("--cutoffs-quota", default="Quota")
+    ap.add_argument("--cutoffs-closing", default="ClosingRank")  # Column L in your layout
+    # Column names in Table 2
+    ap.add_argument("--table2-college", default="College Name")
+    ap.add_argument("--table2-category", default="Category")
+    ap.add_argument("--table2-quota", default="Quota")
+    ap.add_argument("--table2-rank", default="ClosingRank")
+    ap.add_argument("--table2-year", default="Year")
+    ap.add_argument("--table2-round", default="Round")
+    ap.add_argument("--output-sheet", default="Cutoffs_Populated")
+    ap.add_argument("--fuzzy-threshold", type=int, default=92)
+    args = ap.parse_args()
+
+    # Load sheets
+    xl = pd.ExcelFile(args.file)
+    cut = pd.read_excel(xl, sheet_name=args.cutoffs_sheet)
+    t2  = pd.read_excel(xl, sheet_name=args.table2_sheet)
+
+    # Build Table 2 index
+    idx = build_table2_index(
+        df_t2=t2,
+        col_college=args.table2_college,
+        col_category=args.table2_category,
+        col_quota=args.table2_quota,
+        col_rank=args.table2_rank,
+        col_year=args.table2_year if args.table2_year in t2.columns else None,
+        col_round=args.table2_round if args.table2_round in t2.columns else None,
+        want_year=args.year,
+        want_round=args.round,
+    )
+
+    # Populate Cutoffs
+    populated, unmatched = populate_from_index(
+        df_cut=cut,
+        idx_table2=idx,
+        col_college=args.cutoffs_college,
+        col_quota=args.cutoffs_quota,
+        col_category=args.cutoffs_category,
+        out_col_rank=args.cutoffs_closing,
+        fuzzy_threshold=args.fuzzy_threshold
+    )
+
+    # Write back
+    with pd.ExcelWriter(args.file, engine="openpyxl", mode="a", if_sheet_exists="replace") as w:
+        populated.to_excel(w, sheet_name=args.output_sheet, index=False)
+
+    # Export unmatched for quick manual patching
+    unmatched.to_csv("cutoffs_unmatched_rows.csv", index=False)
+
+    print(f"Done. Wrote '{args.output_sheet}' in {args.file}")
+    print(f"Unmatched rows: {len(unmatched)} → cutoffs_unmatched_rows.csv")
+
+if __name__ == "__main__":
+    main()
+

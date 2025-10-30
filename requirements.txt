@@ -1,0 +1,8 @@
+openai
+python-telegram-bot
+python-dotenv
+pandas
+openpyxl
+rapidfuzz
+unidecode
+
