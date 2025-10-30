@@ -1,10 +1,30 @@
 #!/usr/bin/env python3
+<<<<<<< HEAD
 # -*- coding: utf-8 -*-
 
 import os
 import re
 import json
 import logging
+=======
+
+import os
+import re
+import secrets
+_HANDLERS_WIRED = False
+from telegram.ext import Application
+from pathlib import Path   
+import contextlib
+import httpx
+from telegram.error import BadRequest
+import json
+import logging
+log = logging.getLogger("aceit-bot")
+import html
+import asyncio
+import math
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 import html
 import asyncio
 import math
@@ -12,25 +32,121 @@ import random
 import time
 import base64
 from openai import OpenAI
+<<<<<<< HEAD
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram import ReplyKeyboardMarkup
 from telegram.constants import ChatAction
+=======
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
+from telegram import ReplyKeyboardMarkup
+from telegram.constants import ChatAction, ParseMode
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 from typing import Dict, Any, List, Optional, Tuple, Iterable
 from telegram import Bot
 import pandas as pd
 from dotenv import load_dotenv
 from unidecode import unidecode
 from telegram import Update
+<<<<<<< HEAD
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
 
 
 from dataclasses import dataclass
+=======
+from collections import Counter
+import sys
+strategy_search_paths = [
+    Path(__file__).resolve().parent,
+    Path(__file__).resolve().parent.parent,
+    Path.cwd(),
+    Path.cwd().parent,
+]
+for _p in list(strategy_search_paths):
+    if _p.exists() and str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+try:  # STRICT import – fail loudly if strategies.py is broken/missing
+    from strategies import (
+        load_strategies,
+        all_strategies,
+        get_strategy,
+        strategies_path,
+        reload_strategies,
+        strategies_count,
+        strategies_last_error,
+        strategies_debug_stats,
+    )
+    STRAT_IMPORT_OK = True
+except Exception as e:  # pragma: no cover - log full traceback for visibility
+    import logging as _logging
+
+    STRAT_IMPORT_OK = False
+    _logging.getLogger("aceit-bot").exception("[strategy] import failed", exc_info=e)
+
+    def _strategy_import_fail(*_args, **_kwargs):
+        raise RuntimeError("strategies import failed; see logs")
+
+    load_strategies = _strategy_import_fail  # type: ignore[assignment]
+    all_strategies = _strategy_import_fail  # type: ignore[assignment]
+    get_strategy = _strategy_import_fail  # type: ignore[assignment]
+    strategies_path = _strategy_import_fail  # type: ignore[assignment]
+    reload_strategies = _strategy_import_fail  # type: ignore[assignment]
+    strategies_count = _strategy_import_fail  # type: ignore[assignment]
+    strategies_last_error = _strategy_import_fail  # type: ignore[assignment]
+    strategies_debug_stats = _strategy_import_fail  # type: ignore[assignment]
+
+
+from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler, ConversationHandler
+_HANDLERS_ATTACHED = False
+
+try:
+    log
+except NameError:
+    import logging
+    log = logging.getLogger("aceit-bot")
+    
+TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}
+from dataclasses import dataclass
+QUIZ_POOL: List[Dict[str, Any]] = []  
+QUIZ_INDEX: Dict[str, Dict[str, Any]] = {} 
+QUIZ_BY_ID: dict[str, dict] = {}
+QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
+STORIES_FILE_PATH = Path(__file__).parent / "stories.json"
+
+PROFILE_MENU = 1001  # or use Enum
+QUIZ_STATE_PATH = "/tmp/quiz_sessions.json"
+QUIZ_SESSION_TTL_SECS = 6 * 60 * 60  # 6 hours
+
+
+
+SUBJECT_ALIASES = {
+    "physics":   {"physics", "phy"},
+    "chemistry": {"chemistry", "chem"},
+    "botany":    {"botany"},
+    "zoology":   {"zoology"},
+}
+
+SUBJECT_CANON = {"physics", "chemistry", "botany", "zoology"}
+
+# Human label (button text) -> canonical subject key
+SUBJECT_MAP = {
+    "Physics": "physics",
+    "Chemistry": "chemistry",
+    "Botany": "botany",
+    "Zoology": "zoology",
+}
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 from dataclasses import dataclass
 from pydantic import BaseModel, ValidationError, Field
 CUTOFF_LOOKUP: dict = {}
 COLLEGES: list = []
 COLLEGE_META_INDEX: dict = {}
+<<<<<<< HEAD
+=======
+COLLEGE_PROFILES: dict = {}
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 try:
     from openai import OpenAI
@@ -44,6 +160,245 @@ _openai_client: Optional["OpenAI"] = None
 
 _client_singleton = None
 
+<<<<<<< HEAD
+=======
+def _subject_of(q: dict) -> str:
+    """
+    Return normalized subject for a question (lowercase).
+    Accepts multiple key variants and falls back to tags.
+    """
+    for k in ("subject", "Subject", "SUBJECT", "category", "Category", "topic", "Topic"):
+        v = q.get(k)
+        if isinstance(v, str) and v.strip():
+            lc = v.strip().lower()
+            return lc if lc in SUBJECT_CANON else lc  # keep lc; filter later
+    # fallback: try tags
+    t = q.get("tags")
+    if isinstance(t, list):
+        for cand in t:
+            if isinstance(cand, str):
+                lc = cand.strip().lower()
+                if lc in SUBJECT_CANON:
+                    return lc
+    return ""
+
+
+def _norm(s: str) -> str:
+    return (s or "").strip().lower()
+
+
+def _q_subject_value(q: dict) -> str:
+    # try common key names; fall back to tag-like fields
+    for k in ("subject", "Subject", "domain", "topic", "subject_name"):
+        if isinstance(q.get(k), str):
+            return _norm(q[k])
+    # also allow subject embedded in tags
+    for k in ("tags", "Tags"):
+        t = q.get(k)
+        if isinstance(t, str):
+            return _norm(t)
+        if isinstance(t, list):
+            for x in t:
+                if isinstance(x, str):
+                    return _norm(x)
+    return ""
+
+def _question_subject(q: dict) -> str:
+    for k in ("subject","subj","subject_name","stream"):
+        v = _norm(q.get(k))
+        if v:
+            return v
+    for t in (q.get("tags") or []):
+        t = _norm(t if isinstance(t, str) else "")
+        if t in {"physics","chemistry","zoology","botany","biology"}:
+            return t
+    topic = _norm(q.get("topic") or q.get("chapter") or q.get("category"))
+    if topic:
+        for key, aliases in _SUBJECT_ALIASES.items():
+            if any(a in topic for a in aliases):
+                return key
+    return ""
+
+
+def _pick_qs(
+    pool: List[Dict[str, Any]],
+    *,
+    subject: Optional[str] = None,
+    difficulty: Optional[int] = None,
+    tags_any: Optional[List[str]] = None,
+    count: int = 10,
+    shuffle: bool = True,
+) -> List[Dict[str, Any]]:
+    want = (subject or "").strip().lower()
+    want_tags = { (t or "").strip().lower() for t in (tags_any or []) }
+
+    log.debug("[_pick_qs] want_subject=%r difficulty=%r want_tags=%r pool=%d",
+              want, difficulty, sorted(want_tags), len(pool))
+
+    picked: List[Dict[str, Any]] = []
+    for q in pool:
+        qsubj = _subject_of(q)                   # robust subject
+        if want and qsubj != want:
+            continue
+
+        if difficulty is not None:
+            qdiff = q.get("difficulty") or q.get("Difficulty")
+            if not isinstance(qdiff, int) or qdiff != difficulty:
+                continue
+
+        if want_tags:
+            qtags = q.get("tags") or q.get("Tags") or []
+            if isinstance(qtags, (list, tuple)):
+                qtagset = { str(t).strip().lower() for t in qtags }
+            else:
+                qtagset = set()
+            if not (want_tags & qtagset):
+                continue
+
+        picked.append(q)
+
+    if not picked:
+        # Helpful diagnostics in logs
+        subj_counts = Counter(_subject_of(q) for q in pool)
+        log.warning("[_pick_qs] No matches. want=%r diff=%r tags=%r | available_by_subject=%s",
+                    want, difficulty, sorted(want_tags), dict(subj_counts))
+
+    if shuffle:
+        import random
+        random.shuffle(picked)
+    return picked[:count]
+                 
+
+def _build_quiz_index() -> None:
+    """Build id -> question map from QUIZ_POOL."""
+    QUIZ_BY_ID.clear()
+    for q in QUIZ_POOL:
+        qid = q.get("id")
+        if qid:
+            QUIZ_BY_ID[qid] = q
+
+def _save_quiz_state() -> None:
+    import json, os, time, tempfile
+    now = int(time.time())
+    # add a timestamp to each session
+    to_dump = {}
+    for uid, sess in QUIZ_SESSIONS.items():
+        s = dict(sess)
+        s["ts"] = sess.get("ts", now)
+        to_dump[str(uid)] = s
+    tmp = f"{QUIZ_STATE_PATH}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(to_dump, f)
+    os.replace(tmp, QUIZ_STATE_PATH)
+
+def _load_quiz_state() -> None:
+    import json, os, time
+    if not os.path.exists(QUIZ_STATE_PATH):
+        return
+    try:
+        with open(QUIZ_STATE_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception:
+        return
+    now = int(time.time())
+    restored = 0
+    for k, v in (raw or {}).items():
+        ts = int(v.get("ts", now))
+        if now - ts <= QUIZ_SESSION_TTL_SECS and "questions" in v and "index" in v:
+            QUIZ_SESSIONS[int(k)] = v
+            restored += 1
+    if restored:
+        log.info("✅ Restored %d quiz session(s) from %s", restored, QUIZ_STATE_PATH)
+        
+def _opt_text(options, idx):
+    try:
+        if isinstance(idx, int) and options and 0 <= idx < len(options):
+            return str(options[idx])
+    except Exception:
+        pass
+    return None
+
+def _ellipsize(s: str, limit: int = 280):
+    s = (s or "").strip()
+    return (s[:limit].rstrip() + " …") if len(s) > limit else s
+
+def format_quiz_report(score: int, total: int, details: list[dict]) -> str:
+    """
+    details[i] may contain:
+      - question: str
+      - correct: bool
+      - options: list[str]
+      - correct_index: int
+      - user_index: int
+      - user_answer_text: str
+      - correct_text: str
+      - explanation: str
+    Returns Telegram-HTML.
+    """
+    import html as _html
+
+    def _opt_text(opts: list[str] | None, idx: int | None) -> str | None:
+        if opts is None or idx is None:
+            return None
+        try:
+            if 0 <= int(idx) < len(opts):
+                return str(opts[int(idx)])
+        except Exception:
+            pass
+        return None
+
+    def _ellipsize(s: str, max_len: int = 240) -> str:
+        s = (s or "").strip()
+        return s if len(s) <= max_len else (s[: max_len - 1].rstrip() + "…")
+
+    # header
+    head_icon = "✅" if score == total else ("🟡" if score else "🧩")
+    lines = [
+        f"{head_icon} <b>Quiz complete!</b>",
+        f"<b>Score:</b> {score}/{total}",
+        ""
+    ]
+
+    # body
+    for i, d in enumerate(details or [], 1):
+        q_raw = d.get("question") or ""
+        opts  = d.get("options") or []
+        your  = d.get("user_answer_text") or _opt_text(opts, d.get("user_index"))
+        corr  = d.get("correct_text") or _opt_text(opts, d.get("correct_index"))
+        why   = d.get("explanation") or ""
+
+        tick = "✅" if d.get("correct") else "❌"
+
+        q    = _html.escape(_ellipsize(q_raw, 280))
+        your = _html.escape((your or "—").strip())
+        corr = _html.escape((corr or "—").strip())
+        why  = _html.escape(_ellipsize(why, 320)) if why else ""
+
+        block = [
+            f"<b>{i}.</b> {q}",
+            f"{tick} <b>Your:</b> {your}",
+            f"🔹 <b>Correct:</b> {corr}",
+        ]
+        if why:
+            block.append(f"<i>Why:</i> {why}")
+
+        lines.append("\n".join(block))
+        lines.append("")  # blank line between items
+
+    return "\n".join(lines).strip()
+
+def _new_token(n=8) -> str:
+   
+    return secrets.token_hex(n//2).upper()
+    
+def _stack_keyboards(*markups: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
+    rows = []
+    for m in markups:
+        if isinstance(m, InlineKeyboardMarkup):
+            rows.extend(m.inline_keyboard or [])
+    return InlineKeyboardMarkup(rows) if rows else None
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _safe_upper(x):
     return (str(x or "")).strip().upper()
 
@@ -56,6 +411,85 @@ _CATEGORY_ALIASES = {
 
 NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
 
+<<<<<<< HEAD
+=======
+_STATE_ALIASES: dict[str, set[str]] = {
+    "Andhra Pradesh": {"andhra pradesh", "andhra", "ap"},
+    "Arunachal Pradesh": {"arunachal pradesh", "arunachal"},
+    "Assam": {"assam", "as"},
+    "Bihar": {"bihar", "br"},
+    "Chhattisgarh": {"chhattisgarh", "chattisgarh", "cg"},
+    "Goa": {"goa", "ga"},
+    "Gujarat": {"gujarat", "gj"},
+    "Haryana": {"haryana", "hr"},
+    "Himachal Pradesh": {"himachal pradesh", "himachal", "hp"},
+    "Jharkhand": {"jharkhand", "jh"},
+    "Karnataka": {"karnataka", "ka"},
+    "Kerala": {"kerala", "kl"},
+    "Madhya Pradesh": {"madhya pradesh", "mp"},
+    "Maharashtra": {"maharashtra", "mh"},
+    "Manipur": {"manipur", "mn"},
+    "Meghalaya": {"meghalaya", "ml"},
+    "Mizoram": {"mizoram", "mz"},
+    "Nagaland": {"nagaland", "nl"},
+    "Odisha": {"odisha", "orissa", "od", "or"},
+    "Punjab": {"punjab", "pb"},
+    "Rajasthan": {"rajasthan", "rj"},
+    "Sikkim": {"sikkim", "sk"},
+    "Tamil Nadu": {"tamil nadu", "tamilnadu", "tn"},
+    "Telangana": {"telangana", "ts"},
+    "Tripura": {"tripura", "tr"},
+    "Uttar Pradesh": {"uttar pradesh", "up"},
+    "Uttarakhand": {"uttarakhand", "uttaranchal", "uk", "ua"},
+    "West Bengal": {"west bengal", "wb"},
+    "Delhi": {"delhi", "nct", "nct of delhi", "national capital territory of delhi"},
+    "Jammu and Kashmir": {"jammu and kashmir", "jammu & kashmir", "jk"},
+    "Ladakh": {"ladakh"},
+    "Andaman and Nicobar Islands": {"andaman and nicobar islands", "andaman nicobar", "andaman & nicobar"},
+    "Chandigarh": {"chandigarh", "ch"},
+    "Dadra and Nagar Haveli and Daman and Diu": {
+        "dadra and nagar haveli", "daman and diu", "dadra nagar haveli daman diu", "dn h dd"
+    },
+    "Lakshadweep": {"lakshadweep", "ld"},
+    "Puducherry": {"puducherry", "pondicherry", "py"},
+}
+
+def _state_norm(value: str | None) -> str:
+    s = unidecode(str(value or "")).lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"[^a-z0-9 ]+", " ", s)
+    s = re.sub(r"\bstate of\b", " ", s)
+    s = re.sub(r"\bstate\b", " ", s)
+    s = re.sub(r"\bunion territory of\b", " ", s)
+    s = re.sub(r"\bunion territory\b", " ", s)
+    s = re.sub(r"\bnational capital territory\b", " delhi ", s)
+    s = re.sub(r"\but\b", " ", s)
+    s = re.sub(r"\bthe\b", " ", s)
+    s = re.sub(r"\s+", " ", s)
+    return s.strip()
+
+_STATE_ALIAS_LOOKUP: dict[str, str] = {}
+for _canon, _aliases in _STATE_ALIASES.items():
+    all_aliases = set(_aliases) | {_canon}
+    for alias in all_aliases:
+        key = _state_norm(alias)
+        if key:
+            _STATE_ALIAS_LOOKUP[key] = _canon
+
+
+def _canon_state(value: str | None) -> Optional[str]:
+    key = _state_norm(value)
+    if not key:
+        return None
+    if key in _STATE_ALIAS_LOOKUP:
+        return _STATE_ALIAS_LOOKUP[key]
+    for alias_key, canon in _STATE_ALIAS_LOOKUP.items():
+        if alias_key and alias_key in key:
+            return canon
+    return key.title()
+
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _safe_str(v, default: str = "") -> str:
     try:
         if v is None: return default
@@ -69,6 +503,136 @@ def _norm_token(x: str | None) -> str | None:
     if x is None: return None
     return str(x).strip()
 
+<<<<<<< HEAD
+=======
+def _norm_state_name(x: str | None) -> str:
+    if x is None:
+        return ""
+    try:
+        s = unidecode(str(x)).lower()
+    except Exception:
+        s = str(x).lower()
+    s = re.sub(r"[^a-z]", "", s)
+    return s
+
+def _state_quota_from_cutoffs(round_key: str,
+                              domicile: str | None,
+                              category: str,
+                              air: Optional[int]) -> list[dict]:
+    """Return State quota rows for the given domicile/category pulled directly from the Cutoffs sheet."""
+    if domicile is None:
+        return []
+
+    df = _safe_df(globals().get("CUTOFFS_DF"))
+    if df.empty:
+        return []
+
+    dom_canon = _canon_state(domicile)
+    if not dom_canon:
+        return []
+
+    work = df.copy()
+
+    def _col(*cands: str) -> Optional[str]:
+        for c in cands:
+            if c in work.columns:
+                return c
+        return None
+
+    quota_col  = _col("quota", "Quota", "Allotment", "Allotment Category")
+    cat_col    = _col("category", "Category", "Seat Category", "Cat")
+    state_col  = _col("state", "State")
+    close_col  = _col("ClosingRank", "closing", "Closing Rank", "Close Rank", "closing_rank", "rank")
+    round_col  = _col("round_code", "Round")
+    course_col = _col("Course", "course")
+    code_col   = _col("college_code", "College Code", "code")
+    id_col     = _col("college_id", "College ID", "id")
+    name_col   = _col("college_name", "College Name", "Institute Name", "Name")
+
+    if not (quota_col and cat_col and state_col and close_col):
+        return []
+
+    if round_col:
+        target_round = str(round_key or "").upper()
+        series = work[round_col].astype(str).str.upper()
+        mask = series == target_round
+        if not mask.any() and round_col == "Round":
+            mask = series.str.contains(target_round, na=False)
+        work = work[mask]
+        if work.empty:
+            return []
+
+    work = work.assign(
+        __quota=work[quota_col].astype(str).apply(_canon_quota),
+        __cat=work[cat_col].astype(str).apply(_canon_cat),
+        __state=work[state_col].astype(str).apply(_canon_state),
+    )
+
+    cat_key = _canon_cat(category)
+    work = work[(work["__quota"] == "State") & (work["__state"] == dom_canon) & (work["__cat"] == cat_key)]
+    if work.empty:
+        return []
+
+    if course_col:
+        work = work[work[course_col].astype(str).str.contains("MBBS", case=False, na=False)]
+        if work.empty:
+            return []
+
+    work = work.copy()
+    work["ClosingRank"] = pd.to_numeric(work[close_col], errors="coerce")
+    work = work.dropna(subset=["ClosingRank"])
+    if work.empty:
+        return []
+
+    if air is not None:
+        work = work[work["ClosingRank"] >= int(air)]
+        if work.empty:
+            return []
+
+    def _meta_lookup(*keys: str) -> Optional[dict]:
+        for key in keys:
+            if not key:
+                continue
+            mk = _norm_meta_key(key)
+            meta = COLLEGE_META_INDEX.get(mk)
+            if meta:
+                return meta
+        return None
+
+    results: list[dict] = []
+    for _, row in work.sort_values("ClosingRank").iterrows():
+        code = row.get(code_col)
+        cid  = row.get(id_col)
+        raw_name = str(row.get(name_col) or "").strip()
+
+        meta = _meta_lookup(code, cid, raw_name)
+        display_name = raw_name or (str(meta.get("College Name") or "") if meta else "")
+        if not display_name:
+            display_name = "Unknown college"
+
+        close_rank = int(row["ClosingRank"])
+        state_val = row.get(state_col) or (meta.get("State") if meta else None) or dom_canon
+        nirf_val = meta.get("nirf_rank_medical_latest") if meta else None
+        fee_val  = meta.get("total_fee") if meta else None
+
+        results.append({
+            "college_id":   str(cid).strip() or None if cid not in (None, "") else None,
+            "college_code": str(code).strip() or None if code not in (None, "") else None,
+            "college_name": display_name,
+            "state":        state_val,
+            "close_rank":   close_rank,
+            "category":     cat_key,
+            "quota":        "State",
+            "source":       str(row.get("Source") or "cutoffs_state"),
+            "score":        None,
+            "nirf_rank":    _safe_int(nirf_val) if nirf_val is not None else None,
+            "total_fee":    _safe_int(fee_val) if fee_val is not None else None,
+        })
+
+    return results
+
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _variants_for_quota(q: str | None) -> set[str]:
     q = _norm_token(q)
     if not q: return {None}
@@ -107,6 +671,10 @@ def _value_to_closing(v):
             if k in v and v[k] not in (None,"","—","-","NA"):
                 return _value_to_closing(v[k])
     return None
+<<<<<<< HEAD
+=======
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _closing_rank_for_identifiers(identifiers: list[str],
                                   round_code: str | None,
                                   quota: str | None,
@@ -237,6 +805,10 @@ def _closing_rank_for_identifiers(identifiers: list[str],
 
     return _best_of(found) if found else None
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _best_of(vals: list):
     """Prefer numeric (smallest). Else first non-empty str."""
     best_num = None
@@ -274,6 +846,7 @@ def _inst_type_from_row(r: dict) -> str:
         return "Government medical college"
     return own or "Medical college"
 
+<<<<<<< HEAD
 def _city_vibe_from_row(r: dict) -> str:
     city  = _safe_upper(r.get("city") or r.get("City"))
     state = _safe_upper(r.get("state") or r.get("State"))
@@ -292,6 +865,34 @@ def _ensure_openai_client() -> OpenAI:
     if _client_singleton is None:
         _client_singleton = OpenAI()  # picks up OPENAI_API_KEY from env
     return _client_singleton
+=======
+def _city_vibe_from_row(city: str, state: str) -> str:
+    c = (city or "").strip().lower()
+    s = (state or "").strip().lower()
+
+    # treat as metro if city OR state contains a known metro token
+    metro_tokens = {"delhi", "new delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "pune"}
+    def _has_metro(txt: str) -> bool:
+        return any(tok in txt for tok in metro_tokens)
+
+    if _has_metro(c) or _has_metro(s):
+        return "Metro pace; higher living costs; English/Hindi widely used"
+    if "kerala" in s or "goa" in s:
+        return "Calmer pace; mid living costs; local language common"
+    return "Calmer pace; mid living costs; local language common"
+
+
+_orig_city_vibe = globals().get("_city_vibe_from_row")
+def get_openai_client():
+    return _get_openai_client()
+
+def _ensure_openai_client():
+    # Only needed by ask_openai_vision/_gen_quick_qna if you use OpenAI SDK
+    from openai import OpenAI
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY not set")
+    return OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 
 def _get_openai_client():
@@ -307,6 +908,7 @@ def _to_int(x):
     except Exception:
         return None
 
+<<<<<<< HEAD
 def _to_fee_lakh(x):
     try:
         s = str(x).lower().replace(",", "").strip()
@@ -314,6 +916,28 @@ def _to_fee_lakh(x):
             return float(s.replace("l", "").strip())
         v = float(s)
         return v / 100000.0 if v > 99999 else v  # rupees → lakhs heuristic
+=======
+def _to_int_or_none(x):
+    try:
+        if x is None: return None
+        s = str(x).strip()
+        if s == "" or s.lower() in {"na","n/a","nan","—","-"}:
+            return None
+        return int(float(s))
+    except Exception:
+        return None
+    
+def _to_fee_lakh(x):
+    """Return fee in lakhs as float or None."""
+    try:
+        if x is None: return None
+        s = str(x).replace(",", "").strip()
+        if s == "" or s.lower() in {"na","n/a","nan","—","-"}:
+            return None
+        v = float(s)
+        # your sheet keeps annual fee in rupees; convert to lakhs
+        return round(v / 100000.0, 1)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     except Exception:
         return None
 
@@ -339,7 +963,11 @@ def _notes_deterministic(facts, air):
             bullets.append(f"NIRF: {f['nirf']}")
         fee = f.get("fee")
         if fee is not None:
+<<<<<<< HEAD
             bullets.append(f"fee: ~{fee:.1f} L")
+=======
+             bullets.append(f"total fee: ~{fee:.1f} L")
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         owner = f.get("ownership")
         if owner:
             bullets.append(owner)
@@ -408,6 +1036,7 @@ def _yn(v):
 
 
 def _truthy_or_none(x):
+<<<<<<< HEAD
     """Parse many possible 'yes/no' encodings; None if unknown."""
     if x is None:
         return None
@@ -425,6 +1054,25 @@ def _truthy_or_none(x):
     }
     if s in TRUTHY: return True
     if s in FALSY: return False
+=======
+    """Robust Yes/No parser → True/False/None."""
+    if x is None: return None
+    if isinstance(x, float):
+        # handle pandas NaN
+        try:
+            import math
+            if math.isnan(x): return None
+        except Exception:
+            pass
+    if isinstance(x, bool): return x
+    s = str(x).strip().lower()
+
+    TRUTHY = {"y","yes","true","t","1","available","avail","present","has","hostel yes","✔","✅","✓"}
+    FALSY  = {"n","no","false","f","0","na","n/a","not available","absent","none","nil","x","✖","✘","❌","no hostel","-","—"}
+
+    if s in TRUTHY: return True
+    if s in FALSY:  return False
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     if any(ch in s for ch in ("✅","✔","✓")): return True
     if any(ch in s for ch in ("❌","✖","✘")): return False
     try:
@@ -432,7 +1080,13 @@ def _truthy_or_none(x):
     except Exception:
         return None
 
+<<<<<<< HEAD
 
+=======
+def _truthy(x) -> bool:
+    """Strict True/False based on _truthy_or_none."""
+    return _truthy_or_none(x) is True
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 def hostel_badge(row) -> str:
     """
@@ -467,6 +1121,7 @@ def hostel_badge(row) -> str:
 
     return "❓"
 
+<<<<<<< HEAD
 def _cleanup_latex(s: str) -> str:
     # remove display math markers
     s = re.sub(r"\\\[|\\\]", "", s)
@@ -477,6 +1132,35 @@ def _cleanup_latex(s: str) -> str:
     # strip \text{...}
     s = re.sub(r"\\text\{([^}]*)\}", r"\1", s)
     # remove extra backslashes
+=======
+def _notes_strip_markdown(text: str) -> str:
+    t = str(text or "")
+    t = re.sub(r'^\s{0,3}#{1,6}\s*', '', t, flags=re.M)
+    t = re.sub(r'(\*\*|__)(.+?)(\*\*|__)\s*:?$', r'\2', t, flags=re.M)
+    t = re.sub(r'(\*\*|__)(.+?)\1', r'\2', t, flags=re.S)
+    t = re.sub(r'(\*|_)(.+?)\1', r'\2', t, flags=re.S)
+    t = re.sub(r'`([^`]+)`', r'\1', t)
+    t = re.sub(r'^\s*[-*]|\s*\d+\.', '•', t, flags=re.M)
+    t = re.sub(r'\n{3,}', '\n\n', t)
+    t = re.sub(r'[ \t]+$', '', t, flags=re.M)
+    return t.strip()
+
+async def send_ai_notes(bot, chat_id: int, text: str):
+    msg = _notes_strip_markdown(text)
+    if not msg:
+        msg = "No notes available."
+    chunk = 3500
+    for i in range(0, len(msg), chunk):
+        await bot.send_message(chat_id=chat_id, text=msg[i:i+chunk], parse_mode=None, disable_web_page_preview=True)
+
+
+        
+def _cleanup_latex(s: str) -> str: 
+    s = re.sub(r"\\\[|\\\]", "", s) 
+    s = re.sub(r"\\\(|\\\)", "", s)
+    s = s.replace(r"\cdot", "×")
+    s = re.sub(r"\\text\{([^}]*)\}", r"\1", s)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     s = s.replace("\\", "")
     return s.strip()
 
@@ -508,11 +1192,27 @@ log = logging.getLogger("aceit-bot")
 
 # ---------- Env ----------
 load_dotenv()
+<<<<<<< HEAD
+=======
+p = os.getenv("STRATEGIES_FILE", "/opt/render/project/src/strategies.json")
+try:
+    _strategy_file_size = os.path.getsize(p) if os.path.exists(p) else -1
+except Exception:
+    _strategy_file_size = -2
+log.info("[strategy] import_ok=%s file=%s size=%s", STRAT_IMPORT_OK, p, _strategy_file_size)
+load_strategies(os.getenv("STRATEGIES_FILE"))
+logging.getLogger("aceit-bot").info(
+    "strategies.json path -> %s (exists=%s)",
+    strategies_path(),
+    os.path.exists(strategies_path()),
+)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN not found in .env")
 
 # ---------- Constants/paths ----------
+<<<<<<< HEAD
 DATA_DIR = "data"
 EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx"  # your file
 ACTIVE_CUTOFF_ROUND_DEFAULT = "2025_R1"
@@ -527,25 +1227,76 @@ COACH_SHOW_N = 12        # how many to display back to user
 COACH_MODEL = "gpt-4o-mini"  # or your preferred small JSON-capable model
 
 COACH_ADJUST = "coach_adjust"   # callback query data prefixes
+=======
+
+QUIZ_JSON_PATH = os.getenv("QUIZ_JSON_PATH", str(Path(__file__).parent / "quiz.json"))
+
+
+
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+
+
+QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}          
+
+
+_DIFF_MAP = {1: "low", 2: "medium", 3: "high"}
+
+DATA_DIR = "data"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EXCEL_PATH = os.path.join(BASE_DIR, "MCC_Final_with_Cutoffs_2024_2025.xlsx")
+college_profiles = pd.read_excel(EXCEL_PATH, sheet_name="college_profiles")
+ACTIVE_CUTOFF_ROUND_DEFAULT = "2025_R1"
+TG_LIMIT = 4000
+NEET_CANDIDATE_POOL_DEFAULT = 2300000  
+MOCK_BIAS_FACTOR_MIN = 1.10
+MOCK_BIAS_FACTOR_MAX = 1.40
+MOCK_BIAS_FACTOR_DEFAULT = 1.25
+_ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State", "Open", "Management"]
+CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
+ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)    
+
+COACH_TOP_N = 40        
+COACH_SHOW_N = 12      
+COACH_MODEL = "gpt-4o-mini" 
+
+COACH_ADJUST = "coach_adjust"   
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 COACH_SAVE   = "coach_save"
 
 MENU_COACH = "menu_coach"
 
 NOTES_TOP_N = 10
+<<<<<<< HEAD
 GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")  # or gpt-4.1-mini
+=======
+GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini") 
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 SAFE_CUTOFF = 0.90   # AIR <= 0.90 * ClosingRank → "safe"
 DREAM_CUTOFF = 1.10  # AIR >  1.10 * ClosingRank → "dream"
 
 
 
+<<<<<<< HEAD
 COACH_TOP_N  = 200     # pool to send to LLM/fallback
 COACH_SHOW_N = 20      # lines to show in Telegram (avoid 4096 char limit)
+=======
+COACH_TOP_N  = 200     
+COACH_SHOW_N = 20    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 OPENAI_MODEL = "gpt-4o-mini"
 
 df_candidate = None
 
 
+<<<<<<< HEAD
+=======
+QUIZ_JSON = os.environ.get("QUIZ_JSON", "").strip()
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 # ---------------------- Canonical helpers (use once, globally) ----------------------
 import re
 
@@ -564,6 +1315,100 @@ def _trim(s: str, n: int = 140) -> str:
     s = str(s or "")
     return s if len(s) <= n else s[: n - 1] + "…"
 
+<<<<<<< HEAD
+=======
+async def _safe_clear_kb(query) -> None:
+    """Best-effort removal of inline keyboard to avoid double-presses."""
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+async def safe_edit_text(msg, text: str, **kwargs):
+    try:
+        return await msg.edit_text(text=text, **kwargs)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            return None
+        raise
+
+async def safe_edit_reply_markup(msg, reply_markup=None, **kwargs):
+    try:
+        return await msg.edit_reply_markup(reply_markup=reply_markup, **kwargs)
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            return None
+        raise
+        
+async def _safe_set_kb(q, kb):
+    """
+    Replace the inline keyboard on the message that triggered this callback.
+    """
+    try:
+        await q.edit_message_reply_markup(reply_markup=kb)
+    except BadRequest as e:
+        msg = str(e)
+        if ("message is not modified" in msg
+            or "message to edit not found" in msg
+            or "MESSAGE_ID_INVALID" in msg):
+            return
+        log.warning("editMessageReplyMarkup(set) failed: %s", msg)
+
+async def menu_quiz_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from telegram.error import BadRequest  # local import so you don't have to change imports elsewhere
+
+    q = update.callback_query
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎯 Mini Quiz (5)", callback_data="quiz:mini5")],
+        [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
+        [InlineKeyboardButton("🔥 Streaks", callback_data="quiz:streaks")],
+        [InlineKeyboardButton("🏆 Leaderboard", callback_data="quiz:leaderboard")],
+        [InlineKeyboardButton("⬅️ Back", callback_data="menu:back")],
+    ])
+
+    if q:
+        await q.answer()
+        # Try to change both the text and the buttons
+        try:
+            await q.message.edit_text("Choose a quiz mode:", reply_markup=kb)
+        except BadRequest as e:
+            # If the text is identical, Telegram throws "Message is not modified".
+            if "Message is not modified" in str(e):
+                # In that case, just try updating only the markup.
+                try:
+                    await q.message.edit_reply_markup(reply_markup=kb)
+                except BadRequest as e2:
+                    # If even the markup is identical, ignore silently.
+                    if "Message is not modified" not in str(e2):
+                        raise
+            else:
+                # Different BadRequest -> bubble up
+                raise
+        return
+
+    # If triggered via /menu or directly (no callback query)
+    await update.effective_chat.send_message(
+        "Choose a quiz mode:",
+        reply_markup=kb
+    )
+        
+async def _send_quiz_report(update, context, score: int, total: int, details: list[dict]):
+    report_html = format_quiz_report(score, total, details)
+    for i in range(0, len(report_html), 3800):
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=report_html[i:i+3800],
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+async def _safe_clear_markup(query):
+    try:
+        await query.edit_message_reply_markup(None)
+    except BadRequest:
+        pass
+    except Exception:
+        pass
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 def _to_int(x):
     try:
@@ -614,7 +1459,11 @@ def _notes_deterministic(facts, air):
             bullets.append(f"NIRF: {f['nirf']}")
         fee = f.get("fee")
         if fee is not None:
+<<<<<<< HEAD
             bullets.append(f"fee: ~{fee:.1f} L")
+=======
+            bullets.append(f"total fee: ~{fee:.1f} L")
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         owner = f.get("ownership")
         if owner:
             bullets.append(owner)
@@ -682,8 +1531,17 @@ def _as_records(df_or_list):
         return df_or_list.to_dict("records")
     return list(df_or_list or [])
 
+<<<<<<< HEAD
 def _is_missing(v):
     return v is None or str(v).strip().lower() in {"", "—", "na", "n/a", "nan"}
+=======
+def _is_missing(v) -> bool:
+    try:
+        s = str(v).strip().lower()
+    except Exception:
+        return True
+    return s in NA_STRINGS
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 def _num_or_inf(v):
     try:
@@ -701,13 +1559,35 @@ def _fmt_rank_val(v):
     except Exception:
         return "—"
 
+<<<<<<< HEAD
+=======
+def _indian_number_format(n: int) -> str:
+    """Format integer using Indian digit grouping (e.g. 12,34,567)."""
+    sign = "-" if n < 0 else ""
+    s = str(abs(n))
+    if len(s) <= 3:
+        return f"{sign}{s}"
+    last3 = s[-3:]
+    s = s[:-3]
+    groups: List[str] = []
+    while s:
+        groups.append(s[-2:])
+        s = s[:-2]
+    grouped = ",".join(reversed(groups))
+    return f"{sign}{grouped},{last3}"
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _fmt_money(v):
     try:
         s = str(v).replace(",", "").strip()
         if not s:
             return "—"
         n = float(s)
+<<<<<<< HEAD
         return f"₹{int(n):,}"
+=======
+        return f"₹{_indian_number_format(int(n))}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     except Exception:
         return "—"
 
@@ -718,7 +1598,11 @@ def _pick(d: dict, *keys):
     return None
 
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
+<<<<<<< HEAD
     """Name, place; then Closing Rank and Annual Fee each on its own line. No 'm' fallbacks here."""
+=======
+    """Name, place; then Closing Rank and Total Fee each on its own line. No 'm' fallbacks here."""
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     # NaN/None safe strings
     name  = _safe_str(_pick(r, "college_name", "College Name")) or "—"
     city  = _safe_str(_pick(r, "city", "City"))
@@ -737,7 +1621,18 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
         pass
 
     # closing rank: prefer inline fields, else compute from identifiers
+<<<<<<< HEAD
     closing = r.get("ClosingRank") or r.get("closing") or r.get("rank")
+=======
+    
+    closing = (
+        r.get("close_rank")
+        or r.get("ClosingRank")
+        or r.get("closing")
+        or r.get("rank")
+    )
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     if _is_missing(closing):
         ids = [
             r.get("college_code"), r.get("code"),
@@ -753,8 +1648,13 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
     fee = _pick(r, "total_fee", "Fee")
 
     header = f"{name}" + (f", {place}" if place else "")
+<<<<<<< HEAD
     cr_ln  = f"Closing Rank { _fmt_rank_val(closing) }"
     fee_ln = f"Annual Fee { _fmt_money(fee) }"
+=======
+    cr_ln  = f"Closing Rank ({quota}/{category}) { _fmt_rank_val(closing) }"
+    fee_ln = f"Total Fee { _fmt_money(fee) }"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return "\n".join([header, cr_ln, fee_ln])
 
 def _deemed_only(rows):
@@ -806,6 +1706,7 @@ def _norm_row_for_cache(r: dict) -> dict:
         "website": r.get("website") or r.get("Website"),
     }
 
+<<<<<<< HEAD
 async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Render AI notes for the top 10 from the last shortlist; no reordering."""
     q = update.callback_query
@@ -846,6 +1747,31 @@ async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         disable_web_page_preview=True,
     )
+=======
+
+async def start(update, context):
+    await update.message.reply_text("Hello from Aceit!")
+
+
+
+async def _debug_unknown_callback(update, context):
+    q = update.callback_query
+    data = q.data if q else None
+    if data in {"menu_predict", "menu_predict_mock", "menu_mock_predict", "menu_strategy"}:
+        log.debug("[callback] ignoring known menu payload: %r", data)
+        return
+    import logging
+    logging.getLogger("aceit-bot").warning("UNHANDLED CALLBACK: %r", data)
+    if q:
+        await q.answer()
+        await q.message.reply_text(
+            "⚠️ Button not wired yet. Logged callback:\n`%s`" % data,
+            parse_mode="Markdown",
+        )
+
+    
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 
 
@@ -1120,7 +2046,12 @@ def _canon_quota(q: str | None) -> str:
       - AIQ / All India / 15%         -> 'AIQ'
       - State / Home / 85%            -> 'State'
       - Central / GOI / DGHS / CU     -> 'Central'
+<<<<<<< HEAD
       - Deemed / Management / Paid    -> 'Deemed'
+=======
+      - Deemed                        -> 'Deemed'
+      - Management / Paid             -> 'Management'     
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
       - NRI / OCI / PIO               -> 'NRI'
       - Fallback: Title Case or 'AIQ'
     """
@@ -1131,12 +2062,24 @@ def _canon_quota(q: str | None) -> str:
         return "AIQ"
     if s in {"STATE", "SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}:
         return "State"
+<<<<<<< HEAD
     # Central / GOI bucket
     if s in {"GOI", "CENTRAL", "DGHS", "CU", "CENTRAL UNIVERSITY", "CENTRAL UNIV"}:
         return "Central"
     # Deemed / Management bucket
     if ("DEEMED" in s) or ("MANAGEMENT" in s) or ("PAID" in s):
         return "Deemed"
+=======
+    if "OPEN" in s:
+        return "Open"
+    # Central / GOI bucket
+    if s in {"GOI", "CENTRAL", "DGHS", "CU", "CENTRAL UNIVERSITY", "CENTRAL UNIV"}:
+        return "Central"
+    if "DEEMED" in s:
+        return "Deemed"
+    if "MANAGEMENT" in s or "PAID" in s:
+        return "Management"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     # NRI etc.
     if s in {"NRI", "OCI", "PIO"}:
         return "NRI"
@@ -1443,6 +2386,22 @@ def _tg_html(s: str) -> str:
 
     return s.strip()
 
+<<<<<<< HEAD
+=======
+def _tg_chunks(s: str, n: int = 3800):
+    s = s or ""
+    for i in range(0, len(s), n):
+        yield s[i:i+n]
+
+def _strip_html(s: str) -> str:
+    """Turn simple HTML back into plain text for prompting."""
+    s = s or ""
+    s = re.sub(r"<\s*br\s*/?>", "\n", s, flags=re.I)
+    s = re.sub(r"<[^>]+>", "", s)
+    return html.unescape(s).strip()
+
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 def _get_close_rank_from_rec(rec: dict, category: str):
     """
@@ -1555,7 +2514,416 @@ def _save_json(path: str, payload) -> bool:
     except Exception:
         log.exception("Could not save JSON to %s", path)
         return False
+<<<<<<< HEAD
 
+=======
+def _merge_subject_map(dst: dict[str, list[dict]], data: dict):
+    for subj, arr in (data or {}).items():
+        if not isinstance(arr, list):
+            continue
+        subj_t = _norm_subject(str(subj))
+        items = []
+        for raw in arr:
+            item = _coerce_item(raw)
+            if item:
+                items.append(item)
+        if items:
+            dst.setdefault(subj_t, []).extend(items)
+
+def _read_array_or_questions_node(data) -> list[dict]:
+    """Accept list[...] or {'questions': [...]}."""
+    arr = data.get("questions") if isinstance(data, dict) else data
+    if not isinstance(arr, list):
+        return []
+    out = []
+    for raw in arr:
+        item = _coerce_item(raw)
+        if item:
+            out.append(item)
+    return out
+
+#----------New Quiz-------
+
+
+def ensure_quiz_ready() -> None:
+    global QUIZ_POOL, QUIZ_INDEX, QUIZ_BY_ID
+    if QUIZ_POOL:
+        return
+
+    with open(QUIZ_FILE_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("quiz.json must be a flat array of question objects")
+
+    # minimal validation (keep yours)
+    for i, q in enumerate(data):
+        if "id" not in q or "question" not in q or "options" not in q or "answer_index" not in q:
+            raise ValueError(f"Bad question at index {i}: missing keys")
+        if not isinstance(q["options"], list) or len(q["options"]) < 2:
+            raise ValueError(f"Bad options at qid={q.get('id')}")
+        if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
+            raise ValueError(f"Bad answer_index at qid={q.get('id')}")
+
+    QUIZ_POOL = data
+
+    # critical: attach normalized subject once
+    for q in QUIZ_POOL:
+        q["subject_norm"] = _subject_of(q)
+
+    QUIZ_INDEX = {q["id"]: q for q in QUIZ_POOL}
+    QUIZ_BY_ID = QUIZ_INDEX
+
+    # visibility
+    try:
+        from collections import Counter
+        c = Counter(q.get("subject_norm") for q in QUIZ_POOL if q.get("subject_norm"))
+        log.info("✅ Subjects detected in quiz.json: %s", sorted(c.keys()))
+        log.info("✅ Subject counts: %s", dict(c))
+    except Exception:
+        pass
+
+    _load_quiz_state()
+
+ 
+
+def _pick_qs(pool, *, subject=None, difficulty=None, tags_any=None, count=5, shuffle=True):
+    out = pool
+    subj_norm = subject.strip().lower() if isinstance(subject, str) else None
+    if subj_norm:
+        out = [q for q in out if q.get("subject_norm") == subj_norm]
+    if difficulty is not None:
+        out = [q for q in out if q.get("difficulty") == difficulty]
+    if tags_any:
+        tagset = {t.strip().lower() for t in tags_any if isinstance(t, str)}
+        out = [q for q in out if any(isinstance(t, str) and t.strip().lower() in tagset for t in (q.get("tags") or []))]
+    if shuffle:
+        out = list(out); random.shuffle(out)
+    return out[:count]
+
+def _format_question(q: Dict[str, Any], index: int, total: int) -> str:
+    header_bits = [f"Q {index+1}/{total}"]
+    if q.get("subject"): header_bits.append(str(q.get("subject")))
+    if q.get("topic"):   header_bits.append(str(q.get("topic")))
+    header = " · ".join(header_bits)
+    return f"{header}\n\n{q['question']}"
+
+def _keyboard_for(q: Dict[str, Any]) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton(opt, callback_data=f"ans:{q['id']}:{i}")]
+            for i, opt in enumerate(q["options"])]
+    return InlineKeyboardMarkup(rows)
+
+async def _send_next(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send next question or show results. Guarded to avoid double-sends."""
+    user_id = update.effective_user.id
+    sess = QUIZ_SESSIONS.get(user_id)
+    if not sess:
+        # Graceful message target
+        msg = getattr(update, "effective_message", None) or getattr(getattr(update, "callback_query", None), "message", None)
+        if msg:
+            await msg.reply_text("No active quiz. Use /quiz5 or /quiz10.")
+        return
+
+    # Lock: if already sending, ignore concurrent triggers
+    if sess.get("inflight"):
+        return
+    sess["inflight"] = True
+
+    try:
+        qs: List[Dict[str, Any]] = sess["questions"]
+        total = len(qs)
+        i = int(sess.get("index", 0))
+
+        # Completed? Grade now.
+        if i >= total:
+            answers: Dict[str, int] = sess["answers"]
+
+            # Build details for formatter
+            details: List[dict] = []
+            score = 0
+            for q in qs:
+                qid = q["id"]
+                opts = q.get("options", [])
+                ca = q.get("answer_index", -1)
+                ua = answers.get(qid, -1)
+                correct = (ua == ca)
+                if correct:
+                    score += 1
+                details.append({
+                    "question": q.get("question", ""),
+                    "correct": correct,
+                    "options": opts,
+                    "correct_index": ca,
+                    "user_index": ua,
+                    "user_answer_text": opts[ua] if (0 <= ua < len(opts)) else None,
+                    "explanation": q.get("explanation") or "",
+                })
+
+            chat_id = update.effective_chat.id
+            QUIZ_SESSIONS[user_id] = {
+                "questions": qs,
+                "answers": answers,
+                "details": details,
+                "score": score,
+                "total": total,
+                "show_answers": False,
+            }
+            _save_quiz_state()
+            perf = "Great job!" if score == total else ("Nice effort!" if score else "Let’s practice!")
+            msg = (
+                f"✅ <b>Quiz complete!</b>\n"
+                f"<b>Score:</b> {score}/{total}\n\n"
+                f"{perf}\n\n"
+                "Tap below if you’d like to review each question."
+            )
+            kb = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("📘 Show Answers", callback_data="quiz:showanswers")]]
+            )
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+                reply_markup=kb,
+            )
+            return
+        # Otherwise, send question i
+        q = qs[i]
+        text = _format_question(q, i, total)
+        kb = _keyboard_for(q)
+
+        # Avoid duplicate question sends: if we just sent the same text, skip.
+        # (Rarely, TG edits/latency can cause re-entry.)
+        last_id = sess.get("last_msg_id")
+        # We still send the message; the guard is primarily the inflight flag.
+        # Keep it simple and send once per step:
+        sent = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            reply_markup=kb,
+        )
+        sess["last_msg_id"] = sent.message_id
+
+    finally:
+        sess = QUIZ_SESSIONS.get(user_id)
+        if sess:
+            sess["inflight"] = False
+
+
+async def _start_quiz(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    count: int,
+    subject: Optional[str] = None,
+    difficulty: Optional[int] = None,
+    tags_any: Optional[List[str]] = None,
+) -> None:
+    ensure_quiz_ready()
+    qs = _pick_qs(
+        QUIZ_POOL,
+        subject=subject,          # already lowercase from router
+        difficulty=difficulty,
+        tags_any=tags_any,
+        count=count,
+        shuffle=True,
+    )
+    target = update.effective_message or (update.callback_query.message if getattr(update, "callback_query", None) else None)
+    if not qs:
+        if target:
+            await target.reply_text("No questions match those filters.")
+        return
+
+    QUIZ_SESSIONS[update.effective_user.id] = {
+        'questions': qs,
+        'answers': {},
+        'index': 0,
+        'subject': subject,
+        'started_at': time.time(),
+        'show_answers': False,
+    }
+    _save_quiz_state()
+    await _send_next(update, context) 
+
+                          
+    
+        
+# public commands
+
+async def next_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Advances the quiz to the next question. Triggered by callback_data='quiz:next'.
+    Clears the old inline keyboard to avoid double presses, then delegates to _send_next().
+    """
+    q = update.callback_query
+    await q.answer()
+    await _safe_clear_kb(q)
+    await _send_next(update, context)
+
+async def cancel_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = getattr(update, "callback_query", None)
+    if q:
+        await q.answer()
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        chat_id = q.message.chat.id
+    else:
+        chat_id = update.effective_chat.id
+
+    user_id = update.effective_user.id
+    had = bool(QUIZ_SESSIONS.pop(user_id, None))
+    _save_quiz_state()
+
+    msg = "❌ Quiz cancelled." if had else "No active quiz."
+    try:
+        if q:
+            await context.bot.send_message(chat_id=chat_id, text=msg)
+        else:
+            await update.effective_message.reply_text(msg)
+    except Exception:
+        pass
+
+async def quiz_show_answers(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+    await q.answer()
+
+    user_id = update.effective_user.id
+    sess = QUIZ_SESSIONS.get(user_id)
+    if not sess:
+        await q.message.edit_text("Session expired. Use /quiz5 or /quiz10 to play again.")
+        return
+
+    if sess.get("show_answers"):
+        await q.message.edit_text("Answers already shared.")
+        return
+
+    details = sess.get("details") or []
+    score = sess.get("score") or 0
+    total = sess.get("total") or len(details)
+
+    report_html = format_quiz_report(score, total, details)
+    chat_id = update.effective_chat.id
+    for i in range(0, len(report_html), 3800):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=report_html[i:i+3800],
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+
+    sess["show_answers"] = True
+    sess.pop("details", None)
+    sess.pop("answers", None)
+    sess.pop("questions", None)
+    _save_quiz_state()
+
+    try:
+        await q.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass    
+
+async def quiz5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=5)
+
+async def quiz10(update: Update, context: ContextTypes.DEFAULT_TYPE, subject: str | None = None) -> None:
+    await _start_quiz(update, context, count=10, subject=subject)
+
+async def quiz10physics(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=10, subject="Physics")
+
+async def quiz5medium(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=5, difficulty=2)
+
+# button click handler
+#Answer handler (stale-press safe + no duplicate sending)
+
+async def on_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    await _safe_clear_kb(query)
+
+    data = query.data or ""
+    if not data.startswith("ans:"):
+        return
+    try:
+        _, qid, idx_str = data.split(":")
+        chosen = int(idx_str)
+    except Exception:
+        # avoid "Message is not modified" by only editing if text actually changes
+        try:
+            await query.edit_message_text("Invalid answer payload.")
+        except Exception:
+            pass
+        return
+
+    user_id = update.effective_user.id
+    sess = QUIZ_SESSIONS.get(user_id)
+    if not sess:
+        try:
+            await query.edit_message_text("Session expired. Use /quiz5 or /quiz10.")
+        except Exception:
+            pass
+        return
+
+    qs: List[Dict[str, Any]] = sess["questions"]
+    i = sess["index"]
+    if i >= len(qs):
+        try:
+            await query.edit_message_text("Already finished. Use /quiz5 to start again.")
+        except Exception:
+            pass
+        return
+
+    q = qs[i]
+    if q.get("id") != qid:
+        # stale press
+        await query.answer("That question moved on.", show_alert=False)
+        return
+
+    sess["answers"][qid] = chosen
+    sess["index"] = i + 1
+    sess["ts"] = __import__("time").time()
+    _save_quiz_state()
+
+    ca = q["answer_index"]
+    user_txt = q["options"][chosen]
+    cor_txt  = q["options"][ca]
+    fb = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct: {cor_txt}"
+
+    # best-effort edit; ignore 400 "message not modified"
+    try:
+        await query.edit_message_text(
+            f"{_format_question(q, i, len(qs))}\n\nYou picked: {user_txt}\n{fb}"
+        )
+    except Exception:
+        try:
+            await query.message.reply_text(fb)
+        except Exception:
+            pass
+
+    explanation = await _generate_quiz_explanation(q, chosen)
+    if explanation and not explanation.lower().startswith("sorry"):
+        header = "✅ Correct!" if chosen == ca else f"❌ Incorrect. Correct answer: {cor_txt}"
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"{header}\n\nAI Explanation:\n{explanation}",
+                disable_web_page_preview=True,
+            )
+        except Exception:
+            pass
+
+    await _send_next(update, context)
+    
+# ===== END SIMPLE QUIZ =====
+
+# ===== END NEW QUIZ INTEGRATION =====
+
+        
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 _CODE_COL_CANDIDATES = ["college_code", "College Code", "code", "COLLEGE_CODE"]
 
 
@@ -1936,7 +3304,173 @@ def build_name_maps_from_colleges_df(df):
     )
 
 # ---------- Cutoff lookup loader (complete) ----------
+<<<<<<< HEAD
 
+=======
+PROFILE_COLUMN_ALIASES = {
+    "code": "college_code",
+    "collegecode": "college_code",
+    "clg_code": "college_code",
+    "college_id": "college_id",
+    "collegeid": "college_id",
+    "id": "college_id",
+    "institute_code": "college_code",
+    "instituteid": "college_id",
+    "name": "college_name",
+    "college_name": "college_name",
+    "institute_name": "college_name",
+    "state_name": "state",
+    "state": "state",
+    "city": "city",
+    "website": "website",
+    "url": "website",
+    "hostel": "hostel_available",
+    "hostel_available": "hostel_available",
+    "hostel_on_campus": "hostel_available",
+    "hostelcapacity": "hostel_capacity",
+    "bond_penalty": "bond_penalty_lakhs",
+    "bond_penalty_lakh": "bond_penalty_lakhs",
+    "bond_penalty_lakhs": "bond_penalty_lakhs",
+    "bond": "bond_summary",
+    "bond_notes": "bond_summary",
+    "bond_year": "bond_years",
+    "bond_years": "bond_years",
+    "pg_quota": "pg_quota",
+    "pgquota": "pg_quota",
+    "pg_seats": "pg_quota",
+    "pg_course": "pg_courses",
+    "summary": "profile_summary",
+    "profile_summary": "profile_summary",
+    "highlights": "profile_highlights",
+    "highlight": "profile_highlights",
+    "notes": "profile_notes",
+    "note": "profile_notes",
+    "tagline": "profile_tagline",
+    "established": "established_year",
+    "year_of_establishment": "established_year",
+    "rating": "profile_rating",
+}
+
+def _normalize_profile_df(df: pd.DataFrame) -> pd.DataFrame:
+    import numpy as np
+
+    def _norm_col(col: str) -> str:
+        base = unidecode(str(col)).lower()
+        base = re.sub(r"[^a-z0-9]+", "_", base).strip("_")
+        return PROFILE_COLUMN_ALIASES.get(base, base)
+
+    cleaned = df.copy()
+    cleaned.columns = [_norm_col(c) for c in cleaned.columns]
+    # strip strings
+    for col in cleaned.columns:
+        if cleaned[col].dtype == object:
+            cleaned[col] = cleaned[col].astype(str).str.strip()
+        else:
+            cleaned[col] = cleaned[col].where(~pd.isna(cleaned[col]), None)
+    # drop completely empty columns
+    cleaned = cleaned.dropna(axis=1, how="all")
+    cleaned = cleaned.replace({np.nan: None})
+    return cleaned
+
+def _profile_is_missing(value: Any) -> bool:
+    try:
+        if value is None:
+            return True
+        if isinstance(value, float) and math.isnan(value):
+            return True
+        s = str(value).strip()
+        return s == "" or s.lower() in {"na", "n/a", "none", "nil", "—"}
+    except Exception:
+        return True
+
+def load_college_profiles(
+    xlsx_path: str,
+    sheet_name: str = "college_profiles",
+) -> dict[str, dict]:
+    """
+    Load optional 'college_profiles' sheet and return a dict keyed by normalized code/id/name.
+    Each entry contains sanitized columns ready for downstream enrichment.
+    """
+    profiles: dict[str, dict] = {}
+    log = logging.getLogger("aceit-bot")
+
+    try:
+        xl = pd.ExcelFile(xlsx_path)
+    except Exception:
+        log.exception("Failed to open Excel '%s' for profiles", xlsx_path)
+        return profiles
+
+    target = None
+    target_norm = re.sub(r"[^a-z0-9]+", "", sheet_name.strip().lower())
+    for sheet in xl.sheet_names:
+        sheet_norm = re.sub(r"[^a-z0-9]+", "", sheet.strip().lower())
+        if sheet_norm == target_norm:
+            target = sheet
+            break
+    if not target:
+        log.info("Profiles sheet '%s' not found; skipping profile load", sheet_name)
+        return profiles
+
+    try:
+        df = pd.read_excel(xl, sheet_name=target)
+    except Exception:
+        log.exception("Failed reading profiles sheet '%s'", target)
+        return profiles
+
+    if df is None or df.empty:
+        log.warning("Profiles sheet '%s' is empty", target)
+        return profiles
+
+    df = df.dropna(how="all")
+    if df.empty:
+        log.warning("Profiles sheet '%s' only contained blank rows", target)
+        return profiles
+
+    norm_df = _normalize_profile_df(df)
+
+    def _meta_key(value: Any) -> str:
+        return re.sub(r"[^A-Z0-9]+", "", str(value or "").upper())
+
+    for _, row in norm_df.iterrows():
+        record = {k: v for k, v in row.items() if not _profile_is_missing(v)}
+        if not record:
+            continue
+
+        keys: set[str] = set()
+        for key_field in ("college_code", "code", "college_id", "id"):
+            val = record.get(key_field)
+            if not _profile_is_missing(val):
+                mk = _meta_key(val)
+                if mk:
+                    keys.add(mk)
+
+        name_val = record.get("college_name") or record.get("name")
+        if not _profile_is_missing(name_val):
+            mk = _meta_key(name_val)
+            if mk:
+                keys.add(mk)
+
+        if not keys:
+            continue
+
+        for mk in keys:
+            existing = profiles.setdefault(mk, {})
+            for k, v in record.items():
+                if _profile_is_missing(v):
+                    continue
+                existing_val = existing.get(k)
+                if _profile_is_missing(existing_val):
+                    existing[k] = v
+                elif k not in existing:
+                    existing[k] = v
+                else:
+                    # keep existing if already populated; profiles are small so no dedupe needed
+                    pass
+
+    log.info("Loaded %d college profile entries from sheet '%s'", len(profiles), target)
+    return profiles
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def load_cutoff_lookup_from_excel(
     path: str,
     sheet: str,
@@ -2049,7 +3583,39 @@ def load_cutoff_lookup_from_excel(
             return {}
 
     # --- Closing rank numeric ---
+<<<<<<< HEAD
     df["_close"] = pd.to_numeric(df[c_close], errors="coerce").astype("Int64")
+=======
+    close_numeric = pd.to_numeric(df[c_close], errors="coerce")
+
+    # Some sheets store closing ranks as floats (e.g. 1234.0 or 1234.5). Since
+    # rank can't be fractional, coerce any non-integer values down to the
+    # nearest int so that Pandas can cast into the nullable Int64 dtype.
+    fractional = close_numeric.dropna().apply(lambda x: not float(x).is_integer())
+    if fractional.any():
+        log.warning(
+            "[cutoffs] fractional closing ranks detected (%d rows). Flooring values before cast.",
+            int(fractional.sum()),
+        )
+        close_numeric = close_numeric.apply(lambda x: math.floor(x) if pd.notna(x) else x)
+
+    try:
+        df["_close"] = close_numeric.astype("Int64")
+    except TypeError:
+        # As a fallback, round the values and retry. Any residual failures are
+        # coerced to nullable ints (leaving NaNs we drop below).
+        rounded = close_numeric.round()
+        df["_close"] = pd.to_numeric(rounded, errors="coerce").astype("Int64")
+
+    df = df.dropna(subset=["_close"])
+    if df.empty:
+        return {}
+
+    df = df.dropna(subset=["_close"])
+    if df.empty:
+        return {}
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     df = df.dropna(subset=["_close"])
     if df.empty:
         return {}
@@ -2154,6 +3720,13 @@ def _target(update: Update):
         return update.message
     cq = getattr(update, "callback_query", None)
     if cq and getattr(cq, "message", None):
+<<<<<<< HEAD
+=======
+        try:
+            asyncio.create_task(cq.answer())
+        except Exception:
+            pass
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         return cq.message
     return None
 
@@ -2213,8 +3786,13 @@ async def coach_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Notes-only coach: uses last_predict_shortlist, keeps order, no crosses."""
     tgt = _target(update) or update.effective_message
     ud = context.user_data or {}
+<<<<<<< HEAD
     shortlist = ud.get("last_predict_shortlist") or []
     air = ud.get("last_predict_air")
+=======
+    shortlist = ud.get("LAST_SHORTLIST") or ud.get("last_predict_shortlist") or []
+    air = ud.get("rank_air") or ud.get("last_predict_air")
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
     if not shortlist:
         await tgt.reply_text("Run /predict first, then tap 🧠 AI Notes.")
@@ -2368,6 +3946,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Choose an option:",
         reply_markup=main_menu_keyboard()
     )
+<<<<<<< HEAD
 # ========================= Quiz & Rank curve =========================
 # ========================= Quiz & Rank curve =========================
 quiz_data: Dict[str, List[Dict[str, Any]]] = _load_json("quiz.json", {})
@@ -2402,6 +3981,8 @@ def _interp_rank_from_marks(marks: float, category: str = "General") -> Optional
     except Exception:
         log.exception("AIR interpolation failed")
         return None
+=======
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 # ========================= Excel helpers & loaders =========================
 def _norm_hdr(s: str) -> str:
@@ -2698,6 +4279,118 @@ def update_user_profile(update: Update, **kwargs):
 
 
 # --- name resolution helpers (paste near other small helpers) ---
+<<<<<<< HEAD
+=======
+
+if "NA_STRINGS" not in globals():
+    NA_STRINGS = {"", "—", "na", "n/a", "nan", "none", "null"}
+
+if "_is_missing" not in globals():
+    def _is_missing(v) -> bool:
+        try:
+            s = str(v).strip().lower()
+        except Exception:
+            return True
+        return s in NA_STRINGS
+
+if "_safe_str" not in globals():
+    def _safe_str(v, default: str = "") -> str:
+        try:
+            if v is None:
+                return default
+            if isinstance(v, float) and v != v:  # NaN
+                return default
+            s = str(v).strip()
+            return default if s.lower() in NA_STRINGS else s
+        except Exception:
+            return default
+
+if "_pick" not in globals():
+    def _pick(d: dict, *keys):
+        for k in keys:
+            if d is None:
+                break
+            val = d.get(k)
+            if not _is_missing(val):
+                return val
+        return None
+
+if "_to_int" not in globals():
+    def _to_int(v):
+        try:
+            return int(float(str(v).replace(",", "").strip()))
+        except Exception:
+            return None
+
+if "_fmt_rank_val" not in globals():
+    def _fmt_rank_val(v) -> str:
+        n = _to_int(v)
+        return f"{n:,}" if n is not None else "—"
+
+if "_fmt_money" not in globals():
+    def _fmt_money(v) -> str:
+        try:
+            if _is_missing(v):
+                return "—"
+            n = float(str(v).replace(",", "").strip())
+            return f"₹{_indian_number_format(int(n))}"
+        except Exception:
+            return "—"
+
+def _yn(v):
+    # use simple words so your current output lines don’t look odd
+    if v is True:  return "yes"
+    if v is False: return "no"
+    return "unknown"
+
+if "_fmt_bond_line" not in globals():
+    def _fmt_bond_line(bond_years, bond_penalty):
+        if _is_missing(bond_years) and _is_missing(bond_penalty):
+            return "—"
+        parts = []
+        if not _is_missing(bond_years):
+            try:
+                y = float(str(bond_years).strip())
+                parts.append(f"{int(y) if y.is_integer() else y} yrs")
+            except Exception:
+                parts.append(str(bond_years))
+        if not _is_missing(bond_penalty):
+            try:
+                p = float(str(bond_penalty).replace(",", "").strip())
+                parts.append(f"₹{_indian_number_format(int(p * 100000))}")  # if stored in lakhs
+            except Exception:
+                parts.append(str(bond_penalty))
+        return " + ".join(parts) if parts else "—"
+
+
+
+if "_why_from_signals" not in globals():
+    def _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail) -> str:
+        """
+        Tiny heuristic blurb. Uses only given fields; never invents.
+        """
+        bits = []
+        ow = (ownership or "").strip().lower()
+        if ow:
+            bits.append(ow)
+        if str(pg_quota).strip().lower() in {"yes", "y", "true", "1"}:
+            bits.append("PG exposure")
+        try:
+            by = int(float(bond_years)) if bond_years is not None and str(bond_years).strip() != "" else 0
+        except Exception:
+            by = 0
+        if by > 0:
+            bits.append("bond to consider")
+        if str(hostel_avail).strip().lower() in {"yes", "y", "true", "1"}:
+            bits.append("hostel on campus")
+        if not bits:
+            return "balanced option for your rank"
+        # sentence case, concise
+        text = ", ".join(bits)
+        return text[0].upper() + text[1:] + "."
+
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _norm_meta_key(v: object) -> str:
     """Uppercase A–Z/0–9 only; same normalization used for COLLEGE_META_INDEX keys."""
     return re.sub(r"[^A-Z0-9]+", "", str(v or "").upper())
@@ -2738,7 +4431,11 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
     # Fee
     fee = r.get("total_fee") or r.get("Fee")
     if isinstance(fee, (int, float)):
+<<<<<<< HEAD
         fee_str = f"₹{int(fee):,}"
+=======
+        fee_str = f"₹{_indian_number_format(int(fee))}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     elif fee in (None, "", "—"):
         fee_str = "—"
     else:
@@ -2770,6 +4467,7 @@ def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
     return head + tail
 
 # ========================= Menus & States =========================
+<<<<<<< HEAD
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -2826,6 +4524,800 @@ async def reset_lock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for k in list(context.user_data.keys()):
         context.user_data.pop(k, None)
     await update.message.reply_text("✅ State cleared. You can start fresh with /menu.")
+=======
+
+JOSH_ZONE_STORIES: List[str] = [
+    "Ravi NEET topper (AIR 47) bhi pehle Physics mein fail hota tha.\n"
+    "Roz sirf 30 min diya, aur 3 months mein subject strong ho gaya 💪.\n"
+    "Tu bhi small steps se shuru kar, momentum khud banega.",
+    "Dr. Neha internship mein night duty ke baad bhi MCQ set solve karti thi.\n"
+    "Bolti thi 'thoda thak kar padhna, exam wale pressure ka rehearsal hai'.\n"
+    "Aaj woh pediatrics resident hai, patients usse \"energy doc\" bulate hain.\n"
+    "Tired ho toh break le, par mission yaad rakh.",
+    "Lucknow ka Aman bhai mock tests mein hamesha 520 pe atak jata tha.\n"
+    "Mentor ne bola - 'score nahi, silly mistake list bhejo'.\n"
+    "Har test ke baad 3 mistakes likh ke sudhara, next attempt 640 nikaal diya.\n"
+    "Discipline boring lagta hai, par result dhamakedar hota hai.",
+    "MBBS first year ki Priya didi histology ko nightmare bolti thi.\n"
+    "Usne hostel corridor mein chhota whiteboard lagaya, daily ek diagram draw karti thi.\n"
+    "Teen mahine baad sab juniors uske board se revise karte the.\n"
+    "Kuch naya create karo, confidence apne aap level up hoga.",
+    "Dr. Imran sir Operation Theatre se nikal ke hamare batch ko bolte the,\n"
+    "'Stress ko enemy mat samjho, yahi tumhe sharp banata hai'.\n"
+    "Exam day ke din unhone wohi lines yaad karke calm feel kiya tha.\n"
+    "Dil tez dhadke toh usse fuel ki tarah use karo.",
+    "Shreya AIR 112 ne bio ke charts se room decorate kiye the.\n"
+    "Guests aate the toh bolti: 'Yeh meri vision board hai, memes nahi'.\n"
+    "Roz subah uthke pehla kaam - ek concept aloud revise.\n"
+    "Environment ko mission mode banaoge, focus automatic ho jayega.",
+    "Coaching ke Rahul sir ka funda simple tha - '25 minute war, 5 minute chill'.\n"
+    "Timer laga ke chapters ko attack karta tha aur break mein push-ups.\n"
+    "Wahi Pomodoro routine se usne organic chemistry tame ki.\n"
+    "Ritual set karo, brain ko pata rahega kab beast mode on karna hai.",
+    "NEET dropper Kavya ko log bolte the 'again try?'.\n"
+    "Usne har doubt ko voice note bana ke khud ko samjhaya.\n"
+    "Repeat year mein wohi voice notes last week ka armor ban gaye.\n"
+    "Log kya kahenge chhodo, tumhari tape hi tumhara mentor ban sakti hai.",
+]
+
+
+def _pick_josh_story() -> str:
+    if not JOSH_ZONE_STORIES:
+        return "Aaj ka mantra: chhote consistent steps hi bada result banate hain."
+    return random.choice(JOSH_ZONE_STORIES).strip()
+
+_STORY_CACHE_LIST: List[Dict[str, str]] = []
+_STORY_CACHE_MAP: Dict[str, Dict[str, str]] = {}
+_STORY_CACHE_MTIME: Optional[float] = None
+
+def _load_story_catalog(force: bool = False) -> List[Dict[str, str]]:
+    """Load stories.json and cache both ordered list and lookup map."""
+    global _STORY_CACHE_LIST, _STORY_CACHE_MAP, _STORY_CACHE_MTIME
+    path = STORIES_FILE_PATH
+
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        if _STORY_CACHE_LIST:
+            log.warning("[stories] %s missing; clearing story cache", path)
+        _STORY_CACHE_LIST = []
+        _STORY_CACHE_MAP = {}
+        _STORY_CACHE_MTIME = None
+        return []
+    except Exception:
+        log.exception("[stories] failed stating %s", path)
+        return _STORY_CACHE_LIST
+
+    mtime = stat.st_mtime
+    if not force and _STORY_CACHE_LIST and _STORY_CACHE_MTIME == mtime:
+        return _STORY_CACHE_LIST
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        log.exception("[stories] failed to load %s", path)
+        return _STORY_CACHE_LIST
+
+    records = raw.get("stories")
+    if not isinstance(records, list):
+        log.warning("[stories] %s missing 'stories' array", path)
+        _STORY_CACHE_LIST = []
+        _STORY_CACHE_MAP = {}
+        _STORY_CACHE_MTIME = mtime
+        return _STORY_CACHE_LIST
+
+    seen_ids: set[str] = set()
+    result_list: List[Dict[str, str]] = []
+    result_map: Dict[str, Dict[str, str]] = {}
+
+    for entry in records:
+        if not isinstance(entry, dict):
+            continue
+        sid = str(entry.get("id") or "").strip()
+        if not sid or sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        title = str(entry.get("title") or "Story").strip() or "Story"
+        text = entry.get("text")
+        if not isinstance(text, str):
+            text = str(text or "")
+        cta = entry.get("cta_line")
+        if not isinstance(cta, str) or not cta.strip():
+            cta = "Yes! Bana Mere Liye Strategy 🚀"
+
+        story = {"id": sid, "title": title, "text": text, "cta_line": cta}
+        result_list.append(story)
+        result_map[sid] = story
+
+    _STORY_CACHE_LIST = result_list
+    _STORY_CACHE_MAP = result_map
+    _STORY_CACHE_MTIME = mtime
+    return _STORY_CACHE_LIST
+
+
+def _find_story_by_id(story_id: str) -> Optional[Dict[str, str]]:
+    sid = (story_id or "").strip()
+    if not sid:
+        return None
+    for story in _load_story_catalog():
+        if story.get("id") == sid:
+            return story
+    return None
+
+
+
+def main_menu_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔥 Josh Zone:  GET MOTIVATED ", callback_data="menu_josh")],
+        [InlineKeyboardButton("🧭 Topper Strategy (Macro) ", callback_data="menu_strategy")],
+        [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
+        [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
+        [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
+        [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
+        [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
+    ])
+
+async def show_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE | None,
+    text: str = "Choose an option:",
+) -> None:
+    """Show the main menu (can be called from /menu or any callback)."""
+    if context is not None:
+        unlock_flow(context)
+    tgt = update.effective_message
+    bot = context.bot if context else getattr(update, "get_bot", lambda: None)()
+    if tgt is None:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id and bot:
+            await bot.send_message(chat_id=chat_id, text="Hi! 👋")
+        return
+
+    explanation = (
+        "📋 *Menu Options*\n\n"
+        "🔥 *Josh Zone* Un aspirants ki stories jinhone give up nahi kiya kabhi and neet jaisa exam foda.\n\n"
+        "🔥 *Topper Strategy*  NEET exam ko fodne ki strategies chahe aap kisi bhi stage pe ho tayari ki.\n\n"
+        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
+        "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
+        "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
+        "Get quick notes for shortlisted colleges for more details like bond/hostel. "
+        "Please note that fees mentioned may not be accurate; please check respective websites for the same.\n\n"
+        "💬 *Clear your NEET Doubts* — Ask questions related to counselling and subjects, get instant explanations.\n\n"
+        "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
+    )
+
+    try:
+        await tgt.reply_text(explanation, parse_mode="Markdown", disable_web_page_preview=True)
+    except Exception:
+        await tgt.reply_text(explanation, disable_web_page_preview=True)
+
+    await tgt.reply_text(text, reply_markup=main_menu_markup())
+
+async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Answer callbacks, clear any active flow, and show the main menu."""
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+    unlock_flow(context)
+    await show_menu(update, context)
+    return ConversationHandler.END
+
+async def menu_exit_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Answer callbacks, clear any active flow, and show the main menu."""
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+    unlock_flow(context)
+    await show_menu(update, context)
+    return ConversationHandler.END
+
+
+
+
+async def show_menu_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Production /menu — no debug text."""
+    try:
+        await show_menu(update, context) 
+    except Exception as e:
+        log.exception("show_menu crashed; falling back: %s", e)
+        await menu_exit_conversation(update, context) 
+
+async def menu_open_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    await show_menu(update, context)
+
+async def menu_strategy_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+        target = q.message
+    else:
+        target = update.effective_message
+
+    try:
+        strategies = all_strategies()
+        if not strategies:
+            load_strategies()
+            strategies = all_strategies()
+    except Exception:
+        log.exception("[strategy] failed to load strategies")
+        strategies = []
+
+    if not strategies:
+        stats = strategies_debug_stats()
+        hint = [
+            "Topper strategies not available yet.",
+            f"path: {stats.get('path')}",
+            f"raw items: {stats.get('raw')} | loaded: {stats.get('loaded')} | filtered: {stats.get('filtered')}",
+        ]
+        if stats.get("error"):
+            hint.append(f"error: {stats['error']}")
+        if target:
+            await target.reply_text("\n".join(hint))
+        else:
+            chat_id = update.effective_chat.id if update.effective_chat else None
+            if chat_id:
+                await context.bot.send_message(chat_id=chat_id, text="\n".join(hint))
+        return
+
+    buttons: List[List[InlineKeyboardButton]] = []
+    for strat in strategies:
+        sid = str(strat.get("id") or "").strip()
+        title = str(strat.get("title") or "Strategy")
+        if not sid:
+            continue
+        buttons.append([InlineKeyboardButton(f"📋 {title}", callback_data=f"strategy:{sid}")])
+
+    if not buttons:
+        if target:
+            await target.reply_text("Topper strategies file not found yet. Please try later.")
+        return
+
+    buttons.append([InlineKeyboardButton("⬅️ Back to Menu", callback_data="menu:back")])
+    markup = InlineKeyboardMarkup(buttons)
+
+    message = "Topper Strategy (Macro): Choose a plan"
+    if target:
+        await target.reply_text(message, reply_markup=markup)
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=markup)
+
+
+async def _send_strategy_story_preview(update: Update, context: ContextTypes.DEFAULT_TYPE, payload: Dict[str, Any]) -> None:
+    story = payload.get("story") or {}
+    title = str(story.get("title") or payload.get("ref") or "Story")
+    text_body = str(story.get("text") or "")
+    message = f"{title}\n\n{text_body}".strip()
+
+    if not message:
+        message = title
+
+    cta_label = str(story.get("cta_line") or "Yes! Bana Mere Liye Strategy 🚀")
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(cta_label, callback_data="menu_strategy")],
+        [InlineKeyboardButton("⬅️ Back to Stories", callback_data="menu_josh_stories")],
+    ])
+
+    target = None
+    if update.callback_query and update.callback_query.message:
+        target = update.callback_query.message
+    elif update.effective_message:
+        target = update.effective_message
+
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(message, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=keyboard)
+
+async def strategy_cb(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+
+    with contextlib.suppress(Exception):
+        await q.answer()
+
+    data = (q.data or "").strip()
+    _, _, strategy_id = data.partition(":")
+    strategy_id = strategy_id.strip()
+    if not strategy_id:
+        await q.message.reply_text("Strategy not found.")
+        return
+
+    try:
+        strategy = get_strategy(strategy_id)
+        if not strategy:
+            load_strategies()
+            strategy = get_strategy(strategy_id)
+        if not strategy or "stories" not in strategy:
+            reload_strategies()
+            strategy = get_strategy(strategy_id)
+            _load_story_catalog(force=True)
+    except Exception:
+        log.exception("[strategy] failed to fetch strategy", extra={"strategy_id": strategy_id})
+        strategy = None
+
+    if not strategy:
+        await q.message.reply_text("Strategy not found.")
+        return
+
+    title = str(strategy.get("title") or "Strategy")
+    short = str(strategy.get("short_desc") or strategy.get("short_description") or strategy.get("description") or "").strip()
+    bullets = strategy.get("bullets") or strategy.get("points") or []
+    bullet_lines = [str(b).strip() for b in bullets if str(b).strip()]
+
+    story_markup = None
+    story_payloads: List[Dict[str, Any]] = []
+    story_entries = strategy.get("stories")
+    if isinstance(story_entries, list):
+        _load_story_catalog()
+        story_buttons: List[List[InlineKeyboardButton]] = []
+        for entry in story_entries:
+            if not isinstance(entry, dict):
+                continue
+            ref = str(entry.get("ref") or entry.get("id") or "").strip()
+            if not ref:
+                continue
+            story_obj = _find_story_by_id(ref)
+            label_source = None
+            if story_obj:
+                label_source = story_obj.get("title")
+            if not label_source:
+                label_source = entry.get("title")
+            label = str(label_source or ref).strip()
+            if not label:
+                continue
+            if len(label) > 48:
+                label = label[:45] + "…"
+            story_buttons.append([InlineKeyboardButton(f"📖 {label}", callback_data=f"story:{ref}")])
+            if story_obj:
+                story_payloads.append({"ref": ref, "story": story_obj})
+        if story_buttons:
+            story_buttons.append([InlineKeyboardButton("⬅️ Back to Strategies", callback_data="menu_strategy")])
+            story_markup = InlineKeyboardMarkup(story_buttons)
+    
+    try:
+        from telegram.helpers import escape_markdown
+
+        md_parts = [f"*{escape_markdown(title, version=2)}*"]
+        if short:
+            md_parts.append(f"_{escape_markdown(short, version=2)}_")
+        if bullet_lines:
+            md_parts.append("\n".join(f"• {escape_markdown(line, version=2)}" for line in bullet_lines))
+        md_text = "\n\n".join(part for part in md_parts if part)
+        await q.message.reply_text(md_text, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=story_markup)
+    except Exception:
+        log.exception("[strategy] markdown formatting failed", extra={"strategy_id": strategy_id})
+        plain_parts = [title]
+        if short:
+            plain_parts.append(short)
+        if bullet_lines:
+            plain_parts.append("\n".join(f"• {line}" for line in bullet_lines))
+        await q.message.reply_text("\n\n".join(part for part in plain_parts if part), reply_markup=story_markup)
+
+    if story_payloads:
+        await _send_strategy_story_preview(update, context, story_payloads[0])
+    return
+
+
+async def strategy_head(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import os
+    import json  # noqa: F401  # kept for quick interactive debugging
+    import textwrap  # noqa: F401
+
+    p = os.getenv("STRATEGIES_FILE", "/opt/render/project/src/strategies.json")
+    exists = os.path.exists(p)
+    try:
+        size = os.path.getsize(p) if exists else 0
+    except Exception:
+        size = -1
+    head = ""
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            head = f.read(600)
+    except Exception as e:
+        head = f"<read error: {e}>"
+    msg = f"path={p}\nexists={exists} size={size}\n--- first 600 chars ---\n{head}"
+    await update.effective_message.reply_text(msg)
+
+async def strategy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await menu_strategy_handler(update, context)
+
+
+async def strategy_where(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import os
+
+    p = strategies_path()
+    await update.effective_message.reply_text(f"strategies.json -> {p}\nexists={os.path.exists(p)}")
+
+
+async def strategy_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cnt = strategies_count()
+    stats = strategies_debug_stats()
+    ids = [s.get("id") for s in all_strategies()][:5]
+    lines = [
+        f"loaded={cnt}",
+        f"path={stats.get('path')}",
+        f"raw={stats.get('raw')} filtered={stats.get('filtered')}",
+    ]
+    if stats.get("error"):
+        lines.append(f"error={stats['error']}")
+    lines.append(f"first_ids={ids}")
+    await update.effective_message.reply_text("\n".join(lines))
+
+
+async def strategy_reload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cnt = reload_strategies(os.getenv("STRATEGIES_FILE"))
+    stats = strategies_debug_stats()
+    await update.effective_message.reply_text(
+        f"reloaded={cnt}\n"
+        f"path={stats.get('path')}\n"
+        f"raw={stats.get('raw')} filtered={stats.get('filtered')}\n"
+        f"error={stats.get('error') or '—'}"
+    )
+
+
+
+async def menu_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    source = "callback" if update.callback_query else "message"
+    data = update.callback_query.data if update.callback_query else (update.message.text if update.message else None)
+    flow = context.user_data.get(MODE_KEY)
+    keys = sorted(str(k) for k in context.user_data.keys())
+    lines = [
+        "📋 Menu diagnostics:",
+        f"• source: {source}",
+        f"• data: {data!r}",
+        f"• active_flow: {flow or 'none'}",
+        f"• user_data_keys: {', '.join(keys) or 'none'}",
+    ]
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if target:
+        await target.reply_text("\n".join(lines))
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+
+
+async def handlers_diag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    app = context.application
+    groups = getattr(app, "handlers", None)
+    lines = ["🛠 Handler groups:"]
+    if isinstance(groups, dict):
+        items = sorted(groups.items())
+    elif isinstance(groups, (list, tuple)):
+        items = enumerate(groups)
+    else:
+        items = []
+
+    for group, handlers in items:
+        if not handlers:
+            continue
+        lines.append(f"G{group}: {len(handlers)} handler(s)")
+        for handler in handlers[:8]:
+            cb = getattr(handler, "callback", None)
+            cb_name = getattr(cb, "__name__", repr(cb))
+            details: list[str] = []
+            pattern = getattr(handler, "pattern", None)
+            if pattern is not None:
+                pat = getattr(pattern, "pattern", None) or str(pattern)
+                details.append(f"pattern={pat}")
+            filt = getattr(handler, "filters", None)
+            if filt and not details:
+                details.append(f"filters={filt}")
+            lines.append("  - " + cb_name + (f" ({'; '.join(details)})" if details else ""))
+        if len(handlers) > 8:
+            lines.append("  …")
+    if len(lines) == 1:
+        lines.append("(no handler listing available)")
+
+    target = update.effective_message or (update.callback_query.message if update.callback_query else None)
+    if target:
+        await target.reply_text("\n".join(lines))
+    else:
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if chat_id:
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+
+
+async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+    data = q.data
+    data = (q.data or "").strip()
+    known_callbacks = {
+        "menu_strategy",
+        "menu_predict",
+        "menu_predict_mock",
+        "menu_mock_predict",
+        "menu_quiz",
+        "menu_josh",
+        "menu_josh_stories",
+        "menu_home",
+        "menu_ask",
+        "menu_profile",
+        "menu:back",
+    }
+    if data in known_callbacks:
+        with contextlib.suppress(Exception):
+            await q.answer()
+        return
+
+    if data.startswith("predict:"):
+        with contextlib.suppress(Exception):
+            await q.answer()
+        ud = context.user_data or {}
+        if ud.get(MODE_KEY) == "predict":
+            return
+        target = q.message
+        if target:
+            with contextlib.suppress(Exception):
+                await target.reply_text(
+                    "That prediction shortcut is no longer active. Start a new session with /predict."
+                )
+        return
+    
+    user_id = update.effective_user.id if update.effective_user else None
+    chat_id = q.message.chat_id if q.message else None
+    log.warning("[callback] Unhandled data=%r chat=%s user=%s", data, chat_id, user_id)
+    with contextlib.suppress(Exception):
+        await q.answer()
+   
+
+
+async def log_unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.message.text if update.message else None
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    user_id = update.effective_user.id if update.effective_user else None
+    if text and re.match(r"^/menu(@\w+)?$", text, re.IGNORECASE):
+        return
+    log.warning("[command] Unhandled command %r chat=%s user=%s", text, chat_id, user_id)
+    tgt = update.effective_message
+    if tgt:
+        await tgt.reply_text("I didn’t recognize that command. Try /menu.")
+        
+async def show_josh_zone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    story = _pick_josh_story()
+    header = "🔥 Josh Zone "
+    text = f"{header}\n\n{story}"
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📖 Emotional Stories", callback_data="menu_josh_stories")],
+        [InlineKeyboardButton("⚡ Another Josh Story", callback_data="menu_josh")],
+        [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="menu_home")],
+    ])
+
+    q = update.callback_query
+    if q:
+        await q.answer()
+        target = q.message
+    else:
+        target = update.effective_message
+
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(text, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+async def menu_josh_stories(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
+        target = q.message
+    else:
+        target = update.effective_message
+
+    stories = _load_story_catalog()
+    if not stories:
+        stories = _load_story_catalog(force=True)
+    if not stories:
+        message = "Emotional stories coming soon. Stay tuned!"
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Josh Zone", callback_data="menu_josh")]])
+    else:
+        top_items = stories[:5]
+        buttons = [[InlineKeyboardButton(f"📖 {item['title']}", callback_data=f"story:{item['id']}")] for item in top_items]
+        buttons.append([InlineKeyboardButton("⬅️ Back to Josh Zone", callback_data="menu_josh")])
+        keyboard = InlineKeyboardMarkup(buttons)
+        message = "Pick an emotional story to read:"
+
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(message, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=keyboard)
+
+
+async def menu_josh_story_detail(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+
+    with contextlib.suppress(Exception):
+        await q.answer()
+
+    data = (q.data or "").strip()
+    _, _, story_id = data.partition(":")
+    story = _find_story_by_id(story_id)
+
+    if not story:
+        target = q.message or update.effective_message
+        if target:
+            await target.reply_text("Story not found. Please try another.")
+        return
+
+    title = story.get("title") or "Story"
+    text_body = story.get("text") or ""
+    message = f"{title}\n\n{text_body}".strip()
+    cta_label = str(story.get("cta_line") or "Yes! Bana Mere Liye Strategy 🚀")
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(cta_label, callback_data="menu_strategy")],
+        [InlineKeyboardButton("⬅️ Back to Stories", callback_data="menu_josh_stories")],
+    ])
+
+    target = q.message or update.effective_message
+    if target is not None:
+        with contextlib.suppress(BadRequest):
+            await target.reply_text(message, reply_markup=keyboard)
+        return
+
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id:
+        with contextlib.suppress(BadRequest):
+            await context.bot.send_message(chat_id=chat_id, text=message, reply_markup=keyboard)
+
+async def menu_home(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        await q.answer()
+    await show_menu(update, context)
+
+
+
+async def quiz_menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if not q:
+        return
+    data = q.data or ""
+    await q.answer()
+
+    # Best-effort: clear previous inline keyboard to prevent double presses
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    # 5-Q quick quiz (no subject filter)
+    if data == "quiz:mini5":
+        return await _start_quiz(update, context, count=5)
+
+    # Subject picker for 10-Q
+    if data == "quiz:mini10":
+        subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
+        rows = [[InlineKeyboardButton(s, callback_data=f"quiz:sub:{s}:10")] for s in subjects]
+        rows.append([InlineKeyboardButton("⬅️ Back", callback_data="menu:back")])
+        kb = InlineKeyboardMarkup(rows)
+        try:
+            await q.message.edit_text("Pick a subject for 10 questions:", reply_markup=kb)
+        except Exception:
+            try:
+                await q.message.edit_reply_markup(reply_markup=kb)
+            except Exception:
+                pass
+        return
+
+    # Start subject-locked quiz: quiz:sub:<HumanLabel>[:count]
+    if data.startswith("quiz:sub:"):
+        parts = data.split(":")  # ["quiz","sub","<HumanLabel>","<count?>"]
+        human = parts[2] if len(parts) >= 3 else ""
+        count = int(parts[3]) if len(parts) >= 4 and parts[3].isdigit() else 10
+
+        # Normalize subject (map the human label to lowercase canonical)
+        subject = SUBJECT_MAP.get(human) or (human.strip().lower() if human else "")
+        if not subject:
+            try:
+                await q.message.reply_text("Unknown subject. Please pick again.")
+            except Exception:
+                pass
+            return
+
+        log.info("[quiz_menu_router] starting subject quiz: human=%r subject=%r count=%d", human, subject, count)
+        return await _start_quiz(update, context, count=count, subject=subject)
+
+    # Streaks
+    if data == "quiz:streaks":
+        try:
+            return await quiz_show_streaks(update, context)
+        except NameError:
+            try:
+                return await q.message.reply_text("Streaks isn’t implemented yet.")
+            except Exception:
+                return
+
+    # Leaderboard
+    if data == "quiz:leaderboard":
+        try:
+            return await quiz_leaderboard(update, context)
+        except NameError:
+            try:
+                return await q.message.reply_text("Leaderboard isn’t implemented yet.")
+            except Exception:
+                return
+
+    # Back to main menu
+    if data == "menu:back":
+        try:
+            return await show_menu(update, context)
+        except Exception:
+            return
+    
+
+async def menu_back(update, context):
+    q = update.callback_query
+    await q.answer()
+    await _safe_clear_kb(q)
+    await show_menu(update, context)
+
+# States
+ASK_SUBJECT = 1001
+ASK_WAIT    = 1002
+
+ASK_AIR, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF = range(300, 307)
+
+PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROFILE_SET_EMAIL, PROFILE_SET_MOBILE, PROFILE_SET_PRIMARY = range(120, 127)
+
+
+
+# ========================= /start & /reset =========================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Greeting + show the menu. Safe for both /start and callbacks."""
+    try:
+        # Optional friendly hello on first /start
+        if update.message:
+            await update.message.reply_text("Hi! 👋 Welcome to ACEit.")
+        elif update.callback_query:
+            await update.callback_query.answer()
+
+        # Always show the menu
+        await show_menu(update, context)
+
+    except Exception as e:
+        log.exception("start failed: %s", e)
+        # Try to inform the user without crashing
+        tgt = update.effective_message
+        if tgt:
+            await tgt.reply_text("Something went wrong while opening the menu. Please try /menu again.")
+
+
+async def reset_lock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    for k in list(context.user_data.keys()):
+        context.user_data.pop(k, None)
+    await update.message.reply_text("✅ State cleared. You can start fresh with /menu.")
+    # optional: return to menu
+    await show_menu(update, context)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 # ========================= Profile =========================
 def _canonical_category_ui(text: str) -> Optional[str]:
@@ -2864,14 +5356,21 @@ async def setup_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     latest_air = prof.get("latest_predicted_air", "Not set")
 
     kb = ReplyKeyboardMarkup(
+<<<<<<< HEAD
         [["Set Category", "Set Domicile"], ["Set Preference"], ["Set Email", "Set Mobile"], ["Set Primary ID"], ["Show", "Done"]],
+=======
+        [["Set Category", "Set Domicile"], ["Set Email", "Set Mobile"], ["Set Primary ID"], ["Show", "Done"]],
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         one_time_keyboard=True, resize_keyboard=True
     )
     await tgt.reply_text(
         "👤 *Your Profile*\n"
         f"• Category: *{cat}*\n"
         f"• Domicile: *{dom}*\n"
+<<<<<<< HEAD
         f"• Preference: *{pref}*\n"
+=======
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         f"• Email: *{email}*\n"
         f"• Mobile: *{mobile}*\n"
         f"• Primary ID: *{primary}*\n"
@@ -2893,10 +5392,13 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         kb = ReplyKeyboardMarkup([["Cancel"]], one_time_keyboard=True, resize_keyboard=True)
         await update.message.reply_text("Type your domicile state (e.g., Delhi, Karnataka).", reply_markup=kb)
         return PROFILE_SET_DOMICILE
+<<<<<<< HEAD
     elif text == "set preference":
         kb = ReplyKeyboardMarkup([["Balanced", "Low Fee", "Top Ranked", "Safety First"]], one_time_keyboard=True, resize_keyboard=True)
         await update.message.reply_text("Choose your college preference profile:", reply_markup=kb)
         return PROFILE_SET_PREF
+=======
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     elif text == "set email":
         kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
         await update.message.reply_text("Type your email (or tap Skip):", reply_markup=kb)
@@ -2915,7 +5417,11 @@ async def profile_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         unlock_flow(context)
         await update.message.reply_text("Profile saved. Returning to menu.", reply_markup=ReplyKeyboardRemove())
+<<<<<<< HEAD
         await show_menu(update)
+=======
+        await show_menu(update, context)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         return ConversationHandler.END
 
 async def profile_set_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2966,11 +5472,421 @@ def _pick(d: dict, *keys):
                 return v
     return None
 
+<<<<<<< HEAD
 
 
 async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import math, os
 
+=======
+#New Quiz----------
+
+def _quiz_subjects_from_pool() -> list[str]:
+    """Find unique subjects available in QUIZ_POOL. Fallback to standard list."""
+    try:
+        subs = sorted({str(q.get("subject") or "").strip() for q in QUIZ_POOL if q.get("subject")})
+        subs = [s for s in subs if s]  # remove blanks
+        return subs or ["Physics", "Chemistry", "Zoology", "Botany"]
+    except Exception:
+        return ["Physics", "Chemistry", "Zoology", "Botany"]
+
+
+
+async def menu_quiz_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    await q.answer()
+    # Offer a quick choice between 5 or 10
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("5 Questions",  callback_data="start_quiz:5")],
+        [InlineKeyboardButton("10 Questions", callback_data="start_quiz:10")],
+    ])
+    await q.edit_message_text("Choose a quiz size:", reply_markup=kb)
+
+async def menu_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    await q.answer()
+    _, count_s = q.data.split(":")
+    count = int(count_s)
+    # start the new quiz with defaults (no subject/difficulty filter)
+    await _start_quiz(update, context, count=count)
+
+def menu_quiz_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎯 Mini Quiz (5)",                  callback_data="quiz:mini5")],
+        [InlineKeyboardButton("📚 Mini Test (10, choose subject)", callback_data="quiz:mini10")],
+        [InlineKeyboardButton("🔥 Streaks",                         callback_data="quiz:streaks")],
+        [InlineKeyboardButton("🏆 Leaderboard",                     callback_data="quiz:leaderboard")],
+        [InlineKeyboardButton("⬅️ Back",                            callback_data="menu:back")],
+    ])
+
+
+async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Render AI notes for the top 10 from the last shortlist; no reordering."""
+    q = update.callback_query
+    await q.answer()
+    ud = context.user_data or {}
+    shortlist = ud.get("LAST_SHORTLIST") or ud.get("last_predict_shortlist") or []
+    air = ud.get("rank_air") or ud.get("last_predict_air")
+
+    if not shortlist:
+        await q.edit_message_text("No shortlist in memory. Please run /predict first.")
+        return
+
+    # build facts for top 10, preserving order
+    facts = []
+    for i, r in enumerate(shortlist[:10], 1):
+        facts.append({
+            "rank": i,
+            "code": r.get("college_code"),
+            "name": r.get("college_name"),
+            "state": r.get("state"),
+            "closing_rank": _to_int(r.get("ClosingRank")),
+            "nirf": _to_int(r.get("nirf_rank_medical_latest")),
+            "fee": _to_fee(r.get("total_fee")),
+            "ownership": r.get("ownership"),
+            # only True means we know hostel is available; otherwise omit
+            "hostel": (True if r.get("hostel_available") is True else None),
+        })
+
+    # Try LLM first; then fallback
+    text = _notes_via_llm(facts, air)
+    if not text:
+        text = _notes_deterministic(facts, air)
+
+    # Don’t edit the original shortlist; send a fresh message
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=text,
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
+
+            
+async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Deterministic AI-notes summary that enriches shortlist rows with master COLLEGES
+    metadata before printing. Uses cached master indexes for speed. Falls back to
+    cutoff table to resolve Closing Rank when missing.
+    """
+    try:
+        if update.callback_query:
+            await update.callback_query.answer()
+        chat_id = update.effective_chat.id
+        status = await context.bot.send_message(chat_id=chat_id, text="🧠 Preparing notes…")
+
+        ud = context.user_data or {}
+        items = (
+            ud.get("LAST_SHORTLIST")
+            or ud.get("last_shortlist")
+            or ud.get("last_predict_shortlist")
+            or []
+        )
+        if not items:
+            await status.edit_text("I couldn’t find any shortlisted colleges to summarize. Run /predict first.")
+            return
+
+        # ------- cutoff context (for closing-rank fallback) -------
+        round_ui = ud.get("cutoff_round") or ud.get("round") or "2025_R1"
+        quota    = ud.get("quota") or "AIQ"
+        category = ud.get("category") or "General"
+        # light normalization for common aliases
+        QUOTA_MAP = {"All India": "AIQ", "All-India": "AIQ", "AI": "AIQ"}
+        CAT_MAP   = {"UR": "General", "Open": "General", "GN": "General"}
+        quota    = QUOTA_MAP.get(quota, quota)
+        category = CAT_MAP.get(category, category)
+
+        df_lookup = context.application.bot_data.get("CUTOFFS_DF", None)
+
+        global COLLEGE_PROFILES
+        if not COLLEGE_PROFILES:
+            excel_hint = context.application.bot_data.get("EXCEL_PATH")
+            try:
+                source_excel = excel_hint or _resolve_excel_path()
+                COLLEGE_PROFILES = load_college_profiles(source_excel)
+            except Exception:
+                log.exception("[ai_notes] failed to load college profiles on-demand")
+                COLLEGE_PROFILES = {}
+
+
+
+        
+        # ---------- cache a master index from COLLEGES ----------
+        bot_cache = context.application.bot_data
+        idx_cache = bot_cache.get("MASTER_IDX")
+        if not idx_cache:
+            idx_by_code, idx_by_id, idx_by_name = {}, {}, {}
+            try:
+                master_rows = COLLEGES.to_dict("records") if hasattr(COLLEGES, "to_dict") else list(COLLEGES or [])
+            except Exception:
+                master_rows = list(COLLEGES or [])
+
+            def _s(v):
+                try:
+                    return str(v).strip()
+                except Exception:
+                    return ""
+
+            for row in master_rows:
+                if not isinstance(row, dict):
+                    continue
+                code = _s(row.get("college_code") or row.get("code"))
+                cid  = _s(row.get("college_id")  or row.get("institute_code"))
+                nm   = _s(row.get("college_name") or row.get("College Name")).lower()
+                if code: idx_by_code[code] = row
+                if cid:  idx_by_id[cid] = row
+                if nm:   idx_by_name[nm] = row
+            idx_cache = {"code": idx_by_code, "id": idx_by_id, "name": idx_by_name}
+            bot_cache["MASTER_IDX"] = idx_cache
+
+        def _resolve_master_row(r: dict) -> dict:
+            for key in ("college_code", "code", "college_id", "institute_code"):
+                v = r.get(key)
+                if v is None:
+                    continue
+                sid = str(v).strip()
+                if sid and sid in idx_cache["code"]:
+                    return idx_cache["code"][sid]
+                if sid and sid in idx_cache["id"]:
+                    return idx_cache["id"][sid]
+            nm = _safe_str(r.get("college_name") or r.get("College Name")).lower()
+            return idx_cache["name"].get(nm, {})
+        def _resolve_profile_row(r: dict, master: dict) -> dict:
+            if not COLLEGE_PROFILES:
+                return {}
+
+            keys: list[str] = []
+
+            def _add_keys(source: dict | None) -> None:
+                if not isinstance(source, dict):
+                    return
+                for key in ("college_code", "code", "college_id", "institute_code"):
+                    v = source.get(key)
+                    if not _is_missing(v):
+                        keys.append(_norm_meta_key(v))
+                nm = source.get("college_name") or source.get("College Name") or source.get("name")
+                if not _is_missing(nm):
+                    keys.append(_norm_meta_key(nm))
+
+            _add_keys(r)
+            _add_keys(master)
+
+            seen: set[str] = set()
+            profile: dict = {}
+            for key in keys:
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                pdata = COLLEGE_PROFILES.get(key)
+                if isinstance(pdata, dict):
+                    profile.update({k: v for k, v in pdata.items() if not _is_missing(v)})
+            return profile
+            
+
+        def _is_missing(v) -> bool:
+            try:
+                s = str(v).strip().lower()
+            except Exception:
+                return True
+            return s in {"", "—", "-", "na", "n/a", "nan", "none"}
+
+        def _pick2(r: dict, m: dict, *keys):
+            """first non-missing among r[keys], else m[keys]"""
+            for k in keys:
+                v = r.get(k)
+                if not _is_missing(v):
+                    return v
+            for k in keys:
+                v = m.get(k) if isinstance(m, dict) else None
+                if not _is_missing(v):
+                    return v
+            return None
+        
+        def _profile_pick(profile: dict, *keys):
+            if not isinstance(profile, dict):
+                return None
+            for key in keys:
+                v = profile.get(key)
+                if not _is_missing(v):
+                    return v
+            return None
+
+        # ---------- build blocks ----------
+        blocks = []
+        for i, r in enumerate(items[:10], 1):
+            m = _resolve_master_row(r)
+            profile_meta = _resolve_profile_row(r, m)
+            combined_meta = dict(profile_meta)
+            if isinstance(m, dict):
+                combined_meta.update({k: v for k, v in m.items() if not _is_missing(v)})
+            else:
+                combined_meta = profile_meta
+                
+            
+            name   = _safe_str(_pick2(r, combined_meta, "college_name", "College Name"), "Unknown college")
+            state  = _safe_str(_pick2(r, combined_meta, "state", "State"))
+            city   = _safe_str(_pick2(r, combined_meta, "city",  "City"))
+            place  = ", ".join([x for x in (city, state) if x])
+
+            # closing with robust fallback to cutoffs
+            closing = _pick2(r, combined_meta, "ClosingRank", "closing", "closing_rank", "rank")
+            if _is_missing(closing):
+                id_candidates = [
+                    r.get("college_code"), r.get("code"),
+                    r.get("college_id"),   r.get("institute_code"),
+                    combined_meta.get("college_code"), combined_meta.get("code"),
+                    combined_meta.get("college_id"),   combined_meta.get("institute_code"),
+                    name,  # last resort: name match
+                ]
+                ids = [str(x).strip() for x in id_candidates if not _is_missing(x)]
+                try:
+                    closing = _closing_rank_for_identifiers(
+                        ids, round_ui, quota, category,
+                        df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
+                    )
+                except Exception:
+                    closing = None  # stay graceful
+
+            fee_raw      = _pick2(r, m, "total_fee", "Fee", "Total Fee")
+            if _is_missing(fee_raw):
+                fee_raw = _pick2(r, combined_meta, "total_fee", "Fee", "Total Fee")
+            ownership    = _pick2(r, combined_meta, "ownership", "Ownership")
+            pg_quota_raw = _pick2(r, combined_meta, "pg_quota")
+            bond_years   = _pick2(r, combined_meta, "bond_years")
+            bond_penalty = _pick2(r, combined_meta, "bond_penalty_lakhs")
+            hostel_raw   = _pick2(r, combined_meta, "hostel_available")
+
+            # normalize boolean-ish fields (handles yes/no/emoji/etc.)
+            pg_quota_bool = _truthy_or_none(pg_quota_raw)
+            hostel_bool   = _truthy_or_none(hostel_raw)
+
+            log.debug("[ai_notes] %s | pg=%r hostel=%r bond=%r/%r fee=%r closing=%r",
+                      name, pg_quota_raw, hostel_raw, bond_years, bond_penalty, fee_raw, closing)
+
+            header    = f"{i}. {name}" + (f", {place}" if place else "")
+            rank_ln   = f"Closing Rank: {_fmt_rank_val(closing)}"
+            fee_ln    = f"Total Fee: {_fmt_money(fee_raw)}"
+            why_ln    = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool)
+            vibe_ln   = "City & campus vibe: " + _city_vibe_from_row(city, state)
+            pg_ln     = f"PG Quota: {_yn(pg_quota_bool)}"
+            bond_ln   = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
+            hostel_ln = f"Hostel: {_yn(hostel_bool)}"
+
+            highlights = _profile_pick(
+                profile_meta,
+                "profile_highlights",
+                "profile_summary",
+                "profile_notes",
+                "profile_tagline",
+            )
+            lines = [header, rank_ln, fee_ln, why_ln, vibe_ln]
+            if not _is_missing(highlights):
+                hl = str(highlights).strip()
+                if len(hl) > 280:
+                    hl = hl[:277].rstrip() + "…"
+                lines.append(f"Highlights: {hl}")
+            lines.extend([pg_ln, bond_ln, hostel_ln])
+
+            blocks.append("\n".join(lines))
+            
+
+        await status.edit_text("\n\n".join(blocks))
+
+    except Exception:
+        log.exception("[ai_notes] failed")
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Couldn't prepare AI notes.")
+        except Exception:
+            pass
+
+async def quiz_start_mini5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz(update, context, count=5)
+
+async def quiz_pick_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        await q.answer()
+        tgt = q.message
+    else:
+        tgt = update.effective_message
+
+    subjects = ["Physics", "Chemistry", "Botany", "Zoology"]
+    kb = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(s, callback_data=f"quiz:subject:{s}")] for s in subjects]
+    )
+    await tgt.reply_text("Pick a subject for a 10-question test:", reply_markup=kb)
+
+async def quiz_start_subject10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q:
+        await q.answer()
+        data = q.data or ""
+        subject = data.split(":", 2)[2] if data.count(":") >= 2 else None
+        if not subject:
+            await q.message.reply_text("Subject missing. Please tap a subject again.")
+            return
+    else:
+        await update.effective_message.reply_text("Use the buttons to choose a subject.")
+        return
+
+    await _start_quiz(update, context, count=10, subject=subject)
+
+# Optional stubs
+async def quiz_streaks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query:
+        await update.callback_query.answer()
+    await (update.effective_message or update.callback_query.message).reply_text(
+        "Streaks coming soon 🔜"
+    )
+
+async def quiz_leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.callback_query:
+        await update.callback_query.answer()
+    await (update.effective_message or update.callback_query.message).reply_text(
+        "Leaderboard coming soon 🔜"
+    )
+
+
+
+async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    await q.answer()
+    data = (q.data or "").strip()
+
+    if data == "menu_quiz":
+        await menu_quiz_handler(update, context)
+        return
+
+    if data == "menu_predict":
+        await q.message.reply_text("Predictor coming right up. Use /predict to start.")
+        return
+
+    if data == "menu_mock_predict":
+        await q.message.reply_text("Mock-rank predictor: use /predict to start and choose Mock Rank.")
+        return
+
+    if data == "menu_josh":
+        return await show_josh_zone(update, context)
+    if data == "menu_josh_stories":
+        return await menu_josh_stories(update, context)
+    if data.startswith("story:"):
+        return await menu_josh_story_detail(update, context)
+    if data == "menu_home":
+        return await show_menu(update, context)
+    
+    if data == "menu_ask":
+        await q.message.reply_text("Ask your NEET doubt with /ask.")
+        return
+
+    if data == "menu_profile":
+        await q.message.reply_text("Open profile with /profile.")
+        return
+
+    # fallback
+    await q.message.reply_text("Unknown menu item.")
+    
+#----------------------------New Quiz end
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     # ---------------- small helpers ----------------
     NA_STRINGS = {"", "—", "-", "na", "n/a", "nan", "none", "null"}
 
@@ -2994,6 +5910,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
 
     def _is_missing(v):
         try:
+<<<<<<< HEAD
             if v is None: return True
             if isinstance(v, float) and math.isnan(v): return True
             return str(v).strip().lower() in NA_STRINGS
@@ -3006,14 +5923,31 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             if not s or s.lower() in NA_STRINGS: return "—"
             n = float(s)
             return f"₹{int(n):,}"
+=======
+            s = str(v).strip().lower()
+        except Exception:
+            return True
+        return s in {"", "—", "-", "na", "n/a", "nan", "none"}
+
+    def _fmt_money(v):
+        try:
+            if _is_missing(v): return "—"
+            n = float(str(v).replace(",", "").strip())
+            return f"₹{_indian_number_format(int(n))}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         except Exception:
             return "—"
 
     def _fmt_rank_val(v):
         try:
+<<<<<<< HEAD
             s = str(v).strip()
             if _is_missing(s): return "—"
             return f"{int(float(s)):,}"
+=======
+            if _is_missing(v): return "—"
+            return f"{int(float(str(v))):,}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         except Exception:
             return "—"
 
@@ -3025,6 +5959,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
         return str(v)
 
     def _fmt_bond_line(bond_years, bond_penalty_lakhs):
+<<<<<<< HEAD
         def _num(x):
             try:
                 if _is_missing(x): return None
@@ -3052,10 +5987,28 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
         if s in {"kerala", "goa"}:
             return "Calmer pace; mid living costs; local language common"
         return "Calmer pace; mid living costs; local language common"
+=======
+        y = _to_int_or_none(years)
+        p = _to_int_or_none(penalty_lakh)
+        if y is None and p is None:
+            return "—"
+        parts = []
+        if y is not None:
+            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
+        if p is not None:
+            parts.append(f"₹{_indian_number_format(int(p))}k")  # penalty in lakhs → print as e.g. 50k
+        return " / ".join(parts) if parts else "—"
+
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
     def _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail) -> str:
         own = (ownership or "").lower()
         nm  = (name or "").upper()
+<<<<<<< HEAD
+=======
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         if "AIIMS" in nm:
             base = "Central government AIIMS"
         elif "JIPMER" in nm or "PGIMER" in nm:
@@ -3068,16 +6021,29 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             base = "Reputed medical college"
 
         extras = []
+<<<<<<< HEAD
         if _yn(pg_quota) == "Yes":
             extras.append("PG quota available")
+=======
+        if _truthy(pg_quota):
+            extras.append("PG quota available")
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         try:
             yrs = float(str(bond_years).strip()) if not _is_missing(bond_years) else 0.0
         except Exception:
             yrs = 0.0
         extras.append(f"bond {int(yrs) if yrs and float(yrs).is_integer() else yrs} yrs" if yrs > 0 else "no/low bond")
+<<<<<<< HEAD
         hv = _yn(hostel_avail)
         if hv in {"Yes", "No"}:
             extras.append(f"hostel {hv}")
+=======
+
+        if _truthy(hostel_avail):
+            extras.append("hostel on campus")
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         return base + ("; " + "; ".join(extras) if extras else "")
 
     def _resolve_master_row(r, idx_by_code, idx_by_id, idx_by_name):
@@ -3151,6 +6117,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
                     df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
                 )
 
+<<<<<<< HEAD
             fee          = _pick(r, "total_fee", "Fee") or _pick(m, "total_fee", "Fee")
             ownership    = r.get("ownership") or m.get("ownership")
             pg_quota     = r.get("pg_quota")  or m.get("pg_quota")
@@ -3163,6 +6130,31 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             fee_ln   = f"Annual Fee: {_fmt_money(fee)}"
             why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail)
             vibe_ln  = "City & campus vibe: " + _city_vibe_from_row(city, state)
+=======
+            
+
+            fee_raw       = _pick(r, "total_fee", "Fee") or _pick(m, "total_fee", "Fee")
+            fee_lakh      = _to_fee_lakh(fee_raw)
+
+            ownership     = r.get("ownership") or m.get("ownership")
+
+            pg_quota_raw  = r.get("pg_quota")  if not _is_missing(r.get("pg_quota"))  else m.get("pg_quota")
+            pg_quota_bool = _truthy_or_none(pg_quota_raw)
+
+            bond_years    = r.get("bond_years") if not _is_missing(r.get("bond_years")) else m.get("bond_years")
+            bond_penalty  = r.get("bond_penalty_lakhs") if not _is_missing(r.get("bond_penalty_lakhs")) else m.get("bond_penalty_lakhs")
+
+            hostel_raw    = r.get("hostel_available") if not _is_missing(r.get("hostel_available")) else m.get("hostel_available")
+            hostel_bool   = _truthy_or_none(hostel_raw)
+
+            header   = f"{i}. {name}" + (f", {', '.join([x for x in (city, state) if x])}" if (city or state) else "")
+            rank_ln  = f"Closing Rank: {_fmt_rank_val(closing)}"
+            fee_ln   = f"Total Fee: {_fmt_money(fee)}"
+            why_ln   = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota, bond_years, hostel_avail)
+            vibe_ln  = "City & campus vibe: " + (
+                ((city or state or "—") + " — " + _city_vibe_from_row(city, state))
+            )
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
             pg_ln    = f"PG Quota: {_yn(pg_quota)}"
             bond_ln  = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
             hostel_ln= f"Hostel: {_yn(hostel_avail)}"
@@ -3280,6 +6272,123 @@ def _subject_hint_text(subj: Optional[str]) -> str:
         return "Subject = Botany. Use NCERT terms and concise definitions."
     return ""
 
+<<<<<<< HEAD
+=======
+async def _ai_followup(mode: str, *, subject: str | None, concept: str) -> str:
+    """
+    mode: 'similar' | 'explain' | 'flash'
+    Returns plain text (no Markdown/LaTeX).
+    """
+    subj = (subject or "NEET").strip()
+    base_rules = (
+        "Answer in concise plain text only. No Markdown, LaTeX, bullets, or code fences. "
+        "Keep it readable in short lines."
+    )
+
+    if mode == "similar":
+        prompt = (
+            f"{base_rules}\n"
+            f"Create ONE {subj} problem similar to:\n{concept}\n\n"
+            "Prefer an MCQ with four options (A–D). Return strictly in this format:\n"
+            "Q: <question>\n"
+            "Options: A) ...  B) ...  C) ...  D) ...\n"
+            "Answer: <option letter>\n"
+            "Solution: 4–6 short lines covering approach and a common trap."
+        )
+    elif mode == "explain":
+        prompt = (
+            f"{base_rules}\n"
+            f"Explain the core concept(s) behind this {subj} problem:\n{concept}\n\n"
+            "Write 5–8 short lines including 2–3 memory hooks and one common mistake."
+        )
+    else:  # flash
+        prompt = (
+            f"{base_rules}\n"
+            f"Make 5 very concise {subj} flashcards from this content:\n{concept}\n\n"
+            "Format each as one line: Q: <prompt> | A: <short answer>"
+        )
+
+    return await call_openai(prompt)
+
+async def call_openai(prompt: str, *, model: str | None = None, max_output_tokens: int = 600) -> str:
+    """
+    Minimal REST client for the Responses API that works with raw JSON.
+    Gathers assistant text from data["output"][*]["content"][*]["text"].
+    """
+    key = OPENAI_API_KEY
+    if not key or not key.startswith("sk-"):
+        log.error("ask_followup: OPENAI_API_KEY missing/invalid")
+        return "Sorry—AI isn’t configured yet."
+
+    payload = {
+        "model": model or OPENAI_MODEL,
+        # Responses API expects 'input' as either a string or structured messages.
+        # A plain string is fine for simple text prompts:
+        "input": prompt,
+        "max_output_tokens": max_output_tokens,
+        "temperature": 0.3,
+        # Small style hint; optional:
+        "instructions": "You are a concise NEET helper. Use plain text only (no Markdown/LaTeX).",
+    }
+    headers = {"Authorization": f"Bearer {key}"}
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as cli:
+            r = await cli.post(f"{OPENAI_BASE_URL.rstrip('/')}/responses",
+                               headers=headers, json=payload)
+            r.raise_for_status()
+            data = r.json()
+
+        # 1) SDK convenience field (won't exist in raw REST, but keep just in case)
+        txt = (data.get("output_text") or "").strip()
+
+        # 2) Robust fallback: collect from the generic 'output' array
+        if not txt:
+            parts = []
+            for item in data.get("output", []):
+                if item.get("type") == "message":
+                    for c in item.get("content", []):
+                        # typical shape: {"type": "output_text", "text": "..."}
+                        t = c.get("text")
+                        if t:
+                            parts.append(t)
+            txt = "\n".join(parts).strip()
+
+        return txt or "I couldn’t generate a response."
+    except httpx.HTTPStatusError as e:
+        # Surface useful error details
+        err_body = ""
+        try:
+            err_body = e.response.text[:400]
+        except Exception:
+            pass
+        log.exception("OpenAI HTTP error: %s %s", e, err_body)
+        return f"Sorry—couldn’t generate that. (HTTP {e.response.status_code})"
+    except Exception as e:
+        log.exception("ask_followup: OpenAI error")
+        return f"Sorry—couldn’t generate that. ({type(e).__name__})"
+
+async def _ask_genai_text(question: str, subject_hint: str | None = None) -> tuple[bool, str]:
+    subject_hint = (subject_hint or "NEET").strip()
+    prompt = (
+        "You are a NEET biology/chemistry/physics and motivation teacher. "
+        f"The student asked: {question}\n"
+        "Answer in <=150 words using simple, exam-oriented language. "
+        "If it is a factual NEET syllabus question, give the exact explanation. "
+        "If it is motivational or strategy-based, give practical NEET-prep advice. "
+        "Avoid over-complicated language and avoid bullet formatting that Telegram might render as HTML."
+    )
+
+    try:
+        reply = await call_openai(prompt, max_output_tokens=450)
+        reply = (reply or "").strip()
+        if not reply:
+            return False, "I couldn’t generate a helpful answer right now."
+        return True, reply
+    except Exception as exc:  # already logged in call_openai
+        return False, f"Sorry—couldn’t generate that answer ({type(exc).__name__})."
+        
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 async def quota_counts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rk = context.user_data.get("cutoff_round", ACTIVE_CUTOFF_ROUND_DEFAULT)
     per = CUTOFFS_Q.get(rk, {})
@@ -3595,6 +6704,7 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = (q.data or "").strip()
     await q.answer()
 
+<<<<<<< HEAD
     subject = context.user_data.get("ask_subject")
     concept = context.user_data.get("ask_last_question")
 
@@ -3613,6 +6723,54 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+=======
+    # Pull context (subject/concept) from either legacy keys or ask_more_ctx
+    ctx_more = context.user_data.get("ask_more_ctx") or {}
+    subject = (
+        context.user_data.get("ask_subject")
+        or ctx_more.get("subject")
+        or "NEET"
+    )
+    concept = (
+        context.user_data.get("ask_last_question")
+        or ctx_more.get("question")
+        or ""
+    )
+
+    # Best-effort: remove inline keyboard to avoid "message is not modified" errors later
+    with contextlib.suppress(Exception):
+        await q.edit_message_reply_markup(reply_markup=None)
+
+    # ---- Quick Q&A branch ----
+    if data in ("ask_more:quickqa", "ask_more:qna5"):
+        with contextlib.suppress(Exception):
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
+
+        ok, text = await _gen_quick_qna(subject=subject, concept=concept, n=5)
+        if not ok:
+            text = "Couldn't generate quick Q&A right now."
+
+        # Send in safe chunks for Telegram
+        for i in range(0, len(text), 3800):
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text[i:i+3800],
+                parse_mode="HTML",
+                disable_web_page_preview=True,
+            )
+        return
+
+    # ---- Similar / Explain branch ----
+    if data in ("ask_more:similar", "ask_more:explain"):
+        # Reuse your followup handler that knows how to produce these
+        return await ask_followup_handler(update, context)
+
+    # Unknown ask_more action → no-op
+    return
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, want: str) -> bool:
     """
     Convenience: ensure only one flow runs at a time.
@@ -3632,6 +6790,65 @@ async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, wan
         return False
     return True
 
+<<<<<<< HEAD
+=======
+async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    data = q.data if q else ""
+    await q.answer()
+
+    # data like: ask:similar, ask:concept, ask:steps, ask:explain, ask:prev, ask:next
+    feature = data.split(":", 1)[1] if ":" in data else ""
+
+    # Map to your concrete handlers if present
+    mapping = {
+        "similar": "ask_similar",
+        "concept": "ask_concept",
+        "steps": "ask_steps",
+        "explain": "ask_explain",
+        "prev": "ask_prev",
+        "next": "ask_next",
+    }
+    fn_name = mapping.get(feature)
+    if fn_name and fn_name in globals():
+        return await globals()[fn_name](update, context)
+
+    # Graceful fallback so it never hangs
+    await q.message.reply_text(f"‘{feature}’ isn’t wired yet. (Button received ok.)")
+
+
+async def coach_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Routes AI Coach buttons emitted from Predict result cards."""
+    q = update.callback_query
+    data = (q.data or "").strip()
+    await q.answer()
+
+    # We accept: menu_coach, coach:start, coach:adjust[:...], coach:save[:...]
+    if data in ("menu_coach", "coach:start"):
+        fn = globals().get("coach_start")
+        if callable(fn):
+            log.debug("coach_router -> coach_start")
+            await fn(update, context)
+            return
+
+    if data.startswith("coach:adjust"):
+        fn = globals().get("coach_adjust_cb")
+        if callable(fn):
+            log.debug("coach_router -> coach_adjust_cb")
+            await fn(update, context)
+            return
+
+    if data.startswith("coach:save"):
+        fn = globals().get("coach_save_cb")
+        if callable(fn):
+            log.debug("coach_router -> coach_save_cb")
+            await fn(update, context)
+            return
+
+    await q.message.reply_text("Coach action isn’t available right now.")
+    log.warning("Coach router: unhandled data=%r", data)
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 def tri_inline(prefix: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -3645,9 +6862,20 @@ async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ok = await guard_or_block(update, context, "ask")
     if not ok:
         return ConversationHandler.END
+<<<<<<< HEAD
     log.info("ask_start()")
     context.user_data.pop("ask_subject", None)
     context.user_data.pop("ask_last_question", None)
+=======
+
+    log.info("ask_start()")
+
+    # Clear any stale follow-up context (old and new keys)
+    ud = context.user_data
+    for k in ("ask_subject", "ask_last_question", "ask_last_answer", "ask_more_ctx"):
+        ud.pop(k, None)
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     tgt = _target(update)
     await tgt.reply_text(
         "💬 *Ask a NEET doubt*\nFirst, pick a subject (optional).",
@@ -3662,7 +6890,11 @@ async def ask_subject_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if text == "cancel":
         unlock_flow(context)
         await update.message.reply_text("Ask cancelled.", reply_markup=ReplyKeyboardRemove())
+<<<<<<< HEAD
         await show_menu(update)
+=======
+        await show_menu(update, context)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         return ConversationHandler.END
     if text != "skip" and text not in {"physics", "chemistry", "zoology", "botany", "counselling"}:
         await update.message.reply_text("Choose from buttons (or Skip).", reply_markup=ask_subject_keyboard())
@@ -3755,16 +6987,27 @@ async def _gen_quick_qna(*, subject: str | None, concept: str | None, n: int = 5
     if not blocks:
         safe = html.escape(raw)
         safe = safe.replace("\n", "\n")  # keep as lines; no <br> in Telegram
+<<<<<<< HEAD
         return True, f"<b>Quick Q&A</b>\n{safe}"
+=======
+        return True, f"Quick Q&A\n{safe}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
     # Trim to n
     blocks = blocks[:n]
 
     # Build HTML (no <br>, just \n)
+<<<<<<< HEAD
     out_lines = ["<b>Quick Q&A</b>"]
     for i, (q, a) in enumerate(blocks, 1):
         out_lines.append(f"{i}) <b>Q:</b> {html.escape(q)}")
         out_lines.append(f"    <b>A:</b> {html.escape(a)}")
+=======
+    out_lines = ["Quick Q&A"]
+    for i, (q, a) in enumerate(blocks, 1):
+        out_lines.append(f"{i}) Q: {html.escape(q)}")
+        out_lines.append(f"    A: {html.escape(a)}")
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return True, "\n".join(out_lines)
 
 def _ask_followup_markup():
@@ -3772,7 +7015,11 @@ def _ask_followup_markup():
     rows = [
         [InlineKeyboardButton("🔁 Similar question", callback_data="ask_more:similar")],
         [InlineKeyboardButton("📚 Explain concept",  callback_data="ask_more:explain")],
+<<<<<<< HEAD
         [InlineKeyboardButton("🧠 Quick Q&A (5)",   callback_data="ask_more:quickqa")],  # <—
+=======
+        [InlineKeyboardButton("🧠 Quick Q&A (5)",   callback_data="ask_more:quickqa")],
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     ]
     return InlineKeyboardMarkup(rows)
         
@@ -3822,6 +7069,7 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # very light sanitizer → HTML-safe + normalize bullets/newlines
     def _clean_to_html(s: str) -> str:
         s = s or ""
+<<<<<<< HEAD
         # If upstream already used <b>, <i>, etc., keep them; escape everything else safely
         # First, escape fully…
         esc = html.escape(s, quote=False)
@@ -3832,6 +7080,13 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # normalize bullets
         esc = esc.replace("&bull;", "•")
         # Telegram HTML supports plain newlines; no <br> needed
+=======
+        esc = html.escape(s, quote=False)
+        esc = esc.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
+        esc = esc.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
+        esc = esc.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+        esc = esc.replace("&bull;", "•")
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         return esc
 
     try:  # OUTER try
@@ -3849,6 +7104,7 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Call solver (guarded; never crash the handler)
         try:
+<<<<<<< HEAD
             ok, res = await ask_openai_vision(q, image_path=None, subject_hint=subject)
         except asyncio.TimeoutError:
             ok, res = False, "The solver timed out. Please try again."
@@ -3856,6 +7112,36 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ok, res = False, f"Error contacting solver: {e}"
 
         text = _clean_to_html(res if ok else f"Error: {res}")
+=======
+            ok, res = await _ask_genai_text(q, subject_hint=subject)
+        except asyncio.TimeoutError:
+            ok, res = False, "The tutor timed out. Please try again."
+        except Exception as e:
+            ok, res = False, f"Error contacting tutor: {e}"
+
+        # Clean + stash legacy keys
+        text = _clean_to_html(res if ok else f"Error: {res}")
+        context.user_data["ask_last_question"] = q
+        context.user_data["ask_last_answer"]  = text if ok else ""
+
+        # >>>>>>>>>>>>>>>>>>  FOLLOW-UP CONTEXT PATCH  <<<<<<<<<<<<<<<<<
+        if ok:
+            detected_subject = context.user_data.get("ask_subject") or "NEET"
+            user_query_text  = q
+            answer_html      = text
+
+            context.user_data["ask_more_ctx"] = {
+                "subject": detected_subject,
+                "question": user_query_text,
+                "answer_text": answer_html,
+                "explanation": "",
+            }
+          # legacy keys (your other code reads these too)
+            context.user_data["ask_subject"] = detected_subject
+            context.user_data["ask_last_question"] = user_query_text
+            context.user_data["ask_last_answer"] = answer_html
+# >>>>>>>>>>>>>>>>>  END FOLLOW-UP CONTEXT PATCH  <<<<<<<<<<<<<<
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
         # Try editing the “working…” message first; if that fails, fall back to sends
         try:
@@ -3942,7 +7228,14 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ok, res = False, "The solver timed out while processing the image. Please try again."
         except Exception as e:
             ok, res = False, f"Error contacting solver: {e}"
+<<<<<<< HEAD
 
+=======
+        
+        context.user_data["ask_last_question"] = caption or "[image question]"
+        context.user_data["ask_last_answer"]  = res if ok else ""
+        
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         text = _clean_to_html(res if ok else f"Error: {res}")
 
         try:
@@ -3977,14 +7270,24 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             unlock_flow(context)
 
 
+<<<<<<< HEAD
 async def ask_followup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from telegram.constants import ChatAction
     import contextlib
+=======
+async def ask_followup_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+    import contextlib, html as _html, re, logging
+    from telegram.constants import ChatAction
+    from telegram.error import BadRequest
+
+    log = logging.getLogger("aceit-bot")
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
     q = update.callback_query
     data = (q.data or "").strip()
     await q.answer()
 
+<<<<<<< HEAD
     subject = context.user_data.get("ask_subject")
     concept = context.user_data.get("ask_last_question")
 
@@ -4395,6 +7698,91 @@ async def quiz_predict_choice_noop(update: Update, context: ContextTypes.DEFAULT
               "quiz_wrongs_buffer"):
         context.user_data.pop(k, None)
     await show_menu(update)
+=======
+    # remove inline buttons on the original message
+    with contextlib.suppress(BadRequest, Exception):
+        await q.edit_message_reply_markup(reply_markup=None)
+
+    # pull stored context
+    ctx_more  = context.user_data.get("ask_more_ctx") or {}
+    subject   = (
+        ctx_more.get("subject")
+        or context.user_data.get("ask_subject")
+        or context.user_data.get("quiz_subject")
+        or "NEET"
+    )
+    last_q    = (ctx_more.get("question") or context.user_data.get("ask_last_question") or "").strip()
+    last_a    = (ctx_more.get("answer_text") or context.user_data.get("ask_last_answer") or "").strip()
+    expl_hint = (ctx_more.get("explanation") or "").strip()
+
+    log.info("[ask_followup] data=%s | subject=%s | len(q)=%d len(a)=%d",
+             data, subject, len(last_q), len(last_a))
+
+    if not last_q:
+        return await context.bot.send_message(
+            chat_id=q.message.chat.id,
+            text="I lost the last question’s context. Please use /ask again.",
+            reply_to_message_id=q.message.message_id,
+        )
+
+    with contextlib.suppress(Exception):
+        await q.message.chat.send_action(action=ChatAction.TYPING)
+
+    # util cleaners to keep plain, Telegram-safe HTML
+    def _plainify(txt: str) -> str:
+        if not txt: return ""
+        txt = txt.replace("**","").replace("__","").replace("_","").replace("•","")
+        txt = re.sub(r"(?m)^\s*([*+-]|\d+[.)])\s+", "", txt)
+        txt = re.sub(r"\n{3,}", "\n\n", txt)
+        return txt.strip()
+
+    def _chunks(s: str, n: int = 3800):
+        s = s or ""
+        for i in range(0, len(s), n):
+            yield s[i:i+n]
+
+    # route by callback
+    mode = data.split(":", 1)[1] if ":" in data else "explain"
+
+    try:
+        if mode in ("quickqa", "qna5"):
+            # your existing quick Q&A generator (works already)
+            if "_gen_quick_qna" in globals():
+                ok, out = await globals()["_gen_quick_qna"](subject=subject, concept=last_q, n=5)
+                result = out if ok else "Couldn't generate quick Q&A right now."
+            else:
+                # small fallback using your call_openai()
+                prompt = (f"Create five short NEET practice Q&A based on the concept below. "
+                          f"Each item is 1–2 lines (Q then A). Separate items by a blank line. "
+                          f"No bullets/numbering.\n\nSubject: {subject}\n\nConcept:\n{last_q}")
+                result = await call_openai(prompt)
+        elif mode == "similar":
+            result = await _ai_followup("similar", subject=subject, concept=last_q)
+        elif mode == "explain":
+            # enrich concept with any known answer/explanation hints
+            concept_text = last_q + (f"\n\nExisting solution (optional):\n{last_a}" if last_a else "")
+            if expl_hint:
+                concept_text += f"\n\nNotes:\n{expl_hint}"
+            result = await _ai_followup("explain", subject=subject, concept=concept_text)
+        elif mode == "flash":
+            result = await _ai_followup("flash", subject=subject, concept=last_q)
+        else:
+            result = "Unknown option."
+    except Exception as e:
+        log.exception("[ask_followup] error")
+        result = f"Sorry—couldn’t generate that right now. ({e})"
+
+    safe_html = _html.escape(_plainify(result) or "Sorry—no response.")
+    for part in _chunks(safe_html):
+        await context.bot.send_message(
+            chat_id=q.message.chat.id,
+            text=part,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_to_message_id=q.message.message_id,
+        )
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 # ========================= Predictor =========================
 CATEGORY_OPTIONS = [["General", "OBC", "EWS", "SC", "ST"]]
@@ -4412,10 +7800,23 @@ def _get_close_from_quota(per_quota_map: Dict[str, Dict[str, Dict[str, int]]],
                           quota: str,
                           college_key: str,
                           category: str) -> Optional[int]:
+<<<<<<< HEAD
     rec = (per_quota_map.get(quota) or {}).get(college_key)
     if not rec:
         return None
     return _get_close_rank_from_rec(rec, category)
+=======
+    candidates = [quota]
+    if quota == "Central":
+        candidates.append("Open")
+    elif quota == "Open":
+        candidates.append("Central")
+    for q_key in candidates:
+        rec = (per_quota_map.get(q_key) or {}).get(college_key)
+        if rec:
+            return _get_close_rank_from_rec(rec, category)
+    return None
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 def _pick_any_quota_record(per_quota_map: Dict[str, Dict[str, Dict[str, int]]],
                            college_key: str,
@@ -4441,7 +7842,11 @@ def get_closing_rank(*,
     Resolve closing rank with strict handling:
       - Quota=='Any' → best among _ALLOWED_ANY_QUOTAS only (no legacy).
       - Quota=='AIQ' → per_quota first, then legacy AIQ fallback allowed.
+<<<<<<< HEAD
       - Quota in {'Deemed','Central'} → per_quota only (NO legacy fallback).
+=======
+      - Quota in {'Deemed','Central','Management'} → per_quota only (NO legacy fallback).
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     """
     per_quota = (CUTOFFS_Q.get(round_key) or {})
     legacy    = (CUTOFFS.get(round_key)   or {})
@@ -4470,14 +7875,25 @@ def get_closing_rank(*,
         if isinstance(cr, int) and ((air is None) or (air <= cr)):
             return cr, "AIQ", "legacy_aiq"
 
+<<<<<<< HEAD
     # For Deemed/Central/NRI etc, do NOT fall back to AIQ
+=======
+    # For Deemed/Central/Management/NRI etc, do NOT fall back to AIQ
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return None, None, "none"
 
 def canonical_quota_ui(text: str) -> str:
     t = _norm_hdr(text)
     if t in {"AIQ","ALL INDIA","ALL INDIA QUOTA"}: return "AIQ"
+<<<<<<< HEAD
     if "DEEMED" in t or "PAID" in t or "MANAGEMENT" in t: return "Deemed"
     if "CENTRAL" in t or t == "CU": return "Central"
+=======
+    if "MANAGEMENT" in t or "PAID" in t: return "Management"
+    if "DEEMED" in t: return "Deemed"
+    if "STATE" in t or t in {"SQ", "HOME", "DOMICILE", "85%", "85 PERCENT"}: return "State"
+    if "CENTRAL" in t or "OPEN" in t or t == "CU": return "Central"  
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     #if "AIIMS" in t:   return "AIIMS"
     #if "JIPMER" in t:  return "JIPMER"
     #if "ESIC" in t:    return "ESIC"
@@ -4489,6 +7905,7 @@ def canonical_quota_ui(text: str) -> str:
 def _quota_bucket_from_ui(v: str) -> str:
     t = str(v or "").strip().upper()
     if t in {"AIQ", "ALL INDIA"}: return "AIQ"
+<<<<<<< HEAD
     if "CENTRAL" in t:            return "Central"
     if "DEEMED" in t or "PAID" in t or "MANAGEMENT" in t: return "Deemed"
     if t in {"ANY", "ALL"}:       return "Any"
@@ -4501,6 +7918,50 @@ def quota_keyboard() -> ReplyKeyboardMarkup:
         resize_keyboard=True,
     )
 
+=======
+    if "STATE" in t:              return "State"
+    if "CENTRAL" in t or "OPEN" in t: return "Central"
+    if "MANAGEMENT" in t or "PAID" in t: return "Management"
+    if "DEEMED" in t:             return "Deemed"
+    if t in {"ANY", "ALL"}:       return "Any"
+    return "AIQ"
+
+def counselling_authority_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[
+            InlineKeyboardButton("MCC", callback_data="predict:counsel:mcc"),
+            InlineKeyboardButton("State", callback_data="predict:counsel:state"),
+        ]]
+    )
+
+
+def quota_keyboard(authority: str = "MCC") -> InlineKeyboardMarkup:
+    authority = (authority or "").strip().lower()
+    buttons: list[list[InlineKeyboardButton]]
+    if authority == "state":
+        buttons = [
+            [
+                InlineKeyboardButton(
+                    "State Quota (requires domicile)",
+                    callback_data="predict:quota:state:State",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Management (Non-Domicile)",
+                    callback_data="predict:quota:state:Management",
+                )
+            ],
+        ]
+    else:
+        buttons = [[
+            InlineKeyboardButton("AIQ",    callback_data="predict:quota:mcc:AIQ"),
+            InlineKeyboardButton("Deemed", callback_data="predict:quota:mcc:Deemed"),
+            InlineKeyboardButton("Central",callback_data="predict:quota:mcc:Central"),
+        ]]
+    return InlineKeyboardMarkup(buttons)
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 def _pick_category_key(v: str) -> str:
     return _canon_cat(v)
 
@@ -4554,7 +8015,11 @@ def _fmt_money(v):
         if not s:
             return "—"
         n = float(s)
+<<<<<<< HEAD
         return f"₹{int(n):,}"
+=======
+        return f"₹{_indian_number_format(int(n))}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     except Exception:
         return "—"
 
@@ -4587,7 +8052,11 @@ def _row_brief(r: dict) -> str:
     cr_txt  = f"Closing Rank {cr}" if cr not in (None, "", "—") else "Closing Rank —"
 
     fee     = r.get("total_fee") or r.get("Fee")
+<<<<<<< HEAD
     fee_txt = f"Annual Fee {_fmt_money(fee)}"
+=======
+    fee_txt = f"Total Fee {_fmt_money(fee)}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
     header = f"{name}, {addr}".strip().rstrip(",")
     return f"{header}\n{cr_txt}\n{fee_txt}"
@@ -4731,13 +8200,61 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     id_col    = _pick_col_local(cols, "college_id", "College ID", "id")
     nirf_col  = _pick_col_local(cols, "nirf_rank_medical_latest", "NIRF", "nirf")
     fee_col   = _pick_col_local(cols, "total_fee", "Fee")
+<<<<<<< HEAD
+=======
+    authority_col = _pick_col_local(cols, "counselling_authority", "counseling_authority", "counselling authority", "Counselling Authority", "authority")
+    domreq_col = _pick_col_local(
+        cols,
+        "domicile_required",
+        "domicile requirement",
+        "domicile_required?",
+        "Domicile Required",
+        "domicile req",
+        "dom_req",
+    )
+
+    def _parse_dom_req(val: Any) -> Optional[bool]:
+        raw = str(val or "").strip().lower()
+        if not raw:
+            return None
+        if raw in {"y", "yes", "true", "1"}:
+            return True
+        if raw in {"n", "no", "false", "0"}:
+            return False
+        return None
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
     # ---- user prefs ----
     quota_ui  = _canon_quota(user.get("quota") or user.get("pref_quota") or "AIQ")
     category  = _canon_cat(user.get("category"))
     air       = _safe_int(user.get("rank_air") or user.get("air"))
     round_key = user.get("cutoff_round") or user.get("round") or "2025_R1"
+<<<<<<< HEAD
 
+=======
+    domicile  = _canon_state(user.get("domicile_state"))
+    domicile_state_norm = _norm_state_name(domicile) if domicile else None
+    state_pref = _canon_state(user.get("state_counselling_state"))
+
+    authority_pref_raw = user.get("counselling_authority")
+    authority_pref = _norm_hdr(authority_pref_raw) if authority_pref_raw else ""
+    if authority_pref:
+        authority_pref = "STATE" if "STATE" in authority_pref else "MCC"
+
+    dom_required_pref = user.get("domicile_required")
+    if isinstance(dom_required_pref, str):
+        dom_required_pref = dom_required_pref.strip().lower() in {"y", "yes", "true", "1"}
+    elif dom_required_pref is not None:
+        dom_required_pref = bool(dom_required_pref)
+    enforce_state_quota = quota_ui == "State" and domicile is not None
+    if enforce_state_quota:
+        state_results = _state_quota_from_cutoffs(round_key, domicile, category, air)
+        if state_results:
+            return state_results[:30]
+        return []
+    enforce_domicile = bool(dom_required_pref and domicile_state_norm)
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     for _, r in colleges_df.iterrows():
         code_key = _norm_key(r.get(code_col)) if code_col else ""
         id_key   = _norm_key(r.get(id_col))   if id_col   else ""
@@ -4751,10 +8268,54 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             or "Unknown college"
         )
 
+<<<<<<< HEAD
         # Prefer code, then id, then normalized name
         college_key = code_key or id_key or _name_key(raw_name)
 
         # 1) canonical resolver (CUTOFFS_Q / CUTOFFS)
+=======
+       
+        college_key = code_key or id_key or _name_key(raw_name)
+
+        state_val_raw = str(r.get(state_col)).strip() if state_col else ""
+        state_canon = _canon_state(state_val_raw) if state_val_raw else None
+
+        authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
+
+        if authority_pref == "MCC":
+            if authority_col and authority_val:
+                if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                    continue
+        elif authority_pref == "STATE":
+            if authority_val and any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
+                continue
+            if authority_val and "STATE" not in authority_val and state_pref:
+                state_token = _norm_hdr(state_pref)
+                if state_token and state_token not in authority_val:
+                    continue
+
+        dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
+        if dom_required_pref is not None:
+            if dom_required_pref:
+                if dom_flag is not True:
+                    continue
+            else:
+                # Treat unknown values (None) as eligible for no-domicile requests.
+                if dom_flag is True:
+                    continue
+        
+
+        if enforce_state_quota and (state_canon is None or state_canon != domicile):
+            continue
+
+        if authority_pref == "STATE" and state_pref:
+            if state_canon is None or state_canon != state_pref:
+                continue
+        
+        
+        if enforce_domicile and (state_canon is None or state_canon != domicile):
+            continue
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         close_rank, quota_used, src = get_closing_rank(
             college_key=college_key,
             round_key=round_key,
@@ -4763,14 +8324,22 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             air=air
         )
 
+<<<<<<< HEAD
         # 2) fallback to the flat lookup provided (CUTOFF_LOOKUP)
+=======
+        
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         if close_rank is None:
             keys = [k for k in (code_key, id_key, _name_key(raw_name)) if k]
             cr2 = _resolve_from_flat_lookup(keys, quota_ui, category)
             if isinstance(cr2, int):
                 close_rank, quota_used, src = cr2, quota_ui, "flat_lookup"
 
+<<<<<<< HEAD
         # eligibility
+=======
+        
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         if close_rank is None:
             continue
         if air is not None and air > close_rank:
@@ -4778,8 +8347,18 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
         nirf_val  = _safe_int(r.get(nirf_col)) if nirf_col else None
         fee_val   = _safe_int(r.get(fee_col))  if fee_col  else None
+<<<<<<< HEAD
         state_val = (str(r.get(state_col)).strip() if state_col else "—")
 
+=======
+        state_val = state_val_raw or (state_canon or "—")
+        if quota_ui == "State":
+            if not domicile_state_norm:
+                continue
+            if _norm_state_name(state_val) != domicile_state_norm:
+                continue
+                
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         out.append({
             "college_id":   (str(r.get(id_col)) if id_col else None),
             "college_code": (str(r.get(code_col)) if code_col else None),
@@ -4795,17 +8374,74 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
         })
 
     # ------ ONLY CHANGE HERE: if no results and AIR was provided, return [] ------
+<<<<<<< HEAD
+=======
+    fallback_allowed_with_air = (
+        air is not None
+        and authority_pref == "STATE"
+        and quota_ui in {"Open", "Management"}
+        and dom_required_pref is False
+    )
+
+    # Allow metadata fallback when AIR is present only for State Open/Management without domicile requirement.
+    if not out:
+        if air is not None and not fallback_allowed_with_air:
+            return []
+        # metadata-only fallback (kept for when AIR not provided)
+        tmp = []
+
+    
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     if not out:
         if air is not None:
             return []
         # metadata-only fallback (kept for when AIR not provided)
         tmp = []
         for _, r in colleges_df.iterrows():
+<<<<<<< HEAD
+=======
+            state_raw = str(r.get(state_col)).strip() if state_col else ""
+            state_norm = _canon_state(state_raw) if state_raw else None
+            if enforce_state_quota and (state_norm is None or state_norm != domicile):
+                continue
+            if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
+                continue
+
+            authority_val = _norm_hdr(r.get(authority_col)) if authority_col else ""
+            if authority_pref == "MCC":
+                if authority_col and authority_val:
+                    if not any(token in authority_val for token in {"MCC", "DGHS", "ALL INDIA"}):
+                        continue
+            elif authority_pref == "STATE" and authority_val:
+                if any(token in authority_val for token in {"MCC", "DGHS", "DEEMED", "CENTRAL"}):
+                    continue
+                if "STATE" not in authority_val and state_pref:
+                    state_token = _norm_hdr(state_pref)
+                    if state_token and state_token not in authority_val:
+                        continue
+            dom_flag = _parse_dom_req(r.get(domreq_col)) if domreq_col else None
+            if dom_required_pref is not None:
+                if dom_required_pref:
+                    if dom_flag is not True:
+                        continue
+                else:
+                    if dom_flag is True:
+                        continue
+                        
+            if enforce_domicile and (state_norm is None or state_norm != domicile):
+                continue
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
             tmp.append({
                 "college_id":   (str(r.get(id_col)) if id_col else None),
                 "college_code": (str(r.get(code_col)) if code_col else None),
                 "college_name": (str(r.get(name_col)).strip() if name_col else "Unknown college"),
+<<<<<<< HEAD
                 "state":        (str(r.get(state_col)).strip() if state_col else "—"),
+=======
+                "state":        state_raw or (state_norm or "—"),
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
                 "close_rank":   None,
                 "category":     category,
                 "quota":        quota_ui,
@@ -4854,7 +8490,45 @@ async def cutdiag(update, context):
     )
     await update.effective_chat.send_message(msg)
 
+<<<<<<< HEAD
 async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+=======
+async def predict_mockrank_collect_size_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    try:
+        await q.answer()
+    except Exception:
+        pass
+
+    # parse size from callback data "mock:size:<N>"
+    try:
+        size = int((q.data or "").split(":")[-1])
+    except Exception:
+        size = None
+
+    if not size or size <= 0:
+        try:
+            await q.message.reply_text("Pick a valid list size.")
+        except Exception:
+            pass
+        return ASK_MOCK_SIZE
+
+    context.user_data["mock_size"] = size
+
+    # (continue exactly like your text-size handler does)
+    # Example: ask the next question in flow, or call your compute/predict
+    return await predict_mockrank_next_step(update, context)  # <-- or whatever your next step is
+    
+
+async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    log.debug(
+        "[predict_mockrank_start] update_id=%s via=%s msg_id=%s cq_id=%s",
+        getattr(update, "update_id", None),
+        "callback" if getattr(update, "callback_query", None) else "message",
+        getattr(getattr(update, "message", None), "message_id", None),
+        getattr(getattr(update, "callback_query", None), "id", None),
+    )
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     blocked = _start_flow(context, "predict")
     if blocked and blocked != "predict":
         tgt = _target(update)
@@ -4885,6 +8559,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
 
     mock_rank = context.user_data.get("mock_rank")
     size = int(txt)
+<<<<<<< HEAD
     # percentile among participants: higher is better
     # Percentile ~ (1 - (rank-1)/size) * 100
     pct = max(0.0, min(100.0, (1.0 - (max(1, mock_rank)-1) / max(1, size)) * 100.0))
@@ -4901,6 +8576,100 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
         parse_mode="Markdown",
         reply_markup=kb,
     )
+=======
+
+     # Neutral percentile (lower rank => smaller percentile fraction)
+    percentile = max(0.0, min(1.0, max(1, mock_rank) / max(1, size)))
+
+    neutral_air = max(1, int(round(percentile * NEET_CANDIDATE_POOL_DEFAULT)))
+    bias_lower = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_MIN)))
+    bias_upper = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_MAX)))
+    adjusted_air = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_DEFAULT)))
+    
+    
+
+    context.user_data["rank_air"] = adjusted_air
+    context.user_data["mock_neutral_air"] = neutral_air
+    context.user_data["mock_air_band"] = (bias_lower, bias_upper)
+    
+    profile = get_user_profile(update)
+    saved_quota = canonical_quota_ui(profile.get("pref_quota") or profile.get("quota") or "")
+    saved_cat = canonical_category(profile.get("category")) if profile.get("category") else None
+    saved_dom = profile.get("domicile_state")
+
+    if saved_quota in {"AIQ", "Deemed", "Central", "State", "Management"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
+        context.user_data["quota"] = saved_quota
+        context.user_data["category"] = saved_cat
+        context.user_data["awaiting_counselling"] = False
+        if saved_quota in {"AIQ", "Deemed", "Central"}:
+            context.user_data["counselling_authority"] = "MCC"
+            context.user_data["domicile_required"] = None
+            context.user_data.pop("domicile_state", None)
+            context.user_data.pop("state_counselling_state", None)
+            context.user_data.pop("state_counselling_state_raw", None)
+        else:
+            context.user_data["counselling_authority"] = "State"
+            state_norm = _canon_state(saved_dom) if saved_dom else None
+            if state_norm:
+                context_user_state_norm = state_norm
+                context.user_data["state_counselling_state"] = state_norm
+                context.user_data["state_counselling_state_raw"] = saved_dom
+            if saved_quota == "Management":
+                context.user_data["domicile_required"] = False
+                context.user_data.pop("domicile_state", None)
+            else:
+                context.user_data["domicile_required"] = True
+                if saved_dom:
+                    context.user_data["domicile_state"] = saved_dom
+
+        context.user_data["awaiting_state_quota"] = False
+        context.user_data["awaiting_state_name"] = False
+
+        
+        dom_ok = True
+        if context.user_data.get("counselling_authority") == "State":
+            dom_ok = (not context.user_data.get("domicile_required")) or bool(context.user_data.get("domicile_state"))
+        
+        if dom_ok:
+            msg = (
+                f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
+                f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,}\n\n"
+                f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
+                )
+        if saved_quota == "State" and saved_dom:
+            msg += f", domicile *{saved_dom}*"
+        msg += "\n\nTap /profile to change defaults."
+
+        await update.message.reply_text(
+            msg,
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("📋 Show Colleges", callback_data="predict:showlist")]]
+                ),
+            
+        )
+        context.user_data["pending_predict_summary"] = True
+        _end_flow(context, "predict")
+        return ConversationHandler.END
+
+    
+    msg = (
+        f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
+        f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
+        "Select your *counselling authority*:"
+    )
+    await update.message.reply_text(
+        msg,
+        parse_mode="Markdown",
+        reply_markup=counselling_authority_keyboard(),
+    )
+    context.user_data.pop("pending_predict_summary", None)
+    return ASK_COUNSELLING
+    context.user_data.pop("counselling_authority", None)
+    context.user_data.pop("domicile_required", None)
+    context.user_data.pop("awaiting_state_quota", None)
+    context.user_data["awaiting_counselling"] = True
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return ASK_QUOTA
 
 
@@ -4915,7 +8684,28 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return ConversationHandler.END
 
+<<<<<<< HEAD
     for k in ("r", "category", "weights", "require_pg_quota", "avoid_bond", "domicile_state", "quota", "rank_air"):
+=======
+    for k in (
+        "r",
+        "category",
+        "weights",
+        "require_pg_quota",
+        "avoid_bond",
+        "domicile_state",
+        "quota",
+        "rank_air",
+        "counselling_authority",
+        "domicile_required",
+        "_cat_hint",
+        "awaiting_counselling",
+        "awaiting_state_quota",
+        "awaiting_state_name",
+        "state_counselling_state",
+        "state_counselling_state_raw",
+    ):
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         context.user_data.pop(k, None)
 
     tgt = _target(update)
@@ -4923,6 +8713,10 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          reply_markup=ReplyKeyboardRemove())
     return ASK_AIR
 
+<<<<<<< HEAD
+=======
+    
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 # ========== DEBUG: show loaded cutoff record for a college ==========
 async def debug_loaded_record(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
@@ -5004,6 +8798,7 @@ async def debug_loaded_record(update: Update, context: ContextTypes.DEFAULT_TYPE
         log.exception("debug_loaded_record failed")
         await update.message.reply_text(f"Error: {e}")
 
+<<<<<<< HEAD
 async def predict_from_quiz_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.callback_query:
         return ConversationHandler.END
@@ -5037,6 +8832,9 @@ async def predict_from_quiz_entry(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=kb,
     )
     return ASK_QUOTA
+=======
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 async def cutoff_probe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = " ".join(context.args or [])
@@ -5127,6 +8925,7 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         cat_hint = ""
 
+<<<<<<< HEAD
     kb = quota_keyboard()
     await update.message.reply_text(
         "Select your admission *quota* for prediction:"
@@ -5135,11 +8934,27 @@ async def on_air(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "\n• *Central* = Central Universities"
       #  "\n• *AIIMS/JIPMER/ESIC/AFMS* as applicable"
         f"{cat_hint}",
+=======
+    context.user_data["_cat_hint"] = cat_hint
+    context.user_data.pop("counselling_authority", None)
+    context.user_data.pop("domicile_required", None)
+    context.user_data.pop("awaiting_state_quota", None)
+    context.user_data.pop("awaiting_state_name", None)
+    context.user_data.pop("state_counselling_state", None)
+    context.user_data.pop("state_counselling_state_raw", None)
+    context.user_data["awaiting_counselling"] = True
+    kb = counselling_authority_keyboard()
+    await update.message.reply_text(
+        "Select your *counselling authority* for prediction:"
+        "\n• *MCC* = National rounds (AIQ / Deemed / Central)"
+        "\n• *State* = Individual state counselling rounds",
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         parse_mode="Markdown",
         reply_markup=kb,
     )
     return ASK_QUOTA
 
+<<<<<<< HEAD
 
 async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = canonical_quota_ui(update.message.text or "")
@@ -5152,6 +8967,202 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = ReplyKeyboardMarkup([["General", "OBC", "EWS", "SC", "ST"]],
                              one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text("Select your category:", reply_markup=kb)
+=======
+async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cq = update.callback_query
+    message = cq.message if cq and cq.message else update.message
+    cat_hint = context.user_data.get("_cat_hint", "")
+
+    async def _text_reply(
+        text: str,
+        *,
+        parse_mode: Optional[str] = None,
+        reply_markup: Optional[InlineKeyboardMarkup | ReplyKeyboardMarkup] = None,
+    ) -> None:
+        if message:
+            await message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+        else:
+            chat = update.effective_chat
+            if chat:
+                await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=text,
+                    parse_mode=parse_mode,
+                    reply_markup=reply_markup,
+                )
+
+    def _store_state_name(state_input: str) -> tuple[bool, str | None]:
+        cleaned = (state_input or "").strip()
+        if not cleaned:
+            return False, "Please type the counselling state (e.g., Karnataka)."
+        norm = _canon_state(cleaned)
+        if not norm:
+            return False, "Couldn’t recognize that state. Please type full state name (e.g., Karnataka)."
+        context.user_data["state_counselling_state"] = norm
+        context.user_data["state_counselling_state_raw"] = cleaned
+        return True, None
+        
+    action: Optional[str] = None
+    choice_raw = ""
+    text_raw = ""
+
+    if cq:
+        data = cq.data or ""
+        parts = data.split(":")
+        if len(parts) < 3 or parts[0] != "predict":
+            await cq.answer()
+            return ASK_QUOTA
+        action = parts[1]
+        if action == "quota":
+            choice_raw = parts[-1]
+            text_raw = choice_raw
+        elif action in {"counsel", "domreq"}:
+            choice_raw = parts[2]
+        await cq.answer()
+        with contextlib.suppress(Exception):
+            await cq.edit_message_reply_markup(None)
+
+    else:
+        raw = (message.text if message else "").strip()
+        text_raw = raw
+        lower = raw.lower()
+
+        if context.user_data.get("awaiting_state_name"):
+            ok, error_msg = _store_state_name(raw)
+            if not ok:
+                await message.reply_text(error_msg)
+                return ASK_QUOTA
+            context.user_data["awaiting_state_name"] = False
+            context.user_data["awaiting_state_quota"] = True
+            context.user_data.pop("domicile_required", None)
+            context.user_data.pop("domicile_state", None)
+            await message.reply_text(
+                "Select your state counselling quota:",
+                reply_markup=quota_keyboard("State"),
+            )
+            return ASK_QUOTA
+        if context.user_data.get("awaiting_counselling"):
+            action = "counsel"
+            choice_raw = lower
+        elif context.user_data.get("awaiting_state_quota"):
+            action = "quota"
+            choice_raw = raw
+        else:
+            action = "quota"
+            choice_raw = raw
+
+    if action == "counsel":
+        choice_lower = choice_raw.lower()
+        if choice_lower not in {"mcc", "state"}:
+            await _text_reply(
+                "Pick either MCC or State counselling.",
+                reply_markup=counselling_authority_keyboard(),
+            )
+            return ASK_QUOTA
+        authority = "MCC" if choice_lower == "mcc" else "State"
+        context.user_data["counselling_authority"] = authority
+        context.user_data["awaiting_counselling"] = False
+        context.user_data.pop("domicile_required", None)
+        context.user_data["awaiting_state_quota"] = True
+
+        if authority == "MCC":
+            context.user_data.pop("domicile_state", None)
+            context.user_data.pop("state_counselling_state", None)
+            context.user_data.pop("state_counselling_state_raw", None)
+            msg = (
+                "Select your admission *quota* under MCC counselling:"
+                "\n• *AIQ* = All India Quota (MCC)"
+                "\n• *Deemed* = Deemed Universities"
+                "\n• *Central* = Central Universities"
+            )
+            if cat_hint:
+                msg += cat_hint
+            await _text_reply(msg, parse_mode="Markdown", reply_markup=quota_keyboard("MCC"))
+        else:
+            if context.user_data.get("state_counselling_state"):
+                context.user_data["awaiting_state_name"] = False
+                context.user_data["awaiting_state_quota"] = True
+                await _text_reply(
+                    "Select your state counselling quota:",
+                    reply_markup=quota_keyboard("State"),
+                )
+            else:
+                context.user_data["awaiting_state_name"] = True
+                await _text_reply(
+                    "Type your counselling *state* (e.g., Punjab, Delhi).",
+                    parse_mode="Markdown",
+                )
+        return ASK_QUOTA
+
+    if action != "quota":
+        return ASK_QUOTA
+
+    text_raw = (choice_raw or text_raw).strip()
+    q = canonical_quota_ui(text_raw)
+
+    authority = context.user_data.get("counselling_authority") or "MCC"
+
+    if authority == "State" and not context.user_data.get("state_counselling_state"):
+        context.user_data["awaiting_state_name"] = True
+        await _text_reply(
+            "Please type your counselling state before choosing a quota.",
+            parse_mode="Markdown",
+        )
+        return ASK_QUOTA
+    
+    if authority == "State":
+        allowed = {"State", "Management"}
+    else:
+        allowed = {"AIQ", "Deemed", "Central"}
+
+    if not q or q not in allowed:
+        await _text_reply(
+            "Pick a valid quota.",
+            reply_markup=quota_keyboard(authority, dom_required),
+        )
+        return ASK_QUOTA
+
+    if authority == "State":
+        context.user_data["awaiting_state_quota"] = False
+        if q == "State":
+            context.user_data["domicile_required"] = True
+            raw_state = context.user_data.get("state_counselling_state_raw")
+            if raw_state:
+                context.user_data["domicile_state"] = raw_state
+        else:
+            context.user_data["domicile_required"] = False
+            context.user_data.pop("domicile_state", None)
+    else:
+        context.user_data.pop("domicile_required", None)
+    if authority == "MCC" and q == "Open":
+        q = "Central"
+    
+    context.user_data["quota"] = q
+    context.user_data.pop("awaiting_counselling", None)
+    context.user_data.pop("awaiting_state_name", None)
+
+    if authority == "MCC" and q == "Deemed":
+        # Deemed quota does not differentiate by category/domicile; go straight to results.
+        context.user_data["category"] = "General"
+        context.user_data.pop("domicile_state", None)
+        context.user_data.pop("pending_predict_summary", None)
+        context.user_data["require_pg_quota"] = None
+        context.user_data["avoid_bond"] = None
+        context.user_data.pop("_cat_hint", None)
+        await _text_reply(
+            "Deemed quota applies to all categories. Fetching eligible colleges…"
+        )
+        return await _finish_predict_now(update, context)
+
+  
+    
+    kb = ReplyKeyboardMarkup(
+        [["General", "OBC", "EWS", "SC", "ST"]],
+        one_time_keyboard=True,
+        resize_keyboard=True,
+    )
+    await _text_reply("Select your category:", reply_markup=kb)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return ASK_CATEGORY
 
 async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5163,11 +9174,47 @@ async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASK_CATEGORY
 
     context.user_data["category"] = cat
+<<<<<<< HEAD
     kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Type your *domicile state* (e.g., Delhi, Uttar Pradesh) or tap *Skip*.",
         parse_mode="Markdown", reply_markup=kb
     )
+=======
+    quota = context.user_data.get("quota") or "AIQ"
+    dom_required = bool(context.user_data.get("domicile_required"))
+    domicile_state = context.user_data.get("domicile_state")
+    need_domicile = (quota == "State") or dom_required
+
+    if need_domicile and not domicile_state:
+        raw_state = context.user_data.get("state_counselling_state_raw")
+        if raw_state:
+            context.user_data["domicile_state"] = raw_state
+            domicile_state = raw_state
+    
+    if not need_domicile or (need_domicile and domicile_state):
+        context.user_data.pop("pending_predict_summary", None)
+        context.user_data["require_pg_quota"] = None
+        context.user_data["avoid_bond"] = None
+        context.user_data.pop("_cat_hint", None)
+        await update.message.reply_text(
+            "Great! Fetching colleges for your selection…",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return await _finish_predict_now(update, context)
+    
+    prompt = (
+        "Domicile is required for this selection. Type your *domicile state* (e.g., Delhi, Uttar Pradesh)"
+        " or tap *Skip* to use the saved value from /profile."
+    )
+    
+    kb = ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text(
+        prompt,
+        parse_mode="Markdown", reply_markup=kb
+    )
+    context.user_data.pop("_cat_hint", None)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return ASK_DOMICILE
 
 async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5177,14 +9224,86 @@ async def on_domicile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         prof = get_user_profile(update)
         context.user_data["domicile_state"] = prof.get("domicile_state")
+<<<<<<< HEAD
 
     # Do NOT ask for PG/bond now; keep features inactive:
     context.user_data["require_pg_quota"] = None
     context.user_data["avoid_bond"] = None
+=======
+    context.user_data.pop("pending_predict_summary", None)
+
+    
+    dom_required = bool(context.user_data.get("domicile_required"))
+    quota = context.user_data.get("quota") or "AIQ"
+    need_domicile = (quota == "State") or dom_required
+    if need_domicile and not context.user_data.get("domicile_state"):
+        await update.message.reply_text(
+            "This selection requires your domicile state. Please type it (e.g., Delhi, Karnataka).",
+            reply_markup=ReplyKeyboardMarkup([["Skip"]], one_time_keyboard=True, resize_keyboard=True)
+        )
+        return ASK_DOMICILE
+            
+    # Do NOT ask for PG/bond now; keep features inactive:
+    context.user_data["require_pg_quota"] = None
+    context.user_data["avoid_bond"] = None
+    context.user_data.pop("_cat_hint", None)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
     # Go straight to results (no scoring / no preference UI)
     return await _finish_predict_now(update, context)
 
+<<<<<<< HEAD
+=======
+async def _generate_quiz_explanation(q: dict, chosen_index: int) -> str:
+    try:
+        question_text = str(q.get("question") or "").strip()
+        options_raw = q.get("options") or []
+        options = [str(opt) for opt in options_raw]
+        if not question_text or not options:
+            return ""
+
+        correct_index = int(q.get("answer_index", 0))
+        labels = [chr(65 + i) for i in range(len(options))]
+        option_lines = "\n".join(f"{labels[i]}) {options[i]}" for i in range(len(options)))
+
+        try:
+            chosen_label = labels[chosen_index]
+            chosen_text = options[chosen_index]
+        except Exception:
+            chosen_label = "?"
+            chosen_text = "(invalid option)"
+
+        try:
+            correct_label = labels[correct_index]
+            correct_text = options[correct_index]
+        except Exception:
+            correct_label = "?"
+            correct_text = q.get("answer_text") or ""
+
+        prompt = (
+            "You are a NEET UG teacher. Analyse the multiple-choice question below and respond in plain text.\n"
+            f"Question: {question_text}\n"
+            f"Options:\n{option_lines}\n\n"
+            f"Correct answer: {correct_label}) {correct_text}\n"
+            f"Student selected: {chosen_label}) {chosen_text}\n\n"
+            "Explain in at most 150 words why the correct answer is right and why each other option is wrong.\n"
+            "Format strictly as:\n"
+            "✅ Why the correct answer is right: <2 sentences>\n"
+            "❌ Why the other options are wrong:\n"
+            "- <label>) <option text>: <reason>\n"
+            "Use the same bullet characters shown above. Avoid Markdown or LaTeX."
+        )
+
+        explanation = await call_openai(prompt, max_output_tokens=400)
+        if explanation:
+            return explanation.strip()
+        return ""
+    except Exception:
+        log.exception("[quiz] explanation generation failed")
+        return ""
+        
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 async def on_pg_req_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -5210,10 +9329,13 @@ async def on_bond_avoid_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     val = (q.data or "bond:any").split(":", 1)[-1]
     context.user_data["avoid_bond"] = {"yes": True, "no": False}.get(val, None)
+<<<<<<< HEAD
 
     kb = ReplyKeyboardMarkup([["Balanced", "Low Fee", "Top Ranked", "Safety First"]],
                              one_time_keyboard=True, resize_keyboard=True)
     await q.message.reply_text("Pick your preference profile (Choose Top Ranked for now):", reply_markup=kb)
+=======
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return ASK_PREF
 
 async def on_pg_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5230,10 +9352,13 @@ async def on_pg_req(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def on_bond_avoid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = (update.message.text or "").strip().lower()
     context.user_data["avoid_bond"] = True if t == "yes" else False if t == "no" else None
+<<<<<<< HEAD
 
     kb = ReplyKeyboardMarkup([["Balanced", "Low Fee", "Top Ranked", "Safety First"]],
                              one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text("Pick your preference profile (Choose Top Ranked for now):", reply_markup=kb)
+=======
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return ASK_PREF
 
 def _pretty_website(url: str) -> str:
@@ -5244,26 +9369,38 @@ def _pretty_website(url: str) -> str:
     u = u.rstrip("/")
     return f"www.{u}" if not u.startswith(("www.",)) else u
 
+<<<<<<< HEAD
 async def _unknown_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     if not q or not q.data:
         return
     # Silently acknowledge so Telegram stops the “loading” spinner
+=======
+async def _unknown_cb(update, context):
+    q = update.callback_query
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     try:
         await q.answer()
     except Exception:
         pass
+<<<<<<< HEAD
     # Best-effort: remove inline keyboard from that old message
     try:
         await q.message.edit_reply_markup(None)
     except Exception:
         pass
+=======
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
 # ========================= Global /cancel & Errors =========================
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     unlock_flow(context)
     await update.message.reply_text("Cancelled. Back to menu.")
+<<<<<<< HEAD
     await show_menu(update)
+=======
+    await show_menu(update, context)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return ConversationHandler.END
 
 
@@ -5274,7 +9411,11 @@ async def cancel_predict(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         if update.callback_query and update.callback_query.message:
             await update.callback_query.message.reply_text("Prediction cancelled.", reply_markup=ReplyKeyboardRemove())
+<<<<<<< HEAD
     await show_menu(update)
+=======
+    await show_menu(update, context)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     return ConversationHandler.END
 
 
@@ -5486,6 +9627,7 @@ try:
                                     row.setdefault("quota", quota)
                                     row.setdefault("category", category)
                                     rows.append(row)
+<<<<<<< HEAD
                 # fallback: flat dict keyed by tuples {(code, quota, category): {...}}
                 if not rows:
                     for key, val in lookup.items():
@@ -5498,6 +9640,49 @@ try:
                             if len(key) >= 3:
                                 row.setdefault("category", key[2])
                             rows.append(row)
+=======
+                
+                if not rows:
+                    for key, val in lookup.items():
+                        if not isinstance(key, tuple) or len(key) == 0:
+                            continue
+
+                        row: dict[str, Any] = {}
+
+                        ident = str(key[0]).strip()
+                        if ident:
+                            if _CODE_RE.match(ident):
+                                row["college_code"] = ident
+                            else:
+                                row["college_id"] = ident
+
+                        if len(key) >= 2 and key[1]:
+                            row["quota"] = key[1]
+                        if len(key) >= 3 and key[2]:
+                            row["category"] = key[2]
+
+                        if isinstance(val, dict):
+                            row.update({k: v for k, v in val.items() if k not in row})
+                            close_val = None
+                            for key_name in ("ClosingRank", "closing_rank", "closing", "rank", "close_rank"):
+                                if key_name in val and close_val is None:
+                                    close_val = _value_to_closing(val[key_name])
+                            if close_val is None:
+                                close_val = _value_to_closing(val)
+                        else:
+                            close_val = _value_to_closing(val)
+
+                        if close_val is None:
+                            continue
+
+                        row.setdefault("ClosingRank", close_val)
+
+                        # Provide a round so downstream filters do not drop rows.
+                        if "round_code" not in row:
+                            row["round_code"] = globals().get("ACTIVE_CUTOFF_ROUND_DEFAULT", "2025_R1")
+
+                        rows.append(row)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
             return pd.DataFrame(rows)
 
         def build_cutoffs_df(lookup, colleges) -> pd.DataFrame:
@@ -5568,7 +9753,11 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     Build shortlist with current context (no scoring, no extra prompts).
     Sends ONE compact message + an 'AI Notes' button.
+<<<<<<< HEAD
     Also: if no results under the chosen quota, suggest Deemed colleges (fee low → high).
+=======
+    If no colleges match, notifies the user and ends the flow.
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     """
     # ---------- small local helpers (self-contained) ----------
     
@@ -5616,7 +9805,11 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
             if _is_missing(v):
                 return "—"
             n = float(str(v).replace(",", "").strip())
+<<<<<<< HEAD
             return f"₹{int(n):,}"
+=======
+            return f"₹{_indian_number_format(int(n))}"
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         except Exception:
             return "—"
 
@@ -5668,6 +9861,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         df_lookup = context.application.bot_data.get("CUTOFFS_DF", None)
 
+<<<<<<< HEAD
         # ---------- No results? Show Deemed (fee low → high) ----------
         if not results:
             deemed = _sorted_deemed_by_fee(COLLEGES, limit=10)
@@ -5712,6 +9906,20 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
 
             # If even deemed list is empty
             await context.bot.send_message(chat_id=chat_id, text=f"{header_plain}\n\nNo colleges found.")
+=======
+       # ---------- No results? Notify user and exit ----------
+        if not results:
+            quota = (user or {}).get("quota") or "AIQ"
+            category = (user or {}).get("category") or "General"
+
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"{header_plain}\n\n"
+                    f"Couldn’t find matches under {quota} / {category}."
+                ),
+            )
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
             _end_flow(context, "predict")
             return ConversationHandler.END
 
@@ -5719,6 +9927,11 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
         top = results[:10]
         # remember these for AI notes (use the actual rows, not just the display compact)
         context.user_data["LAST_SHORTLIST"] = top
+<<<<<<< HEAD
+=======
+        context.user_data["last_predict_shortlist"] = top
+        context.user_data["last_predict_air"] = context.user_data.get("rank_air") or context.user_data.get("air")
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
 
         # let the formatter resolve ranks via df lookup
         for r in top:
@@ -5782,7 +9995,11 @@ async def on_pref(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         
         _end_flow(context, "predict")
+<<<<<<< HEAD
         await show_menu(update)
+=======
+        await show_menu(update, context)
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
         return ConversationHandler.END
 
     except Exception as e:
@@ -5794,6 +10011,7 @@ async def on_pref(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _end_flow(context, "predict")
         return ConversationHandler.END
 
+<<<<<<< HEAD
 # ========================= Main =========================
 def main():
     global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX
@@ -5831,10 +10049,166 @@ def main():
             require_course_contains="MBBS",
             require_category_set=("General","EWS","OBC","SC","ST"),
         ) or {}
+=======
+# === BEGIN PATCH ===
+import os, json, time, logging, pandas as pd, re
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ConversationHandler, filters
+)
+
+
+MENU_TEXT_FILTER = filters.Regex(r"(?i)^menu$")
+MENU_COMMAND_FILTER = filters.Regex(re.compile(r"^/menu(?:@\w+)?$", re.IGNORECASE))
+TEXT_EXCEPT_MENU = filters.TEXT & ~filters.COMMAND & ~MENU_TEXT_FILTER
+
+log = logging.getLogger("aceit-bot")
+
+# Globals your old code used
+CUTOFF_LOOKUP: Dict[str, Any] = {}
+COLLEGES: pd.DataFrame = pd.DataFrame()
+COLLEGE_META_INDEX: Dict[str, Any] = {}
+CUTOFFS_DF: pd.DataFrame = pd.DataFrame()
+
+# --- Paths & config ---
+REPO_DIR = Path(__file__).parent
+DEFAULT_FILENAME = "MCC_Final_with_Cutoffs_2024_2025.xlsx"
+DATA_DIR = REPO_DIR / "data"
+
+# Prefer EXCEL_PATH env; else default to the repo-root filename above
+EXCEL_PATH = os.getenv("EXCEL_PATH", str(REPO_DIR / DEFAULT_FILENAME))
+# Optional: direct download URL if the file isn't in the repo
+EXCEL_URL  = os.getenv("EXCEL_URL", "")
+
+
+
+
+
+
+def _safe_df(v) -> pd.DataFrame:
+    """Return a DataFrame for any input without triggering pandas truthiness errors."""
+    if isinstance(v, pd.DataFrame):
+        return v
+    if v is None:
+        return pd.DataFrame()
+    try:
+        return pd.DataFrame(v)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _resolve_excel_path() -> str:
+    """
+    Find (or download) the Excel file in common locations.
+    Never registers handlers here. Only resolves and logs.
+    """
+    candidates = [
+        Path(EXCEL_PATH),
+        REPO_DIR / DEFAULT_FILENAME,
+        DATA_DIR / DEFAULT_FILENAME,
+        DATA_DIR / "aceit.xlsx",  # legacy fallback
+    ]
+    for p in candidates:
+        if p.exists():
+            log.info("Excel found at %s", p)
+            return str(p)
+
+    if EXCEL_URL:
+        try:
+            import requests
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            dest = DATA_DIR / DEFAULT_FILENAME
+            log.info("Downloading Excel from EXCEL_URL …")
+            r = requests.get(EXCEL_URL, timeout=60)
+            r.raise_for_status()
+            dest.write_bytes(r.content)
+            log.info("Downloaded Excel to %s (%d bytes)", dest, dest.stat().st_size)
+            return str(dest)
+        except Exception:
+            log.exception("Failed to download Excel from EXCEL_URL")
+
+    log.error("Excel not found. Looked in: %s", [str(x) for x in candidates])
+    # Return the first candidate path so downstream errors mention a concrete path
+    return str(candidates[0])
+
+
+
+    
+
+# ---------- 1) STARTUP: load datasets once ----------
+
+
+
+async def on_startup(app: Application):
+    """
+    Runs once when the FastAPI app starts.
+    Loads your Excel, builds lookups/DFs, and stores CUTOFFS_DF in app.bot_data.
+    Uses ACTIVE_CUTOFF_ROUND_DEFAULT.
+    """
+    global CUTOFF_LOOKUP, COLLEGES, COLLEGE_META_INDEX, COLLEGE_PROFILES, CUTOFFS_DF
+
+    # Resolve Excel
+    excel_file = _resolve_excel_path()
+    app.bot_data["EXCEL_PATH"] = excel_file
+    # 1) Load colleges
+    try:
+        df = load_colleges_dataset(excel_file)  # provided elsewhere in your code
+    except Exception:
+        log.exception("load_colleges_dataset failed")
+        df = None
+    COLLEGES = _safe_df(df)
+    if COLLEGES.empty:
+        log.warning("Loaded colleges is empty")
+    else:
+        log.info("Loaded colleges: %d rows, columns=%s", len(COLLEGES), list(COLLEGES.columns))
+
+    # 2) Build name maps
+    try:
+        build_name_maps_from_colleges_df(COLLEGES)  # provided elsewhere
+    except Exception:
+        log.exception("Failed building name maps from Colleges DF")
+    # 2b) Optional college profiles sheet (enrich metadata for AI notes)
+    try:
+        COLLEGE_PROFILES = load_college_profiles(excel_file)
+    except Exception:
+        log.exception("Failed loading college profiles")
+        COLLEGE_PROFILES = {}
+    else:
+        if not isinstance(COLLEGE_PROFILES, dict):
+            COLLEGE_PROFILES = {}
+        if COLLEGE_PROFILES:
+            for key, pdata in COLLEGE_PROFILES.items():
+                if not isinstance(pdata, dict):
+                    continue
+                meta_entry = COLLEGE_META_INDEX.get(key)
+                if meta_entry is None:
+                    COLLEGE_META_INDEX[key] = dict(pdata)
+                else:
+                    for mk, mv in pdata.items():
+                        if meta_entry.get(mk) in (None, "", "—"):
+                            meta_entry[mk] = mv
+                            
+    # 3) Build/Load cutoffs lookup (use your DEFAULT round)
+    try:
+        CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
+            path=excel_file,
+            sheet="Cutoffs",
+            round_tag=ACTIVE_CUTOFF_ROUND_DEFAULT,   # provided elsewhere
+            require_quota=None,
+            require_course_contains="MBBS",
+            require_category_set=("General", "EWS", "OBC", "SC", "ST"),
+        )
+        if not isinstance(CUTOFF_LOOKUP, dict):
+            CUTOFF_LOOKUP = dict(CUTOFF_LOOKUP or {})
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
     except Exception:
         log.exception("Failed to load cutoff lookup; continuing with empty")
         CUTOFF_LOOKUP = {}
 
+<<<<<<< HEAD
     # 3b) Build normalized CUTOFFS_DF exactly once from the lookup
     try:
         CUTOFFS_DF = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES)  # << your helper (keep only one definition of it)
@@ -6038,3 +10412,315 @@ def main():
 
 if __name__ == "__main__":
     main()
+=======
+    # 3b) Normalize into CUTOFFS_DF once
+    try:
+        cuts_df = build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES)  # provided elsewhere
+    except Exception:
+        log.exception("[startup] Failed to prepare CUTOFFS_DF")
+        cuts_df = None
+    CUTOFFS_DF = _safe_df(cuts_df)
+    app.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
+    log.info("[startup] CUTOFFS_DF ready: %d rows", len(CUTOFFS_DF))
+
+
+
+    # One consolidated banner
+    col_count = (0 if not isinstance(COLLEGES, pd.DataFrame) or COLLEGES.empty else len(COLLEGES))
+    cut_count = (len(CUTOFF_LOOKUP) if isinstance(CUTOFF_LOOKUP, dict) else 0)
+    round_code = globals().get("ACTIVE_CUTOFF_ROUND_DEFAULT")
+
+    if round_code:
+        log.info("Starting bot… colleges: %d | cutoff entries: %d (round=%s)", col_count, cut_count, round_code)
+    else:
+        log.info("Starting bot… colleges: %d | cutoff entries: %d", col_count, cut_count)
+    # Configure the Bot Command menu so users see friendly labels
+    try:
+        await app.bot.set_my_commands([
+            BotCommand("menu", "Click here to start the bot"),
+        ])
+    except Exception:
+        log.exception("Failed to set bot command menu")
+
+
+def _has(*names: str) -> bool:
+    """Return True only if all given names exist and are callable."""
+
+
+def _has(*names: str) -> bool:
+    """Return True only if all given names exist and are callable."""
+    g = globals()
+    return all((n in g and callable(g[n])) for n in names)
+
+def _has_all(*names: str) -> bool:
+    """Return True only if all given names exist (useful for state constants)."""
+    g = globals()
+    return all(n in g for n in names)
+
+
+# ---------- 2) WIRING: attach handlers to existing Application ----------
+
+from telegram.ext import CommandHandler, CallbackQueryHandler  # make sure this import is present
+
+async def start_quiz_5(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz_common(update, context, n=5)
+
+async def start_quiz_10(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _start_quiz_common(update, context, n=10)
+
+async def _start_quiz_common(update: Update, context: ContextTypes.DEFAULT_TYPE, n: int) -> None:
+    """Create a fresh session and send ONLY ONE first question."""
+    user_id = update.effective_user.id
+
+    qs = load_quiz_questions(n)  # returns list[dict] with keys: id, question, options, answer_index, explanation?
+    if not qs:
+        await update.effective_message.reply_text("Sorry, quiz questions are unavailable right now.")
+        return
+
+    # New session (overwrite any stale one)
+    QUIZ_SESSIONS[user_id] = {
+        "questions": qs,
+        "index": 0,
+        "answers": {},           # qid -> user_index
+        "inflight": False,       # sending/grading lock
+        "last_msg_id": None,     # last message we sent for the question
+        "created_at": time.time()
+    }
+
+    # Send the first question once
+    await _send_next(update, context)
+
+
+def register_handlers(app: Application) -> None:
+    """Wire all PTB handlers exactly once."""
+    global _HANDLERS_WIRED
+    if _HANDLERS_WIRED:
+        log.warning("register_handlers() called again; ignoring second call")
+        return
+    _HANDLERS_WIRED = True
+
+    def _add(h, group: int = 0) -> None:
+        app.add_handler(h, group=group)
+
+    # --- Basic commands ---
+    _add(CommandHandler("start", start), group=0)
+    _add(CommandHandler("menu", show_menu_cmd), group=0)  # /menu
+    _add(CallbackQueryHandler(menu_open_cb, pattern=r"^(menu|menu_open|menu:open)$"), group=0)
+    _add(CommandHandler("menu_diag", menu_diag), group=0)
+    _add(CommandHandler("handlers_diag", handlers_diag), group=0)
+    _add(CommandHandler("strategy", strategy_command), group=0)
+    _add(CommandHandler("strategy_where", strategy_where), group=0)
+    _add(CommandHandler("strategy_count", strategy_count), group=0)
+    _add(CommandHandler("strategy_reload", strategy_reload), group=0)
+    _add(MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation), group=0)
+    _add(CommandHandler("josh", show_josh_zone), group=0)
+  
+
+    # --- QUIZ: menu + router + answers ---
+    _add(CallbackQueryHandler(menu_quiz_handler, pattern=r"^menu_quiz$"), group=0)
+    _add(CallbackQueryHandler(
+        quiz_menu_router,
+        pattern=r"^(quiz:(mini5|mini10|sub:.+|streaks|leaderboard)|menu:back)$"
+    ), group=0)
+    _add(CallbackQueryHandler(menu_strategy_handler, pattern=r"^menu_strategy$", block=True), group=0)
+    _add(CallbackQueryHandler(strategy_cb, pattern=r"^strategy:[\w\-]+$", block=True), group=0)
+    
+   
+    # -------------------------------
+    # Ask (Doubt) conversation
+    # -------------------------------
+    ask_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("ask", ask_start),
+            CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
+        ],
+        states={
+            ASK_SUBJECT: [
+                MessageHandler(TEXT_EXCEPT_MENU, ask_subject_select),
+                CallbackQueryHandler(ask_subject_select, pattern=r"^ask:subject:"),
+            ],
+            ASK_WAIT: [
+                MessageHandler(filters.PHOTO, ask_receive_photo),
+                MessageHandler(TEXT_EXCEPT_MENU, ask_receive_text),
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation),
+        ],
+        name="ask_conv",
+        persistent=False,
+        per_message=False,
+    )
+    _add(ask_conv, group=1)
+
+
+    # (Optional) legacy feature router, keep if you still use these buttons
+    _add(
+        CallbackQueryHandler(
+            ask_feature_router,
+            pattern=r"^ask:(similar|concept|steps|explain|prev|next)(:.*)?$"
+        ),
+        group=0,
+    )
+
+    # New “Ask more” buttons
+    _add(CallbackQueryHandler(
+        ask_followup_handler,
+        pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
+    ), group=0)
+
+    # Quiz: start, answer, navigation
+    # -------------------------------
+    _add(CommandHandler("quiz5",  start_quiz_5), group=1)
+    _add(CommandHandler("quiz10", start_quiz_10), group=1)
+
+    # Register `on_answer` **only once** (do NOT also add it in group=0)
+    _add(CallbackQueryHandler(on_answer, pattern=r"^ans:"), group=1)
+    _add(CallbackQueryHandler(quiz_show_answers, pattern=r"^quiz:showanswers$"), group=1)
+    # Optional nav/cancel buttons
+    _add(CallbackQueryHandler(next_question, pattern=r"^quiz:next$"), group=1)
+    _add(CallbackQueryHandler(cancel_quiz,  pattern=r"^quiz:cancel$"), group=1)
+
+    log.info("✅ Handlers registered")
+
+    
+    # -------------------------------
+    # Predictor conversation
+    # -------------------------------
+    predict_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("predict", predict_start),
+            CallbackQueryHandler(predict_start, pattern=r"^menu_predict$", block=True),
+            CommandHandler("mockpredict", predict_mockrank_start),
+            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$", block=True),
+        ],
+        states={
+            ASK_AIR: [MessageHandler(TEXT_EXCEPT_MENU, on_air)],
+            ASK_MOCK_RANK: [MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_rank)],
+            ASK_MOCK_SIZE: [
+                CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
+                MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_size),
+            ],
+            ASK_QUOTA: [
+                MessageHandler(TEXT_EXCEPT_MENU, on_quota),
+                CallbackQueryHandler(on_quota, pattern=r"^predict:(?:counsel|domreq|quota):.*$", block=True),
+            ],
+            ASK_CATEGORY: [MessageHandler(TEXT_EXCEPT_MENU, on_category)],
+            ASK_DOMICILE: [MessageHandler(TEXT_EXCEPT_MENU, on_domicile)],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel_predict),
+            CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(MENU_TEXT_FILTER, menu_exit_conversation),
+        ],
+        name="predict_conv",
+        persistent=False,
+        per_message=False,
+    )
+    _add(predict_conv, group=3)
+    _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
+    
+    # Predictor follow-ups (AI Coach buttons attached to predict output)
+    # Handles: predict:ai, predict:ai_coach, predict:coach, predict:refine, predict:alt, predict:details
+    try:
+        _add(CallbackQueryHandler(
+            predict_feature_router,  # only if you actually defined this function
+            pattern=r"^predict:(ai(_coach)?|coach|refine|alt|details)(:.*)?$"
+        ), group=0)
+    except NameError:
+        # Safe if you haven't implemented predict_feature_router yet
+        pass
+
+    # -------------------------------
+    # AI Coach (Preference-List)
+    # -------------------------------
+    _add(CallbackQueryHandler(coach_router, pattern=r"^(menu_coach|coach:start)$"), group=0)
+    _add(CallbackQueryHandler(coach_router, pattern=r"^coach:(adjust|save)(:.*)?$"), group=0)
+    try:
+        _add(CallbackQueryHandler(coach_notes_cb, pattern=r"^coach_notes:v1$"), group=0)
+    except NameError:
+        pass
+    try:
+        _add(CallbackQueryHandler(ai_notes_from_shortlist, pattern=r"^ai_notes$"), group=0)
+    except NameError:
+        pass
+
+    # -------------------------------
+    # Profile conversation
+    # -------------------------------
+    profile_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("profile", setup_profile),
+            CallbackQueryHandler(setup_profile, pattern=r"^menu_profile$"),
+        ],
+        states={
+            PROFILE_MENU: [MessageHandler(TEXT_EXCEPT_MENU, profile_menu)],
+            PROFILE_SET_CATEGORY: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_category)],
+            PROFILE_SET_DOMICILE: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_domicile)],
+            PROFILE_SET_PREF: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_pref)],
+            PROFILE_SET_EMAIL: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_email)],
+            PROFILE_SET_MOBILE: [
+                MessageHandler(filters.CONTACT, profile_set_mobile),
+                MessageHandler(TEXT_EXCEPT_MENU, profile_set_mobile),
+            ],
+            PROFILE_SET_PRIMARY: [MessageHandler(TEXT_EXCEPT_MENU, profile_set_primary)],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("menu", menu_exit_conversation),
+            MessageHandler(filters.Regex(r"(?i)^menu$"), menu_exit_conversation),
+        ],
+        name="profile_conv",
+        persistent=False,
+    )
+    _add(profile_conv, group=4)
+    _add(CallbackQueryHandler(
+        menu_router,
+        pattern=r"^(menu_(?:josh(?:_stories)?|home)|story:.+)$"
+    ), group=1)
+
+    _add(CallbackQueryHandler(handle_unknown_callback, pattern=r".+"), group=9)
+    _add(MessageHandler(filters.COMMAND & ~MENU_COMMAND_FILTER, log_unknown_command), group=9)
+    # Clean up any legacy handlers that may still point to show_menu
+    try:
+        legacy_removed = 0
+        for handler in list(app.handlers[0]):
+            cb = getattr(handler, "callback", None)
+            if getattr(cb, "__name__", "") == "show_menu":
+                app.handlers[0].remove(handler)
+                legacy_removed += 1
+        if legacy_removed:
+            log.warning("[menu-debug] Removed %d legacy show_menu handler(s)", legacy_removed)
+    except Exception:
+        log.exception("[menu-debug] Failed cleaning legacy show_menu handler")
+    
+    # -------------------------------
+    # Error handler (optional)
+    # -------------------------------
+
+      
+    try:
+        app.add_error_handler(on_error)
+    except NameError:
+        pass
+    
+    log.info("✅ Handlers registered")
+
+async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    if not q:
+        return
+    await q.answer()
+
+    context.user_data.pop("pending_predict_summary", None)
+    try:
+        await q.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await _finish_predict_now(update, context)
+
+
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4

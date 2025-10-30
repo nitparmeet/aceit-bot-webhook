@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 openai
 python-telegram-bot
 python-dotenv
@@ -6,3 +7,22 @@ openpyxl
 rapidfuzz
 unidecode
 
+=======
+
+
+fastapi
+uvicorn[standard]
+python-telegram-bot>=20
+python-dotenv
+openai
+pandas
+numpy
+openpyxl  
+Unidecode
+asyncpg>=0.29
+matplotlib
+# Add (if missing) for Topper Strategy feature:
+openai>=1.40
+SQLAlchemy>=2.0
+python-dateutil>=2.9
+>>>>>>> 0a12c22983d75cbb2fe7664cce13950071bce9e4
