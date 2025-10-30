@@ -1114,7 +1114,9 @@ QUIZ_SESSIONS: Dict[int, Dict[str, Any]] = {}
 _DIFF_MAP = {1: "low", 2: "medium", 3: "high"}
 
 DATA_DIR = "data"
-EXCEL_PATH = "MCC_Final_with_Cutoffs_2024_2025.xlsx" 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EXCEL_PATH = os.path.join(BASE_DIR, "MCC_Final_with_Cutoffs_2024_2025.xlsx")
+college_profiles = pd.read_excel(EXCEL_PATH, sheet_name="college_profiles")
 ACTIVE_CUTOFF_ROUND_DEFAULT = "2025_R1"
 TG_LIMIT = 4000
 NEET_CANDIDATE_POOL_DEFAULT = 2300000  
