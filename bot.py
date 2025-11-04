@@ -3634,7 +3634,7 @@ async def coach_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await tgt.reply_text("Run /predict first, then tap 🧠 AI Notes.")
         return ConversationHandler.END
     await ai_notes_from_shortlist(update, context) 
-        return ConversationHandler.END
+    return ConversationHandler.END
 
 async def coach_adjust_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
