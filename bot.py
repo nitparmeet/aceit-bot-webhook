@@ -5711,6 +5711,35 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
                     return v
             return None
 
+        def _trim_snippet(text: Any, limit: int = 320) -> str:
+            try:
+                snippet = str(text).strip()
+            except Exception:
+                return ""
+            if len(snippet) <= limit:
+                return snippet
+            return snippet[: limit - 1].rstrip() + "…"
+
+        def _coerce_tags(value: Any) -> list[str]:
+            if _is_missing(value):
+                return []
+            if isinstance(value, list):
+                return [str(v).strip() for v in value if str(v).strip()]
+            if isinstance(value, str):
+                raw = value.strip()
+                if not raw:
+                    return []
+                if raw.startswith("[") and raw.endswith("]"):
+                    try:
+                        parsed = json.loads(raw)
+                        if isinstance(parsed, list):
+                            return [str(v).strip() for v in parsed if str(v).strip()]
+                    except Exception:
+                        pass
+                parts = re.split(r"[;,|]+", raw)
+                return [p.strip() for p in parts if p.strip()]
+            return []
+            
         # ---------- build blocks ----------
         blocks = []
         for i, r in enumerate(items[:10], 1):
@@ -5767,26 +5796,46 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             rank_ln   = f"Closing Rank: {_fmt_rank_val(closing)}"
             fee_ln    = f"Total Fee: {_fmt_money(fee_raw)}"
             why_ln    = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool)
-            vibe_ln   = "City & campus vibe: " + _city_vibe_from_row(city, state)
+            city_meta = _profile_pick(profile_meta, "about_city")
+            vibe_ln   = (
+                f"City & campus vibe: {_trim_snippet(city_meta, 260)}"
+                if not _is_missing(city_meta)
+                else "City & campus vibe: " + _city_vibe_from_row(city, state)
+            )
             pg_ln     = f"PG Quota: {_yn(pg_quota_bool)}"
             bond_ln   = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
             hostel_ln = f"Hostel: {_yn(hostel_bool)}"
 
-            highlights = _profile_pick(
+            ai_note = _profile_pick(
                 profile_meta,
+                "ai_summary",
                 "profile_highlights",
                 "profile_summary",
                 "profile_notes",
                 "profile_tagline",
+                "about_college",
             )
-            lines = [header, rank_ln, fee_ln, why_ln, vibe_ln]
-            if not _is_missing(highlights):
-                hl = str(highlights).strip()
-                if len(hl) > 280:
-                    hl = hl[:277].rstrip() + "…"
-                lines.append(f"Highlights: {hl}")
-            lines.extend([pg_ln, bond_ln, hostel_ln])
+            ideal_for = _profile_pick(profile_meta, "ideal_for")
+            roi_blurb = _profile_pick(profile_meta, "fees_roi_summary")
+            travel    = _profile_pick(profile_meta, "travel_access")
+            tags      = _coerce_tags(profile_meta.get("ai_tags"))
 
+            lines = [header, rank_ln, fee_ln]
+            if not _is_missing(ai_note):
+                lines.append(f"AI Summary: {_trim_snippet(ai_note, 320)}")
+            else:
+                lines.append(why_ln)
+            lines.append(vibe_ln)
+            if not _is_missing(ideal_for):
+                lines.append(f"Ideal for: {_trim_snippet(ideal_for, 200)}")
+            if not _is_missing(roi_blurb):
+                lines.append(f"Fees & ROI: {_trim_snippet(roi_blurb, 200)}")
+            lines.extend([pg_ln, bond_ln, hostel_ln])
+            if tags:
+                lines.append(f"Tags: {', '.join(tags[:5])}")
+            if not _is_missing(travel):
+                lines.append(f"Travel: {_trim_snippet(travel, 220)}")
+            
             blocks.append("\n".join(lines))
             
 
