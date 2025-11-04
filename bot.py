@@ -7513,19 +7513,13 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
             return []
         # metadata-only fallback (kept for when AIR not provided)
         tmp = []
-
-    if not out:
-        if air is not None:
-            return []
-        # metadata-only fallback (kept for when AIR not provided)
-        tmp = []
         for _, r in colleges_df.iterrows():
-<<<<<<< HEAD
-=======
             state_raw = str(r.get(state_col)).strip() if state_col else ""
             state_norm = _canon_state(state_raw) if state_raw else None
+
             if enforce_state_quota and (state_norm is None or state_norm != domicile):
                 continue
+
             if authority_pref == "STATE" and state_pref and (state_norm is None or state_norm != state_pref):
                 continue
 
