@@ -891,29 +891,47 @@ def _risk_label(closing, air):
 
 def _notes_deterministic(facts, air):
     lines = ["*AI Notes (Top 10 from your list)*\n"]
+
     for f in facts:
         name = f.get("name") or "—"
         code = f.get("code") or "—"
         risk = _risk_label(f.get("closing_rank"), air)
         bullets = []
+
         if f.get("closing_rank") is not None:
             bullets.append(f"closing rank: {f['closing_rank']}")
+
         if f.get("nirf") is not None:
             bullets.append(f"NIRF: {f['nirf']}")
+
         fee = f.get("fee")
         if fee is not None:
+            try:
+                bullets.append(f"fee: ₹{int(float(fee)):,}")
+            except Exception:
+                bullets.append(f"fee: {fee}")
 
         owner = f.get("ownership")
         if owner:
             bullets.append(owner)
+
         st = f.get("state")
         if st:
             bullets.append(st)
+
         if f.get("hostel") is True:  # show only if TRUE
             bullets.append("hostel: yes")
+
         tag = f" — {risk}" if risk else ""
-        lines.append(f"*{f['rank']}. {name}* (`{code}`){tag}\n- " + " • ".join(bullets) + "\n")
-    lines.append("_Tip: safe = easier than your AIR, dream = tougher. Keep a 60–30–10 safe/moderate/dream mix._")
+        lines.append(
+            f"*{f.get('rank', '–')}. {name}* (`{code}`){tag}\n- "
+            + " • ".join(bullets)
+            + "\n"
+        )
+
+    lines.append(
+        "_Tip: safe = easier than your AIR, dream = tougher. Keep a 60–30–10 safe/moderate/dream mix._"
+    )
     return "\n".join(lines)
 
 def _notes_via_llm(facts, air):
