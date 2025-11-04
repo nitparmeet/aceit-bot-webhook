@@ -5217,7 +5217,7 @@ def menu_quiz_markup() -> InlineKeyboardMarkup:
 
 
 async def coach_notes_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-     """Alias to the richer shortlist notes renderer."""
+    """Alias to the richer shortlist notes renderer."""
     return await ai_notes_from_shortlist(update, context)
 
 
