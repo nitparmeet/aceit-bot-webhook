@@ -3164,6 +3164,10 @@ def _canonical_meta_key(value: object) -> str:
             if not text:
                 return ""
 
+            # Excel often emits codes like "C0036.0"; strip the trailing .0 noise
+            compact = re.sub(r"\s+", "", text)
+            if re.fullmatch(r"[A-Za-z0-9]+\.0+", compact):
+                text = compact.split(".", 1)[0]
             # Handle numeric strings like "123.0" emitted by Excel
             try:
                 num = float(text)
@@ -3265,13 +3269,13 @@ def load_college_profiles(
         for key_field in ("college_code", "code", "college_id", "id"):
             val = record.get(key_field)
             if not _profile_is_missing(val):
-                mk = _canonical_meta_key(name_val)
+                mk = _canonical_meta_key(val)
                 if mk:
                     keys.add(mk)
 
         name_val = record.get("college_name") or record.get("name")
         if not _profile_is_missing(name_val):
-            mk = _meta_key(name_val)
+            mk = _canonical_meta_key(name_val)
             if mk:
                 keys.add(mk)
 
@@ -3602,35 +3606,17 @@ TG_LIMIT = int(globals().get("TG_LIMIT", 4000))
 
 
 async def coach_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Notes-only coach: uses last_predict_shortlist, keeps order, no crosses."""
-    tgt = _target(update) or update.effective_message
+    """Entry point for /coach; reuse the rich shortlist renderer."""
     ud = context.user_data or {}
     shortlist = ud.get("LAST_SHORTLIST") or ud.get("last_predict_shortlist") or []
     air = ud.get("rank_air") or ud.get("last_predict_air")
 
     if not shortlist:
+        tgt = _target(update) or update.effective_message
         await tgt.reply_text("Run /predict first, then tap 🧠 AI Notes.")
         return ConversationHandler.END
-
-    # top 10, keep order
-    facts = []
-    for i, r in enumerate(shortlist[:10], 1):
-        facts.append({
-            "rank": i,
-            "code": r.get("college_code"),
-            "name": r.get("college_name"),
-            "state": r.get("state"),
-            "closing_rank": _to_int(r.get("ClosingRank")),
-            "nirf": _to_int(r.get("nirf_rank_medical_latest")),
-            "fee": _to_fee_lakh(r.get("total_fee")),
-            "ownership": r.get("ownership"),
-            "hostel": (True if r.get("hostel_available") is True else None),
-        })
-
-    text = _notes_via_llm(facts, air) or _notes_deterministic(facts, air)
-
-    await tgt.reply_text(text, parse_mode="Markdown", disable_web_page_preview=True)
-    return ConversationHandler.END
+    await ai_notes_from_shortlist(update, context) 
+        return ConversationHandler.END
 
 async def coach_adjust_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -5644,18 +5630,41 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return str(v)
 
     def _fmt_bond_line(bond_years, bond_penalty_lakhs):
+        def _clean_number(value):
+            if _is_missing(value):
+                return None
+            try:
+                text = str(value).strip().replace(",", "")
+                if not text:
+                    return None
+                num = float(text)
+                if not math.isfinite(num):
+                    return None
+                return num
+            except Exception:
+                return None
+        years_val = _clean_number(bond_years)
+        penalty_val = _clean_number(bond_penalty_lakhs)
 
-        y = _to_int_or_none(years)
-        p = _to_int_or_none(penalty_lakh)
-        if y is None and p is None:
-            return "—"
-        parts = []
-        if y is not None:
-            parts.append(f"{y} yr" + ("" if y == 1 else "s"))
-        if p is not None:
-            parts.append(f"₹{_indian_number_format(int(p))}k")  # penalty in lakhs → print as e.g. 50k
+        parts: list[str] = []
+
+        if years_val is not None and years_val > 0:
+            if abs(years_val - round(years_val)) < 1e-6:
+                years_int = int(round(years_val))
+                suffix = "yr" if years_int == 1 else "yrs"
+                parts.append(f"{years_int} {suffix}")
+            else:
+                parts.append(f"{years_val:g} yrs")
+
+        if penalty_val is not None and penalty_val > 0:
+            if abs(penalty_val - round(penalty_val)) < 1e-6:
+                lakhs_int = int(round(penalty_val))
+                display = f"₹{_indian_number_format(lakhs_int)}L"
+            else:
+                display = f"₹{penalty_val:g}L"
+            parts.append(display)
         return " / ".join(parts) if parts else "—"
-
+        
     
 
 
