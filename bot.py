@@ -5481,7 +5481,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
 
             lines = [header, rank_ln, fee_ln]
             if not _is_missing(ai_note):
-                lines.append(f"AI Summary: {_trim_snippet(ai_note, 320)}")
+                lines.append(f"Summary: {_trim_snippet(ai_note, 320)}")
             else:
                 lines.append(why_ln)
             lines.append(vibe_ln)
@@ -8862,7 +8862,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         # AI Notes button
         kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🧠 Get AI notes on these colleges", callback_data="ai_notes")]]
+            [[InlineKeyboardButton("🧠 Get more details for these colleges", callback_data="ai_notes")]]
         )
         await context.bot.send_message(
             chat_id=chat_id,
