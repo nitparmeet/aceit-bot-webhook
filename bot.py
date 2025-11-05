@@ -5451,15 +5451,15 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             log.debug("[ai_notes] %s | pg=%r hostel=%r bond=%r/%r fee=%r closing=%r",
                       name, pg_quota_raw, hostel_raw, bond_years, bond_penalty, fee_raw, closing)
 
-            header    = f"{i}. {name}" + (f", {place}" if place else "")
-            rank_ln   = f"Closing Rank: {_fmt_rank_val(closing)}"
-            fee_ln    = f"Total Fee: {_fmt_money(fee_raw)}"
-            why_ln    = "Why it stands out: " + _why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool)
+            header    = f"{i}. {html.escape(name)}" + (f", {html.escape(place)}" if place else "")
+            rank_ln   = f"<b>Closing Rank:</b> {html.escape(_fmt_rank_val(closing))}"
+            fee_ln    = f"<b>Total Fee:</b> {html.escape(_fmt_money(fee_raw))}"
+            why_ln    = "<b>Why it stands out:</b> " + html.escape(_why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool))
             city_meta = _profile_pick(profile_meta, "about_city")
             vibe_ln   = (
-                f"City & campus vibe: {_trim_snippet(city_meta, 260)}"
+                f"<b>City & campus vibe:</b> {html.escape(_trim_snippet(city_meta, 260))}"
                 if not _is_missing(city_meta)
-                else "City & campus vibe: " + _city_vibe_from_row(city, state)
+                else "<b>City & campus vibe:</b> " + html.escape(_city_vibe_from_row(city, state))
             )
             pg_ln     = f"PG Quota: {_yn(pg_quota_bool)}"
             bond_ln   = f"Bond: {_fmt_bond_line(bond_years, bond_penalty)}"
@@ -5481,24 +5481,25 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
 
             lines = [header, rank_ln, fee_ln]
             if not _is_missing(ai_note):
-                lines.append(f"Summary: {_trim_snippet(ai_note, 320)}")
+                lines.append(f"<b>Summary:</b> {html.escape(_trim_snippet(ai_note, 320))}")
             else:
                 lines.append(why_ln)
             lines.append(vibe_ln)
             if not _is_missing(ideal_for):
-                lines.append(f"Ideal for: {_trim_snippet(ideal_for, 200)}")
+                lines.append(f"<b>Ideal for:</b> {html.escape(_trim_snippet(ideal_for, 200))}")
             if not _is_missing(roi_blurb):
-                lines.append(f"Fees & ROI: {_trim_snippet(roi_blurb, 200)}")
+                lines.append(f"<b>Fees & ROI:</b> {html.escape(_trim_snippet(roi_blurb, 200))}")
             lines.extend([pg_ln, bond_ln, hostel_ln])
             if tags:
-                lines.append(f"Tags: {', '.join(tags[:5])}")
+                tag_text = ", ".join(html.escape(str(t)) for t in tags[:5])
+                lines.append(f"<b>Tags:</b> {tag_text}")
             if not _is_missing(travel):
-                lines.append(f"Travel: {_trim_snippet(travel, 220)}")
+                lines.append(f"<b>Travel:</b> {html.escape(_trim_snippet(travel, 220))}")
             
             blocks.append("\n".join(lines))
             
 
-        await status.edit_text("\n\n".join(blocks))
+        await status.edit_text("\n\n".join(blocks), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
     except Exception:
         log.exception("[ai_notes] failed")
