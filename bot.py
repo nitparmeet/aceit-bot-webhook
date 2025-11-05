@@ -7510,6 +7510,13 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
 
     # Allow metadata fallback when AIR is present only for State Open/Management without domicile requirement.
     
+    if not out:
+        if air is not None and not fallback_allowed_with_air:
+            return []
+
+        # metadata-only fallback (kept for when AIR not provided)
+        tmp = []
+    
         for _, r in colleges_df.iterrows():
             state_raw = str(r.get(state_col)).strip() if state_col else ""
             state_norm = _canon_state(state_raw) if state_raw else None
