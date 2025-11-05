@@ -94,9 +94,9 @@ def _normalise_payload(payload: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
     if isinstance(payload, list):
         return _normalise_list(payload)
     if isinstance(payload, dict):
-        for key in ("questions", "quiz", "data"):
+        for key in WRAPPER_KEYS:
             nested = payload.get(key)
-            if isinstance(nested, (list, dict)):
+            if nested is not None:
                 qs, errs = _normalise_payload(nested)
                 if qs or errs:
                     return qs, errs  
@@ -129,8 +129,23 @@ def _normalise_subject_map(data: Dict[Any, Any]) -> Tuple[List[Dict[str, Any]], 
     seen_ids: set[str] = set()
 
     for subject, arr in data.items():
+        key_norm = str(subject or "").strip()
+        lower_key = key_norm.lower()
+        if lower_key in WRAPPER_KEYS:
+            qs, errs = _normalise_payload(arr)
+            for q in qs:
+                if q["id"] in seen_ids:
+                    errors.append(f"[{q['id']}] duplicate id")
+                    continue
         if not isinstance(arr, list):
-            errors.append(f"[{subject}] expected list of questions")
+            extracted = _extract_question_block(arr)
+            if extracted is None:
+                errors.append(f"[{subject}] expected list of questions")
+                continue
+            arr = extracted
+                seen_ids.add(q["id"])
+                out.append(q)
+            errors.extend(errs)
             continue
         prefix = str(subject or "GEN").strip().upper()[:3] or "GEN"
         for idx, item in enumerate(arr, start=1):
@@ -167,8 +182,9 @@ def _coerce_question(
     if not question:
         return None, "missing question text"
 
-    options = item.get("options")
-    if not isinstance(options, list) or len(options) < 2:
+    options_raw = item.get("options")
+    options = _coerce_options(options_raw)
+    if len(options) < 2:
         return None, "options must be a list with >= 2 choices"
     options = [_coerce_str(opt) for opt in options]
 
@@ -222,7 +238,8 @@ def _coerce_answer_index(item: Dict[str, Any], options: List[str]) -> int | None
     if isinstance(ans, str) and ans.strip().isdigit():
         return int(ans.strip())
 
-    ans_label = item.get("answer")
+    letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    ans_label = item.get("answer") or item.get("correct") or item.get("correct_option")
     if isinstance(ans_label, (int, float)) and not isinstance(ans_label, bool):
         idx = int(ans_label)
         # assume 1-based
@@ -234,6 +251,10 @@ def _coerce_answer_index(item: Dict[str, Any], options: List[str]) -> int | None
         if raw.isdigit():
             idx = int(raw)
             return idx - 1 if idx >= 1 else idx
+        if len(raw) == 1 and raw.upper() in letters:
+            idx = letters.index(raw.upper())
+            if idx < len(options):
+                return idx  
         # fall back to matching option text (case-insensitive)
         for i, opt in enumerate(options):
             if opt.lower() == raw.lower():
@@ -263,4 +284,60 @@ def _coerce_tags(value: Any) -> List[str]:
         segs = [seg.strip() for seg in value.split(",")]
         return [seg for seg in segs if seg]
     return []
+
+def _extract_question_block(node: Any) -> List[Any] | None:
+    if node is None:
+        return None
+    if isinstance(node, list):
+        return node
+    if isinstance(node, dict):
+        if "question" in node and ("options" in node or "answer" in node or "answer_index" in node):
+            return [node]
+        for key in WRAPPER_KEYS:
+            child = node.get(key)
+            res = _extract_question_block(child)
+            if res:
+                return res
+    return None
+def _coerce_options(raw: Any) -> List[str]:
+    if isinstance(raw, list):
+        cleaned = []
+        for item in raw:
+            if isinstance(item, dict) and "text" in item:
+                cleaned.append(_coerce_str(item.get("text")))
+            else:
+                cleaned.append(_coerce_str(item))
+        return [opt for opt in cleaned if opt]
+    if isinstance(raw, dict):
+        ordered_keys = sorted(raw.keys())
+        cleaned = []
+        for key in ordered_keys:
+            val = raw[key]
+            if isinstance(val, dict) and "text" in val:
+                cleaned.append(_coerce_str(val.get("text")))
+            else:
+                cleaned.append(_coerce_str(val))
+        return [opt for opt in cleaned if opt]
+    if isinstance(raw, str):
+        parts = [seg.strip() for seg in raw.split("\n") if seg.strip()]
+        if len(parts) >= 2:
+            return parts
+    return []
+WRAPPER_KEYS = {
+    "subjects",
+    "subject_map",
+    "subjectWise",
+    "subjectwise",
+    "sections",
+    "section_map",
+    "data",
+    "payload",
+    "questions",
+    "quiz",
+    "items",
+    "records",
+    "results",
+    "entries",
+    "list",
+}
 
