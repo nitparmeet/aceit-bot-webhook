@@ -96,7 +96,9 @@ def _load_pool() -> None:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"quiz.json is not valid JSON: {exc}") from exc
+        log.warning("quiz file %s has invalid JSON (%s); continuing without quiz questions", QUIZ_FILE, exc)
+        _POOL, _INDEX = [], {}
+        return
     if not isinstance(data, list):
         raise ValueError("quiz.json must be a flat JSON array")
 
