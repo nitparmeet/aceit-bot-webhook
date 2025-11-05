@@ -88,7 +88,15 @@ def _load_pool() -> None:
     if not QUIZ_FILE.exists():
         raise FileNotFoundError(f"quiz file not found at: {QUIZ_FILE}")
     with QUIZ_FILE.open("r", encoding="utf-8") as fh:
-        data = json.load(fh)
+        raw = fh.read()
+    if not raw.strip():
+        log.warning("quiz file %s is empty; continuing without quiz questions", QUIZ_FILE)
+        _POOL, _INDEX = [], {}
+        return
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"quiz.json is not valid JSON: {exc}") from exc
     if not isinstance(data, list):
         raise ValueError("quiz.json must be a flat JSON array")
 
