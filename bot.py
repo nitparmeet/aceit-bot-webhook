@@ -98,6 +98,7 @@ QUIZ_POOL: List[Dict[str, Any]] = []
 QUIZ_INDEX: Dict[str, Dict[str, Any]] = {} 
 QUIZ_BY_ID: dict[str, dict] = {}
 QUIZ_FILE_PATH = Path(__file__).parent / "quiz.json"
+QUIZ_FALLBACK_PATH = Path(__file__).parent / "quiz_fallback.json"
 STORIES_FILE_PATH = Path(__file__).parent / "stories.json"
 
 PROFILE_MENU = 1001  # or use Enum
@@ -2367,7 +2368,7 @@ def ensure_quiz_ready() -> None:
         return
 
     try:
-        QUIZ_POOL = load_quiz_file(QUIZ_FILE_PATH)
+        QUIZ_POOL = load_quiz_file(QUIZ_FILE_PATH, fallback=QUIZ_FALLBACK_PATH)
     except Exception as exc:
         log.warning("quiz file %s could not be loaded (%s); quizzes disabled", QUIZ_FILE_PATH, exc)
         QUIZ_POOL = []
