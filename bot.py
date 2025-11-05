@@ -1523,14 +1523,14 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
             df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
         )
 
-    #fee = _pick(r, "total_fee", "Fee")
+   
 
     header = f"{name}" + (f", {place}" if place else "")
 
     cr_ln  = f"Closing Rank ({quota}/{category}) { _fmt_rank_val(closing) }"
-    fee_ln = f"Total Fee { _fmt_money(fee) }"
+    
 
-    return "\n".join([header, cr_ln, fee_ln])
+    
 
 def _deemed_only(rows):
     out = []
@@ -8559,7 +8559,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _text_reply(
             "Deemed quota applies to all categories. Fetching eligible colleges…"
         )
-        return await _finish_predict_now(update, context)
+        await _finish_predict_now(update, context)
 
   
     
