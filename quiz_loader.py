@@ -131,22 +131,25 @@ def _normalise_subject_map(data: Dict[Any, Any]) -> Tuple[List[Dict[str, Any]], 
     for subject, arr in data.items():
         key_norm = str(subject or "").strip()
         lower_key = key_norm.lower()
+
         if lower_key in WRAPPER_KEYS:
             qs, errs = _normalise_payload(arr)
             for q in qs:
                 if q["id"] in seen_ids:
                     errors.append(f"[{q['id']}] duplicate id")
                     continue
+                seen_ids.add(q["id"])
+                out.append(q)
+            errors.extend(errs)
+            continue
+
         if not isinstance(arr, list):
             extracted = _extract_question_block(arr)
             if extracted is None:
                 errors.append(f"[{subject}] expected list of questions")
                 continue
             arr = extracted
-                seen_ids.add(q["id"])
-                out.append(q)
-            errors.extend(errs)
-            continue
+
         prefix = str(subject or "GEN").strip().upper()[:3] or "GEN"
         for idx, item in enumerate(arr, start=1):
             q, err = _coerce_question(item, prefix=prefix, index=idx, subject_hint=subject)
@@ -159,6 +162,7 @@ def _normalise_subject_map(data: Dict[Any, Any]) -> Tuple[List[Dict[str, Any]], 
                     continue
                 seen_ids.add(q["id"])
                 out.append(q)
+
     return out, errors
 
 
