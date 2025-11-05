@@ -904,12 +904,12 @@ def _notes_deterministic(facts, air):
         if f.get("nirf") is not None:
             bullets.append(f"NIRF: {f['nirf']}")
 
-        fee = f.get("fee")
-        if fee is not None:
-            try:
-                bullets.append(f"fee: ₹{int(float(fee)):,}")
-            except Exception:
-                bullets.append(f"fee: {fee}")
+        #fee = f.get("fee")
+        #if fee is not None:
+         #   try:
+          #      bullets.append(f"fee: ₹{int(float(fee)):,}")
+           # except Exception:
+            #    bullets.append(f"fee: {fee}")
 
         owner = f.get("ownership")
         if owner:
@@ -1482,7 +1482,7 @@ def _pick(d: dict, *keys):
 
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
 
-    """Name, place; then Closing Rank and Total Fee each on its own line. No 'm' fallbacks here."""
+    """Name and place headline, then only the Closing Rank context line."""
 
     # NaN/None safe strings
     name  = _safe_str(_pick(r, "college_name", "College Name")) or "—"
@@ -1523,7 +1523,7 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
             df_lookup=df_lookup, lookup_dict=CUTOFF_LOOKUP
         )
 
-    fee = _pick(r, "total_fee", "Fee")
+    #fee = _pick(r, "total_fee", "Fee")
 
     header = f"{name}" + (f", {place}" if place else "")
 
@@ -5451,7 +5451,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             log.debug("[ai_notes] %s | pg=%r hostel=%r bond=%r/%r fee=%r closing=%r",
                       name, pg_quota_raw, hostel_raw, bond_years, bond_penalty, fee_raw, closing)
 
-            header    = f"{i}. {html.escape(name)}" + (f", {html.escape(place)}" if place else "")
+            header    = f"{i}. <b>{html.escape(name)}</b>" + (f", {html.escape(place)}" if place else "")
             rank_ln   = f"<b>Closing Rank:</b> {html.escape(_fmt_rank_val(closing))}"
             fee_ln    = f"<b>Total Fee:</b> {html.escape(_fmt_money(fee_raw))}"
             why_ln    = "<b>Why it stands out:</b> " + html.escape(_why_from_signals(name, ownership, pg_quota_bool, bond_years, hostel_bool))
@@ -7509,11 +7509,7 @@ def shortlist_and_score(colleges_df: pd.DataFrame, user: dict, cutoff_lookup: di
     )
 
     # Allow metadata fallback when AIR is present only for State Open/Management without domicile requirement.
-    if not out:
-        if air is not None and not fallback_allowed_with_air:
-            return []
-        # metadata-only fallback (kept for when AIR not provided)
-        tmp = []
+    
         for _, r in colleges_df.iterrows():
             state_raw = str(r.get(state_col)).strip() if state_col else ""
             state_norm = _canon_state(state_raw) if state_raw else None
