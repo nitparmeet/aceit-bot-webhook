@@ -84,10 +84,8 @@ def _load_pool() -> None:
         )
         _POOL, _INDEX = [], {}
         return
-   
 
-     _POOL = questions
-
+    _POOL = questions
     _INDEX = {q["id"]: q for q in _POOL}
     log.info("✅ Loaded %d quiz questions from %s", len(_POOL), QUIZ_FILE)
 
