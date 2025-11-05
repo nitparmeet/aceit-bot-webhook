@@ -5919,6 +5919,364 @@ COUNSELLING_SYSTEM = (
     "Avoid legal/financial advice; defer to official MCC or State Board notices when uncertain."
 )
 
+_COUNSELLING_MISSING = {"", "-", "—", "na", "n/a", "none", "null", "nil", "nan"}
+
+
+def _counselling_is_missing(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float):
+        try:
+            if math.isnan(value):
+                return True
+        except Exception:
+            return False
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return True
+        return text.lower() in _COUNSELLING_MISSING
+    return False
+
+
+def _counselling_pick(sources: Iterable[Optional[dict]], *keys: str) -> Any:
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in keys:
+            if not key:
+                continue
+            if key in source and not _counselling_is_missing(source[key]):
+                return source[key]
+            alt_key = key.replace(" ", "_")
+            if alt_key in source and not _counselling_is_missing(source[alt_key]):
+                return source[alt_key]
+    return None
+
+
+def _counselling_format_int(value: Any) -> Optional[str]:
+    val = _safe_int(value)
+    if val is not None:
+        return f"{val:,}"
+    if _counselling_is_missing(value):
+        return None
+    try:
+        text = str(value).strip()
+    except Exception:
+        return None
+    return text or None
+
+
+def _gather_profile_from_meta(meta: Optional[dict]) -> dict:
+    if not isinstance(meta, dict):
+        return {}
+
+    keys: set[str] = set()
+    for field in (
+        "college_code",
+        "College Code",
+        "code",
+        "college_id",
+        "College ID",
+        "institute_code",
+        "college_name",
+        "College Name",
+    ):
+        val = meta.get(field)
+        if _counselling_is_missing(val):
+            continue
+        keys.add(_norm_meta_key(val))
+        if isinstance(val, str):
+            name_key = _name_key(val)
+            if name_key:
+                keys.add(name_key)
+
+    profile: dict = {}
+    for key in keys:
+        pdata = COLLEGE_PROFILES.get(key)
+        if isinstance(pdata, dict):
+            for k, v in pdata.items():
+                if _counselling_is_missing(v):
+                    continue
+                if k not in profile:
+                    profile[k] = v
+    return profile
+
+
+def _detect_quota_from_text(text: str, default: str) -> str:
+    low = text.lower()
+    if "management" in low or "paid" in low or "nri" in low:
+        return "Management"
+    if "deemed" in low:
+        return "Deemed"
+    if "central pool" in low or "central quota" in low:
+        return "Central"
+    if "state quota" in low or "85%" in low or "state" in low:
+        return "State"
+    if "aiq" in low or "all india" in low:
+        return "AIQ"
+    return default
+
+
+def _detect_category_from_text(text: str, default: str) -> str:
+    low = text.lower()
+    if "ews" in low:
+        return "EWS"
+    if "obc" in low:
+        return "OBC"
+    if "sc " in low or low.endswith(" sc") or " sc-" in low or low.startswith("sc "):
+        return "SC"
+    if "st " in low or low.endswith(" st") or " st-" in low or low.startswith("st "):
+        return "ST"
+    if "pwd" in low or "pwbd" in low or "ph" in low:
+        return "General_PwD"
+    if "open" in low or "general" in low or "ur" in low:
+        return "General"
+    return default
+
+
+def _resolve_round_from_text(text: str, default_round: str) -> str:
+    base = default_round or ACTIVE_CUTOFF_ROUND_DEFAULT
+    parts = base.split("_", 1)
+    year = parts[0] if parts else base
+    low = text.lower()
+    if "round 2" in low or "r2" in low:
+        return f"{year}_R2"
+    if "round 3" in low or "r3" in low:
+        return f"{year}_R3"
+    if "mop" in low:
+        return f"{year}_MopUp"
+    if "stray" in low:
+        return f"{year}_Stray"
+    return base
+
+
+def _collect_identifiers(meta: Optional[dict], profile: Optional[dict]) -> list[str]:
+    identifiers: list[str] = []
+    for source in (meta, profile):
+        if not isinstance(source, dict):
+            continue
+        for key in (
+            "college_code",
+            "College Code",
+            "code",
+            "college_id",
+            "College ID",
+            "institute_code",
+            "college_name",
+            "College Name",
+        ):
+            val = source.get(key)
+            if _counselling_is_missing(val):
+                continue
+            identifiers.append(str(val).strip())
+    return identifiers
+
+
+def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Optional[dict], dict]:
+    tokens = re.findall(r"[A-Za-z0-9]+", question or "")
+    if not tokens:
+        return None, None, {}
+
+    phrases: list[str] = []
+    max_window = min(6, len(tokens))
+    for size in range(max_window, 0, -1):
+        for idx in range(0, len(tokens) - size + 1):
+            phrase = " ".join(tokens[idx : idx + size])
+            phrases.append(phrase)
+
+    for phrase in phrases:
+        key = _name_key(phrase)
+        if key and key in COLLEGE_META_INDEX:
+            meta = COLLEGE_META_INDEX[key]
+            profile = _gather_profile_from_meta(meta)
+            return key, meta, profile
+
+    for token in tokens:
+        up = token.upper()
+        if up in COLLEGE_META_INDEX:
+            meta = COLLEGE_META_INDEX[up]
+            profile = _gather_profile_from_meta(meta)
+            return up, meta, profile
+        digits_only = re.sub(r"\D+", "", up)
+        if digits_only and digits_only in COLLEGE_META_INDEX:
+            meta = COLLEGE_META_INDEX[digits_only]
+            profile = _gather_profile_from_meta(meta)
+            return digits_only, meta, profile
+
+    try:
+        import difflib
+
+        names_map: dict[str, str] = {}
+        for key, meta in COLLEGE_META_INDEX.items():
+            if not isinstance(meta, dict):
+                continue
+            name_val = meta.get("college_name") or meta.get("College Name")
+            if not name_val:
+                continue
+            norm = _name_key(name_val)
+            if not norm:
+                continue
+            names_map.setdefault(norm, key)
+
+        if names_map:
+            query_norm = _name_key(question)
+            matches = difflib.get_close_matches(query_norm, list(names_map.keys()), n=1, cutoff=0.6)
+            if matches:
+                best_key = names_map[matches[0]]
+                meta = COLLEGE_META_INDEX.get(best_key)
+                if isinstance(meta, dict):
+                    profile = _gather_profile_from_meta(meta)
+                    return best_key, meta, profile
+    except Exception:
+        pass
+
+    return None, None, {}
+
+
+def _answer_counselling_from_data(
+    question: str,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> tuple[bool, str]:
+    key, meta, profile = _lookup_college_meta_from_question(question)
+    combined: dict = {}
+    if isinstance(meta, dict):
+        combined.update(meta)
+    if isinstance(profile, dict):
+        combined.update({k: v for k, v in profile.items() if not _counselling_is_missing(v)})
+
+    if not combined:
+        return False, ""
+
+    default_round = context.user_data.get("cutoff_round") if context and hasattr(context, "user_data") else None
+    round_code = _resolve_round_from_text(question, default_round or ACTIVE_CUTOFF_ROUND_DEFAULT)
+    quota = _detect_quota_from_text(
+        question, (context.user_data.get("quota") if context and hasattr(context, "user_data") else None) or "AIQ"
+    )
+    category = _detect_category_from_text(
+        question, canonical_category((context.user_data.get("category") if context and hasattr(context, "user_data") else None) or "General")
+    )
+
+    identifiers = _collect_identifiers(meta, profile)
+    df_lookup = None
+    if context and getattr(context, "application", None):
+        df_lookup = context.application.bot_data.get("CUTOFFS_DF")
+
+    closing = _closing_rank_for_identifiers(
+        identifiers,
+        round_code,
+        quota,
+        category,
+        df_lookup,
+        CUTOFF_LOOKUP,
+    )
+
+    display_name = _counselling_pick((profile, meta, combined), "college_name", "College Name", "name") or "Selected college"
+    city = _counselling_pick((profile, meta, combined), "city", "City")
+    state = _counselling_pick((profile, meta, combined), "state", "State")
+    ownership = _counselling_pick((profile, meta, combined), "ownership", "Ownership", "management")
+    established = _counselling_pick((profile, meta, combined), "established_year", "Year of Establishment")
+    total_fee = _counselling_pick((profile, meta, combined), "total_fee", "Total Fee", "fee")
+    bond_years = _counselling_pick((profile, meta, combined), "bond_years")
+    bond_penalty = _counselling_pick((profile, meta, combined), "bond_penalty_lakhs", "bond_penalty")
+    bond_summary = _counselling_pick((profile, meta, combined), "bond_summary", "bond_notes")
+    hostel = _counselling_pick((profile, meta, combined), "hostel_available", "hostel")
+    pg_quota = _counselling_pick((profile, meta, combined), "pg_quota")
+    nearest_airport = _counselling_pick((profile, meta, combined), "nearest_airport")
+    travel_access = _counselling_pick((profile, meta, combined), "travel_access")
+    summary = _counselling_pick(
+        (profile, meta, combined),
+        "profile_summary",
+        "profile_highlights",
+        "ai_summary",
+        "summary",
+        "profile_notes",
+    )
+    roi_blurb = _counselling_pick((profile, meta, combined), "fees_roi_summary")
+    ideal_for = _counselling_pick((profile, meta, combined), "ideal_for")
+
+    seat_labels = {
+        "total_mbbs_seats": "MBBS Seats",
+        "mbbs_seats": "MBBS Seats",
+        "mbbs_total_seats": "MBBS Seats",
+        "total_seats": "Total Seats",
+        "intake": "Total Intake",
+        "total_intake": "Total Intake",
+        "aiq_seats": "AIQ Seats",
+        "all_india_quota_seats": "AIQ Seats",
+        "state_seats": "State Seats",
+        "state_quota_seats": "State Seats",
+        "management_seats": "Management Seats",
+        "nri_seats": "NRI Seats",
+        "central_pool_seats": "Central Pool Seats",
+    }
+    seat_lines: list[str] = []
+    for keyname, label in seat_labels.items():
+        value = combined.get(keyname)
+        formatted = _counselling_format_int(value)
+        if formatted:
+            seat_lines.append(f"<b>{html.escape(label)}:</b> {html.escape(formatted)}")
+
+    facts: list[str] = [f"<b>{html.escape(str(display_name))}</b>"]
+    if city or state:
+        place = ", ".join([str(x).strip() for x in (city, state) if x and str(x).strip()])
+        facts.append(f"<b>Location:</b> {html.escape(place)}")
+    if ownership:
+        facts.append(f"<b>Ownership:</b> {html.escape(str(ownership))}")
+    if established:
+        facts.append(f"<b>Established:</b> {html.escape(str(established))}")
+    if closing is not None:
+        facts.append(
+            f"<b>Closing Rank ({html.escape(quota)}/{html.escape(category)}, {html.escape(round_code)}):</b> "
+            f"{html.escape(_fmt_rank_val(closing))}"
+        )
+    if seat_lines:
+        facts.extend(seat_lines)
+    if total_fee and not _counselling_is_missing(total_fee):
+        facts.append(f"<b>Total Fee:</b> {html.escape(_fmt_money(total_fee))}")
+    if pg_quota is not None and pg_quota != "":
+        facts.append(f"<b>PG Quota:</b> {html.escape(_yn(_truthy_or_none(pg_quota)))}")
+    if hostel is not None and hostel != "":
+        facts.append(f"<b>Hostel:</b> {html.escape(_yn(_truthy_or_none(hostel)))}")
+    if bond_years or bond_penalty:
+        bond_bits = []
+        if bond_years and not _counselling_is_missing(bond_years):
+            bond_bits.append(f"{bond_years} yrs")
+        if bond_penalty and not _counselling_is_missing(bond_penalty):
+            penalty_val = _counselling_format_int(bond_penalty)
+            if penalty_val:
+                bond_bits.append(f"₹{penalty_val}L")
+        bond_text = ", ".join(bond_bits) if bond_bits else None
+        if bond_text:
+            facts.append(f"<b>Bond:</b> {html.escape(bond_text)}")
+        elif bond_summary:
+            facts.append(f"<b>Bond:</b> {html.escape(str(bond_summary))}")
+    if nearest_airport:
+        facts.append(f"<b>Nearest Airport:</b> {html.escape(str(nearest_airport))}")
+    if travel_access:
+        facts.append(f"<b>Travel:</b> {html.escape(str(travel_access))}")
+    if ideal_for:
+        facts.append(f"<b>Ideal for:</b> {html.escape(str(ideal_for))}")
+    if roi_blurb:
+        facts.append(f"<b>Fees & ROI:</b> {html.escape(str(roi_blurb))}")
+
+    extra_sections: list[str] = []
+    if summary:
+        extra_sections.append(f"<b>Summary:</b> {html.escape(str(summary))}")
+    if bond_summary and (not bond_years and not bond_penalty):
+        extra_sections.append(f"<b>Bond:</b> {html.escape(str(bond_summary))}")
+
+    if len(facts) <= 1 and not extra_sections:
+        return False, ""
+
+    lines = ["\n".join(facts)]
+    if extra_sections:
+        lines.append("")
+        lines.extend(extra_sections)
+    lines.append("")
+    lines.append("<i>Source: counselling datasets (profiles, cutoffs, seat matrix).</i>")
+    return True, "\n".join([line for line in lines if line is not None])
+
 def _subject_hint_text(subj: Optional[str]) -> str:
     if not subj:
         return ""
@@ -6652,6 +7010,25 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await q.answer()
 
     subject = context.user_data.get("ask_subject")
+    if (subject or "").strip().lower() == "counselling":
+            handled, dataset_html = _answer_counselling_from_data(q, context)
+            if handled:
+                context.user_data["ask_subject"] = "Counselling"
+                context.user_data["ask_last_question"] = q
+                context.user_data["ask_last_answer"] = dataset_html
+                context.user_data["ask_more_ctx"] = {
+                    "subject": "Counselling",
+                    "question": q,
+                    "answer_text": dataset_html,
+                    "explanation": "",
+                }
+                await update.message.reply_text(
+                    dataset_html,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    reply_markup=_ask_followup_markup(),
+                )
+                return ConversationHandler.END
     concept = context.user_data.get("ask_last_question")
 
     if data in ("ask_more:quickqa", "ask_more:qna5"):  # accept both ids
