@@ -1528,12 +1528,9 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
     header = f"{name}" + (f", {place}" if place else "")
 
     cr_ln  = f"Closing Rank ({quota}/{category}) { _fmt_rank_val(closing) }"
-    fee_val = _pick(r, "total_fee", "Fee", "Total Fee")
-    fee_txt = _fmt_money(fee_val) if not _is_missing(fee_val) else None
     own_txt = _safe_str(_pick(r, "ownership", "Ownership"))
     details: list[str] = [cr_ln]
-    if fee_txt:
-        details.append(f"Total Fee {fee_txt}")
+    
     if own_txt:
         details.append(own_txt)
     return header + ("\n" + " • ".join(details) if details else "")
