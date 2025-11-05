@@ -21,6 +21,7 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 BASE_DIR = Path(__file__).parent
 QUIZ_FILE = Path(os.environ.get("QUIZ_FILE", BASE_DIR / "quiz.json"))
+QUIZ_FALLBACK_FILE = Path(__file__).parent / "quiz_fallback.json"
 RANDOM_SEED = os.environ.get("QUIZ_RANDOM_SEED")
 
 logging.basicConfig(
@@ -75,7 +76,7 @@ def _load_pool() -> None:
     from quiz_loader import load_quiz_file
 
     try:
-        questions = load_quiz_file(QUIZ_FILE)
+        questions = load_quiz_file(QUIZ_FILE, fallback=QUIZ_FALLBACK_FILE)
     except Exception as exc:
         log.warning(
             "quiz file %s could not be loaded (%s); continuing without quiz questions",
