@@ -55,7 +55,13 @@ def load_quiz_file(path: str | Path) -> List[Dict[str, Any]]:
 
     questions, errors = _normalise_payload(payload)
     if errors:
-        raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errors))
+        if questions:
+            preview = "\n- ".join(errors[:5])
+            if len(errors) > 5:
+                preview += f"\n- ... (+{len(errors) - 5} more issues)"
+            log.warning("quiz.json contained malformed entries:\n- %s", preview)
+        else:
+            raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errors))
     return questions
 
 
@@ -88,6 +94,12 @@ def _normalise_payload(payload: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
     if isinstance(payload, list):
         return _normalise_list(payload)
     if isinstance(payload, dict):
+        for key in ("questions", "quiz", "data"):
+            nested = payload.get(key)
+            if isinstance(nested, (list, dict)):
+                qs, errs = _normalise_payload(nested)
+                if qs or errs:
+                    return qs, errs  
         return _normalise_subject_map(payload)
     return [], ["root must be a list or an object mapping subjects -> questions"]
 
