@@ -1,5 +1,5 @@
 import os
-import json
+
 import random
 import logging
 import asyncio
@@ -69,52 +69,25 @@ except Exception:
 _POOL: List[Dict[str, Any]] = []
 _INDEX: Dict[str, Dict[str, Any]] = {}
 
-def _validate_question(q: Dict[str, Any], i: int) -> Optional[str]:
-    if "id" not in q or not q["id"]:
-        return f"[{i}] missing id"
-    if "options" not in q or not isinstance(q["options"], list) or len(q["options"]) < 2:
-        return f"[{q.get('id')}] options must be a list with >= 2 items"
-    ai = q.get("answer_index")
-    if not isinstance(ai, int) or ai < 0 or ai >= len(q["options"]):
-        return f"[{q.get('id')}] invalid answer_index"
-    if q.get("difficulty") not in (1, 2, 3):
-        return f"[{q.get('id')}] difficulty must be 1|2|3"
-    if "subject" not in q or not q["subject"]:
-        return f"[{q.get('id')}] subject required"
-    return None
 
 def _load_pool() -> None:
     global _POOL, _INDEX
-    if not QUIZ_FILE.exists():
-        raise FileNotFoundError(f"quiz file not found at: {QUIZ_FILE}")
-    with QUIZ_FILE.open("r", encoding="utf-8") as fh:
-        raw = fh.read()
-    if not raw.strip():
-        log.warning("quiz file %s is empty; continuing without quiz questions", QUIZ_FILE)
-        _POOL, _INDEX = [], {}
-        return
+    from quiz_loader import load_quiz_file
+
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        log.warning("quiz file %s has invalid JSON (%s); continuing without quiz questions", QUIZ_FILE, exc)
+        questions = load_quiz_file(QUIZ_FILE)
+    except Exception as exc:
+        log.warning(
+            "quiz file %s could not be loaded (%s); continuing without quiz questions",
+            QUIZ_FILE,
+            exc,
+        )
         _POOL, _INDEX = [], {}
         return
-    if not isinstance(data, list):
-        raise ValueError("quiz.json must be a flat JSON array")
+   
 
-    seen, errors = set(), []
-    for i, q in enumerate(data):
-        err = _validate_question(q, i)
-        if err:
-            errors.append(err); continue
-        if q["id"] in seen:
-            errors.append(f"duplicate id: {q['id']}"); continue
-        seen.add(q["id"])
+     _POOL = questions
 
-    if errors:
-        raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errors))
-
-    _POOL = data
     _INDEX = {q["id"]: q for q in _POOL}
     log.info("✅ Loaded %d quiz questions from %s", len(_POOL), QUIZ_FILE)
 
