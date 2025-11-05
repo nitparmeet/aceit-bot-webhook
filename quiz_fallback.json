@@ -1,0 +1,134 @@
+[
+  {
+    "id": "PHY-MECH-0001",
+    "subject": "Physics",
+    "topic": "Mechanics",
+    "difficulty": 1,
+    "question": "A block slides down a smooth plane inclined at angle θ. What is its acceleration?",
+    "options": ["g", "g sinθ", "g cosθ", "g tanθ"],
+    "answer_index": 1,
+    "explanation": "Component of gravity along the incline is mg sinθ, so acceleration is g sinθ.",
+    "tags": ["Mechanics", "Inclined plane"]
+  },
+  {
+    "id": "PHY-SHM-0002",
+    "subject": "Physics",
+    "topic": "Simple Harmonic Motion",
+    "difficulty": 1,
+    "question": "For SHM x = A sin(ωt). At x = 0, which of the following is true?",
+    "options": ["Speed is zero", "Acceleration is maximum", "Acceleration is zero", "Potential energy is maximum"],
+    "answer_index": 2,
+    "explanation": "At mean position displacement is zero and acceleration is zero while speed is maximum.",
+    "tags": ["SHM"]
+  },
+  {
+    "id": "PHY-PROJ-0003",
+    "subject": "Physics",
+    "topic": "Projectile Motion",
+    "difficulty": 1,
+    "question": "A projectile is fired with speed u at 45°. What is its range on level ground (ignore air resistance)?",
+    "options": ["u²/g", "u²/2g", "2u²/g", "u/g"],
+    "answer_index": 0,
+    "explanation": "Range R = u² sin 2θ / g. For θ = 45°, sin 2θ = 1 giving R = u² / g.",
+    "tags": ["Projectile"]
+  },
+  {
+    "id": "CHEM-ATOM-1001",
+    "subject": "Chemistry",
+    "topic": "Atomic Structure",
+    "difficulty": 1,
+    "question": "Which quantum number determines the orientation of an orbital?",
+    "options": ["Principal quantum number", "Azimuthal quantum number", "Magnetic quantum number", "Spin quantum number"],
+    "answer_index": 2,
+    "explanation": "Magnetic quantum number (mℓ) decides the orientation of the orbital in space.",
+    "tags": ["Quantum numbers"]
+  },
+  {
+    "id": "CHEM-THERM-1002",
+    "subject": "Chemistry",
+    "topic": "Thermodynamics",
+    "difficulty": 2,
+    "question": "For an ideal gas, which of the following is always zero?",
+    "options": ["ΔU in isothermal expansion", "ΔH in isobaric process", "ΔG in spontaneous process", "ΔS in reversible process"],
+    "answer_index": 0,
+    "explanation": "Internal energy of an ideal gas depends only on temperature. Isothermal process has ΔT = 0 ⇒ ΔU = 0.",
+    "tags": ["Ideal gas", "First law"]
+  },
+  {
+    "id": "CHEM-ORG-1003",
+    "subject": "Chemistry",
+    "topic": "Organic Chemistry",
+    "difficulty": 2,
+    "question": "Which reagent converts alcohol to aldehyde selectively?",
+    "options": ["KMnO₄", "PCC", "K₂Cr₂O₇", "Jones reagent"],
+    "answer_index": 1,
+    "explanation": "Pyridinium chlorochromate (PCC) oxidises primary alcohols to aldehydes without further oxidation.",
+    "tags": ["Organic reactions", "Oxidation"]
+  },
+  {
+    "id": "BOT-ANAT-2001",
+    "subject": "Botany",
+    "topic": "Plant Anatomy",
+    "difficulty": 1,
+    "question": "Casparian strips are present in the cell walls of which tissue?",
+    "options": ["Epidermis", "Endodermis", "Pericycle", "Cortex"],
+    "answer_index": 1,
+    "explanation": "Endodermal cells of roots possess Casparian strips of suberin.",
+    "tags": ["Root anatomy"]
+  },
+  {
+    "id": "BOT-PHYS-2002",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 2,
+    "question": "Which plant hormone delays senescence of leaves?",
+    "options": ["Auxin", "Gibberellin", "Cytokinin", "Ethylene"],
+    "answer_index": 2,
+    "explanation": "Cytokinins promote cell division and delay ageing of leaves.",
+    "tags": ["Plant hormones"]
+  },
+  {
+    "id": "BOT-PHYS-2003",
+    "subject": "Botany",
+    "topic": "Plant Physiology",
+    "difficulty": 2,
+    "question": "Guttation droplets exude through which structures?",
+    "options": ["Lenticels", "Stomata", "Hydathodes", "Trichomes"],
+    "answer_index": 2,
+    "explanation": "Hydathodes present at leaf margins release xylem sap during guttation.",
+    "tags": ["Transpiration"]
+  },
+  {
+    "id": "ZOO-PHYS-3001",
+    "subject": "Zoology",
+    "topic": "Human Physiology",
+    "difficulty": 1,
+    "question": "Which chamber of the human heart pumps oxygenated blood into systemic circulation?",
+    "options": ["Right atrium", "Right ventricle", "Left atrium", "Left ventricle"],
+    "answer_index": 3,
+    "explanation": "Left ventricle pumps oxygenated blood into the aorta for systemic circulation.",
+    "tags": ["Circulatory system"]
+  },
+  {
+    "id": "ZOO-REPR-3002",
+    "subject": "Zoology",
+    "topic": "Human Reproduction",
+    "difficulty": 2,
+    "question": "In humans, fertilisation normally occurs in which part of the female reproductive tract?",
+    "options": ["Ovary", "Cervix", "Ampulla of fallopian tube", "Uterus"],
+    "answer_index": 2,
+    "explanation": "Sperm meets secondary oocyte in the ampullary–isthmic junction of the fallopian tube.",
+    "tags": ["Reproduction"]
+  },
+  {
+    "id": "ZOO-GEN-3003",
+    "subject": "Zoology",
+    "topic": "Genetics",
+    "difficulty": 2,
+    "question": "If a heterozygous tall pea plant (Tt) is crossed with a dwarf plant (tt), what fraction of the offspring are expected to be tall?",
+    "options": ["0", "1/4", "1/2", "3/4"],
+    "answer_index": 2,
+    "explanation": "Cross Tt × tt gives genotypes Tt and tt in 1:1 ratio; half are tall.",
+    "tags": ["Mendelian genetics"]
+  }
+]
