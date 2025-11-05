@@ -53,11 +53,12 @@ def load_quiz_file(path: str | Path, *, fallback: str | Path | Any | None = None
                 f"fallback also failed ({fallback_exc})"
             ) from fallback_exc
 
-    log.info(
+        log.info(
             "✅ Using fallback quiz source (%d questions)",
             len(questions),
         )
         return questions
+      
 def _load_quiz_from_path(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(f"quiz file not found at: {path}")
