@@ -32,37 +32,77 @@ DIFF_MAP = {
 }
 
 
-def load_quiz_file(path: str | Path) -> List[Dict[str, Any]]:
+def load_quiz_file(path: str | Path, *, fallback: str | Path | Any | None = None) -> List[Dict[str, Any]]:
     """
     Read `quiz.json`, handle legacy structures, and return a flat list
-    of validated question dicts. Raises ValueError on unrecoverable issues.
+    of validated question dicts. If the primary file fails, optionally load a
+    fallback (path or in-memory payload).
     """
-    p = Path(path)
-    if not p.exists():
-        raise FileNotFoundError(f"quiz file not found at: {p}")
+    primary_path = Path(path)
+    try:
+        return _load_quiz_from_path(primary_path)
+    except Exception as exc:
+        log.warning("quiz file %s could not be loaded (%s)", primary_path, exc)
+        if fallback is None:
+            raise
+        try:
+            questions = _load_fallback(fallback)
+        except Exception as fallback_exc:
+            raise RuntimeError(
+                f"primary quiz file {primary_path} failed ({exc}); "
+                f"fallback also failed ({fallback_exc})"
+            ) from fallback_exc
 
-    raw = p.read_text(encoding="utf-8")
+    log.info(
+            "✅ Using fallback quiz source (%d questions)",
+            len(questions),
+        )
+        return questions
+def _load_quiz_from_path(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        raise FileNotFoundError(f"quiz file not found at: {path}")
+    raw = path.read_text(encoding="utf-8")
     cleaned = raw.strip()
     if not cleaned:
-        log.warning("quiz file %s is empty; continuing with no quiz questions", p)
+        log.warning("quiz file %s is empty; continuing with no quiz questions", path)
         return []
 
     cleaned = _strip_conflict_markers(cleaned)
 
     payload = _loads_loose(cleaned)
     if payload is None:
-        raise ValueError(f"quiz file {p} is not valid JSON even after cleanup")
+        raise ValueError(f"quiz file {path} is not valid JSON even after cleanup")
+    return _load_from_payload(payload, str(path))
+def _load_fallback(source: str | Path | Any) -> List[Dict[str, Any]]:
+    if isinstance(source, (str, Path)):
+        fallback_path = Path(source)
+        questions = _load_quiz_from_path(fallback_path)
+        log.info(
+            "✅ Loaded %d quiz questions from fallback file %s",
+            len(questions),
+            fallback_path,
+        )
+        return questions
+    return _load_from_payload(source, "<fallback>")
+
+def _load_from_payload(payload: Any, label: str) -> List[Dict[str, Any]]:
 
     questions, errors = _normalise_payload(payload)
     if errors:
+        preview = _preview_errors(errors)
         if questions:
-            preview = "\n- ".join(errors[:5])
-            if len(errors) > 5:
-                preview += f"\n- ... (+{len(errors) - 5} more issues)"
-            log.warning("quiz.json contained malformed entries:\n- %s", preview)
+            log.warning("%s contained malformed entries:\n%s", label, preview)
         else:
-            raise ValueError("quiz.json validation errors:\n- " + "\n- ".join(errors))
+            raise ValueError(f"{label} validation errors:\n{preview}")
     return questions
+
+def _preview_errors(errors: List[str], limit: int = 5) -> str:
+    if not errors:
+        return ""
+    shown = "\n- ".join(errors[:limit])
+    if limit and len(errors) > limit:
+        shown += f"\n- ... (+{len(errors) - limit} more issues)"
+    return "- " + shown
 
 
 def _strip_conflict_markers(text: str) -> str:
