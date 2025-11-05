@@ -3708,7 +3708,13 @@ async def coach_save_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     await q.edit_message_text(f"✅ Saved as *My List v{version}*. Use /mylist to view.", parse_mode="Markdown")
 
-async def send_long_message(bot, chat_id: int, text: str, parse_mode: str | None = None):
+async def send_long_message(
+    bot,
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = None,
+    **send_kwargs,
+):
     """
     Safe long-message sender for Telegram. Splits on blank lines first,
     then hard-slices if absolutely necessary. Mirrors the behavior of
@@ -3718,13 +3724,15 @@ async def send_long_message(bot, chat_id: int, text: str, parse_mode: str | None
         return
 
     limit = TG_LIMIT
+    base_kwargs = dict(send_kwargs)
+    if parse_mode:
+        base_kwargs["parse_mode"] = parse_mode
     if len(text) <= limit:
-        await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        await bot.send_message(chat_id=chat_id, text=text, **base_kwargs)
         return
 
     # Try to split on paragraph boundaries to preserve formatting
     parts = text.split("\n\n")
-    batch = []
     cur = ""
     sent_any = False
 
@@ -3732,23 +3740,29 @@ async def send_long_message(bot, chat_id: int, text: str, parse_mode: str | None
         return ("Continued…\n\n" + s) if prefix else s
 
     for p in parts:
-        candidate = (cur + ("\n\n" if cur else "") + p)
+        candidate = cur + ("\n\n" if cur else "") + p
         if len(_sendable(sent_any, candidate)) <= limit:
             cur = candidate
         else:
             # flush current
             if cur:
-                await bot.send_message(chat_id=chat_id, text=_sendable(sent_any, cur), parse_mode=parse_mode)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=_sendable(sent_any, cur),
+                    **base_kwargs,
+                )
                 sent_any = True
             # if a single paragraph is too big, hard-slice it
             if len(_sendable(sent_any, p)) > limit:
                 chunk = p
                 while len(_sendable(sent_any, chunk)) > limit:
                     # reserve a few chars for ellipsis
-                    cut = limit - (15 if sent_any else 15)
-                    await bot.send_message(chat_id=chat_id,
-                                           text=_sendable(sent_any, chunk[:cut] + "…"),
-                                           parse_mode=parse_mode)
+                    cut = limit - 15
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=_sendable(sent_any, chunk[:cut] + "…"),
+                        **base_kwargs,
+                    )
                     sent_any = True
                     chunk = chunk[cut:]
                 cur = chunk
@@ -3756,7 +3770,11 @@ async def send_long_message(bot, chat_id: int, text: str, parse_mode: str | None
                 cur = p
 
     if cur:
-        await bot.send_message(chat_id=chat_id, text=_sendable(sent_any, cur), parse_mode=parse_mode)
+        await bot.send_message(
+            chat_id=chat_id,
+            text=_sendable(sent_any, cur),
+            **base_kwargs,
+        )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5499,7 +5517,25 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             blocks.append("\n".join(lines))
             
 
-        await status.edit_text("\n\n".join(blocks), parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+        final_text = "\n\n".join(blocks)
+        if len(final_text) <= TG_LIMIT:
+            await status.edit_text(
+                final_text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        else:
+            # Long summaries exceed Telegram limits; delete the placeholder
+            # message and send the content in safe chunks instead.
+            with contextlib.suppress(Exception):
+                await status.delete()
+            await send_long_message(
+                context.bot,
+                chat_id=chat_id,
+                text=final_text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
 
     except Exception:
         log.exception("[ai_notes] failed")
