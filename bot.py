@@ -40,6 +40,7 @@ from telegram import Update
 
 from collections import Counter
 import sys
+from quiz_loader import load_quiz_file
 strategy_search_paths = [
     Path(__file__).resolve().parent,
     Path(__file__).resolve().parent.parent,
@@ -2365,22 +2366,15 @@ def ensure_quiz_ready() -> None:
     if QUIZ_POOL:
         return
 
-    with open(QUIZ_FILE_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, list):
-        raise ValueError("quiz.json must be a flat array of question objects")
-
-    # minimal validation (keep yours)
-    for i, q in enumerate(data):
-        if "id" not in q or "question" not in q or "options" not in q or "answer_index" not in q:
-            raise ValueError(f"Bad question at index {i}: missing keys")
-        if not isinstance(q["options"], list) or len(q["options"]) < 2:
-            raise ValueError(f"Bad options at qid={q.get('id')}")
-        if not isinstance(q["answer_index"], int) or not (0 <= q["answer_index"] < len(q["options"])):
-            raise ValueError(f"Bad answer_index at qid={q.get('id')}")
-
-    QUIZ_POOL = data
-
+    try:
+        QUIZ_POOL = load_quiz_file(QUIZ_FILE_PATH)
+    except Exception as exc:
+        log.warning("quiz file %s could not be loaded (%s); quizzes disabled", QUIZ_FILE_PATH, exc)
+        QUIZ_POOL = []
+        QUIZ_INDEX = {}
+        QUIZ_BY_ID = {}
+        return
+        
     # critical: attach normalized subject once
     for q in QUIZ_POOL:
         q["subject_norm"] = _subject_of(q)
