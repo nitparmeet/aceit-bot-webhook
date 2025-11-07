@@ -6422,17 +6422,39 @@ async def call_openai(prompt: str, *, model: str | None = None, max_output_token
         log.exception("ask_followup: OpenAI error")
         return f"Sorry—couldn’t generate that. ({type(e).__name__})"
 
-async def _ask_genai_text(question: str, subject_hint: str | None = None) -> tuple[bool, str]:
+async def _ask_genai_text(
+    question: str,
+    subject_hint: str | None = None,
+    context_text: str | None = None,
+) -> tuple[bool, str]:
     subject_hint = (subject_hint or "NEET").strip()
-    prompt = (
+    base_prompt = (
         "You are a NEET biology/chemistry/physics and motivation teacher. "
-        f"The student asked: {question}\n"
         "Answer in <=150 words using simple, exam-oriented language. "
         "If it is a factual NEET syllabus question, give the exact explanation. "
         "If it is motivational or strategy-based, give practical NEET-prep advice. "
         "Avoid over-complicated language and avoid bullet formatting that Telegram might render as HTML."
     )
+    if subject_hint.lower() == "counselling":
+        base_prompt = (
+            "You are a NEET counselling expert. "
+            "Explain counselling, quota, fee, bond, and college profile questions accurately. "
+            "Use only the provided dataset facts where available; if something is unknown, admit it."
+        )
 
+    if context_text:
+        base_prompt += (
+            "\n\nFacts you can quote directly (verbatim, do not invent beyond these):\n"
+            f"{context_text}\n"
+        )
+
+    prompt = (
+        f"{base_prompt}\n\n"
+        f"Question: {question}\n"
+        "Answer:"
+    )
+
+    
     try:
         reply = await call_openai(prompt, max_output_tokens=450)
         reply = (reply or "").strip()
@@ -7119,7 +7141,14 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         subject = context.user_data.get("ask_subject")
         context.user_data["ask_last_question"] = q
-
+         dataset_used = False
+        dataset_html = ""
+        dataset_context = ""
+        if (subject or "").strip().lower() == "counselling":
+            handled, dataset_html = _answer_counselling_from_data(q, context)
+            if handled and dataset_html:
+                dataset_used = True
+                dataset_context = _strip_html(dataset_html)
         with contextlib.suppress(Exception):
             await update.message.chat.send_action(action=ChatAction.TYPING)
         working = await update.message.reply_text("Working on it… 🧠")
@@ -7127,14 +7156,28 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Call solver (guarded; never crash the handler)
         try:
 
-            ok, res = await _ask_genai_text(q, subject_hint=subject)
+            ok, res = await _ask_genai_text(
+                q,
+                subject_hint=subject,
+                context_text=dataset_context if dataset_used else None,
+            )
         except asyncio.TimeoutError:
             ok, res = False, "The tutor timed out. Please try again."
         except Exception as e:
             ok, res = False, f"Error contacting tutor: {e}"
 
-        # Clean + stash legacy keys
-        text = _clean_to_html(res if ok else f"Error: {res}")
+        if dataset_used:
+            parts = [dataset_html]
+            coach_section = ""
+            if ok and res:
+                coach_section = "<b>AI Counsellor Notes:</b>\n" + _clean_to_html(res)
+            elif res:
+                coach_section = _clean_to_html(res if isinstance(res, str) else str(res))
+            if coach_section:
+                parts.append(coach_section)
+            text = "\n\n".join([p for p in parts if p])
+        else:
+            text = _clean_to_html(res if ok else f"Error: {res}")
         context.user_data["ask_last_question"] = q
         context.user_data["ask_last_answer"]  = text if ok else ""
 
