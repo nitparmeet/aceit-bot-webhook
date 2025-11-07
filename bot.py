@@ -1175,6 +1175,12 @@ MENU_COACH = "menu_coach"
 
 NOTES_TOP_N = 10
 SHORTLIST_LIMIT = 4  # number of colleges to display in shortlist/notes
+
+COLLEGE_NAME_ALIASES = {
+    "aiimsdelhi": "aiimsnewdelhi",
+    "aimsdelhi": "aiimsnewdelhi",
+}
+
 GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini") 
 
 
@@ -4416,8 +4422,8 @@ def main_menu_markup() -> InlineKeyboardMarkup:
         #[InlineKeyboardButton("🧭 Topper Strategy (Macro) ", callback_data="menu_strategy")],
         #[InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
         [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
-        [InlineKeyboardButton("💬 Click to Clear your NEET Counselling Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
+        [InlineKeyboardButton("💬 Click to Clear your NEET Counselling Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
     ])
 
@@ -4445,8 +4451,8 @@ async def show_menu(
         "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
         "Get more details for shortlisted colleges for more details like bond/hostel. "
         "Please note that fees mentioned may not be accurate; please check respective websites for the same.\n\n"
-        "💬 *Clear your NERt Counselling Doubts* — Ask questions related to counselling, get instant explanations.\n\n"
         "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
+        "💬 *Clear your NEET Counselling Doubts* — Ask questions related to counselling, get instant explanations.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
 
@@ -6218,6 +6224,11 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
         key = _name_key(phrase)
         if key:
             phrase_norms.append(key)
+            alias_key = COLLEGE_NAME_ALIASES.get(key)
+            if alias_key and alias_key in COLLEGE_META_INDEX:
+                meta = COLLEGE_META_INDEX[alias_key]
+                profile = _gather_profile_from_meta(meta)
+                return alias_key, meta, profile
         if key and key in COLLEGE_META_INDEX:
             meta = COLLEGE_META_INDEX[key]
             profile = _gather_profile_from_meta(meta)
@@ -6234,7 +6245,11 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
             meta = COLLEGE_META_INDEX[digits_only]
             profile = _gather_profile_from_meta(meta)
             return digits_only, meta, profile
-
+        alias = COLLEGE_NAME_ALIASES.get(_name_key(token))
+        if alias and alias in COLLEGE_META_INDEX:
+            meta = COLLEGE_META_INDEX[alias]
+            profile = _gather_profile_from_meta(meta)
+            return alias, meta, profile
     try:
         import difflib
 
@@ -6255,6 +6270,7 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
             for cand in candidates:
                 if not cand:
                     continue
+                cand = COLLEGE_NAME_ALIASES.get(cand, cand) 
                 matches = difflib.get_close_matches(cand, list(names_map.keys()), n=1, cutoff=0.6)
                 if matches:
                     best_key = names_map[matches[0]]
@@ -6266,6 +6282,7 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
             query_norm = _name_key(question)
             
             if query_norm:
+                query_norm = COLLEGE_NAME_ALIASES.get(query_norm, query_norm)
                 matches = difflib.get_close_matches(query_norm, list(names_map.keys()), n=1, cutoff=0.6)
                 if matches:
                     best_key = names_map[matches[0]]
@@ -7042,6 +7059,11 @@ def tri_inline(prefix: str) -> InlineKeyboardMarkup:
 
 
 async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import contextlib
+    q = getattr(update, "callback_query", None)
+    if q:
+        with contextlib.suppress(Exception):
+            await q.answer()
     ok = await guard_or_block(update, context, "ask")
     if not ok:
         return ConversationHandler.END
@@ -7190,52 +7212,6 @@ def _ask_followup_markup():
         
 
 
-async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from telegram.constants import ChatAction
-    import contextlib
-
-    q = update.callback_query
-    data = (q.data or "").strip()
-    await q.answer()
-
-    subject = context.user_data.get("ask_subject")
-    if (subject or "").strip().lower() == "counselling":
-            handled, dataset_html = _answer_counselling_from_data(q, context)
-            if handled:
-                context.user_data["ask_subject"] = "Counselling"
-                context.user_data["ask_last_question"] = q
-                context.user_data["ask_last_answer"] = dataset_html
-                context.user_data["ask_more_ctx"] = {
-                    "subject": "Counselling",
-                    "question": q,
-                    "answer_text": dataset_html,
-                    "explanation": "",
-                }
-                await update.message.reply_text(
-                    dataset_html,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True,
-                    reply_markup=_ask_followup_markup(),
-                )
-                return ConversationHandler.END
-    concept = context.user_data.get("ask_last_question")
-
-    if data in ("ask_more:quickqa", "ask_more:qna5"):  # accept both ids
-        with contextlib.suppress(Exception):
-            await q.message.edit_reply_markup(reply_markup=None)
-        with contextlib.suppress(Exception):
-            await q.message.chat.send_action(action=ChatAction.TYPING)
-
-        ok, text = await _gen_quick_qna(subject=subject, concept=concept, n=5)
-
-        # Chunk to fit Telegram limits
-        for i in range(0, len(text), 3800):
-            await update.effective_chat.send_message(
-                text[i:i+3800],
-                parse_mode="HTML",
-                disable_web_page_preview=True,
-            )
-        return
 
 
 
@@ -7430,21 +7406,17 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
-                    reply_markup=_ask_followup_markup() if ok else None,
                 )
             else:
                 parts = list(_chunks(text))
                 await working.edit_text(parts[0], parse_mode="HTML", disable_web_page_preview=True)
                 for p in parts[1:]:
                     await update.message.reply_text(p, parse_mode="HTML", disable_web_page_preview=True)
-                if ok:
-                    await update.message.reply_text("What next?", reply_markup=_ask_followup_markup())
+                
         except Exception:
             for p in _chunks(text):
                 await update.message.reply_text(p, parse_mode="HTML", disable_web_page_preview=True)
-            if ok:
-                await update.message.reply_text("What next?", reply_markup=_ask_followup_markup())
-
+            
         return ConversationHandler.END
 
     finally:
@@ -9792,6 +9764,7 @@ def register_handlers(app: Application) -> None:
         entry_points=[
             CommandHandler("ask", ask_start),
             CallbackQueryHandler(ask_start, pattern=r"^menu_ask$"),
+            CallbackQueryHandler(ask_start, pattern=r"^ask_more:new$"),
         ],
         states={
             ASK_SUBJECT: [
