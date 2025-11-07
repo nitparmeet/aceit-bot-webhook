@@ -7141,7 +7141,7 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         subject = context.user_data.get("ask_subject")
         context.user_data["ask_last_question"] = q
-         dataset_used = False
+        dataset_used = False
         dataset_html = ""
         dataset_context = ""
         if (subject or "").strip().lower() == "counselling":
