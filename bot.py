@@ -6240,6 +6240,9 @@ def _answer_counselling_from_data(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> tuple[bool, str]:
     _ensure_counselling_data(context)
+    default_round = ACTIVE_CUTOFF_ROUND_DEFAULT
+    if context and hasattr(context, "user_data"):
+        default_round = context.user_data.get("cutoff_round") or default_round
     key, meta, profile = _lookup_college_meta_from_question(question)
     combined: dict = {}
     if isinstance(meta, dict):
@@ -6248,6 +6251,15 @@ def _answer_counselling_from_data(
         combined.update({k: v for k, v in profile.items() if not _counselling_is_missing(v)})
 
     if not combined:
+        if COLLEGE_META_INDEX:
+            round_code = _resolve_round_from_text(question, default_round)
+            summary = (
+                f"Our counselling workbook for round {round_code} contains "
+                f"{len(COLLEGE_META_INDEX)} colleges with cutoffs, fees, and profiles. "
+                "Please mention a specific college name or code so I can pull its 2025 data."
+            )
+            summary += "\n\n<i>Example: “Show AIIMS Delhi closing rank for General AIQ 2025 R1.”</i>"
+            return True, summary
         return False, ""
 
     default_round = context.user_data.get("cutoff_round") if context and hasattr(context, "user_data") else None
