@@ -1174,7 +1174,7 @@ COACH_SAVE   = "coach_save"
 MENU_COACH = "menu_coach"
 
 NOTES_TOP_N = 10
-
+SHORTLIST_LIMIT = 4  # number of colleges to display in shortlist/notes
 GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini") 
 
 
@@ -5447,7 +5447,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             
         # ---------- build blocks ----------
         blocks = []
-        for i, r in enumerate(items[:10], 1):
+        for i, r in enumerate(items[:SHORTLIST_LIMIT], 1):
             m = _resolve_master_row(r)
             profile_meta = _resolve_profile_row(r, m)
             combined_meta = dict(profile_meta)
@@ -5810,7 +5810,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             user["avoid_bond"] = None
             items = shortlist_and_score(COLLEGES, user, cutoff_lookup=CUTOFF_LOOKUP) or []
             items = _dedupe_results(items)
-        items = items[:10]
+        items = items[:SHORTLIST_LIMIT]
         if not items:
             await status.edit_text("I couldn’t find any shortlisted colleges to summarize. Run /predict first.")
             return
@@ -9409,7 +9409,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
             return ConversationHandler.END
 
         # ---------- We have results: show compact top-10 ----------
-        top = results[:10]
+        top = results[:SHORTLIST_LIMIT]
         # remember these for AI notes (use the actual rows, not just the display compact)
         context.user_data["LAST_SHORTLIST"] = top
 
