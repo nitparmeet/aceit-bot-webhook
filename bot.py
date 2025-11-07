@@ -2221,6 +2221,34 @@ def _strip_html(s: str) -> str:
     s = re.sub(r"<\s*br\s*/?>", "\n", s, flags=re.I)
     s = re.sub(r"<[^>]+>", "", s)
     return html.unescape(s).strip()
+def _extract_rank_from_text(text: str) -> Optional[int]:
+    """
+    Try to pull an AIR mentioned in free-form text.
+    Prefer numbers next to 'AIR'/'rank'; ignore years like 2025.
+    """
+    if not text:
+        return None
+    lower = text.lower()
+    # direct AIR pattern
+    m = re.search(r"\bair[^0-9]{0,5}(\d{1,6})", lower)
+    if m:
+        val = int(m.group(1))
+        if val >= 1:
+            return val
+    # mentions like "rank 456" or "all india rank 789"
+    m = re.search(r"(?:rank|all[-\s]india\s+rank)[^\d]{0,5}(\d{1,6})", lower)
+    if m:
+        val = int(m.group(1))
+        if val >= 1:
+            return val
+    # fallback: grab first standalone number that isn't a common year
+    for num in re.findall(r"\b\d{1,6}\b", lower):
+        if num in {"2020", "2021", "2022", "2023", "2024", "2025", "2026"}:
+            continue
+        val = int(num)
+        if val >= 1:
+            return val
+    return None
 
 def _get_close_rank_from_rec(rec: dict, category: str):
     """
