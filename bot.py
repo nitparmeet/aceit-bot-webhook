@@ -4416,7 +4416,7 @@ def main_menu_markup() -> InlineKeyboardMarkup:
         #[InlineKeyboardButton("🧭 Topper Strategy (Macro) ", callback_data="menu_strategy")],
         #[InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
         [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
-        [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
+        [InlineKeyboardButton("💬 Click to Clear your NEET Counselling Doubts 🤔", callback_data="menu_ask")],
         [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
     ])
@@ -4445,7 +4445,7 @@ async def show_menu(
         "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
         "Get more details for shortlisted colleges for more details like bond/hostel. "
         "Please note that fees mentioned may not be accurate; please check respective websites for the same.\n\n"
-        "💬 *Clear your NEET Doubts* — Ask questions related to counselling and subjects, get instant explanations.\n\n"
+        "💬 *Clear your NERt Counselling Doubts* — Ask questions related to counselling, get instant explanations.\n\n"
         "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
@@ -5648,7 +5648,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return await show_menu(update, context)
     
     if data == "menu_ask":
-        await q.message.reply_text("Ask your NEET doubt with /ask.")
+        await q.message.reply_text("Ask your NEET qounselling doubt with /ask.")
         return
 
     if data == "menu_profile":
@@ -6213,9 +6213,11 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
         for idx in range(0, len(tokens) - size + 1):
             phrase = " ".join(tokens[idx : idx + size])
             phrases.append(phrase)
-
+    phrase_norms: list[str] = []
     for phrase in phrases:
         key = _name_key(phrase)
+        if key:
+            phrase_norms.append(key)
         if key and key in COLLEGE_META_INDEX:
             meta = COLLEGE_META_INDEX[key]
             profile = _gather_profile_from_meta(meta)
@@ -6249,14 +6251,28 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
             names_map.setdefault(norm, key)
 
         if names_map:
+            candidates = phrase_norms or [_name_key(question)]
+            for cand in candidates:
+                if not cand:
+                    continue
+                matches = difflib.get_close_matches(cand, list(names_map.keys()), n=1, cutoff=0.6)
+                if matches:
+                    best_key = names_map[matches[0]]
+                    meta = COLLEGE_META_INDEX.get(best_key)
+                    if isinstance(meta, dict):
+                        profile = _gather_profile_from_meta(meta)
+                        return best_key, meta, profile
+            # fallback to entire question if no phrase match
             query_norm = _name_key(question)
-            matches = difflib.get_close_matches(query_norm, list(names_map.keys()), n=1, cutoff=0.6)
-            if matches:
-                best_key = names_map[matches[0]]
-                meta = COLLEGE_META_INDEX.get(best_key)
-                if isinstance(meta, dict):
-                    profile = _gather_profile_from_meta(meta)
-                    return best_key, meta, profile
+            
+            if query_norm:
+                matches = difflib.get_close_matches(query_norm, list(names_map.keys()), n=1, cutoff=0.6)
+                if matches:
+                    best_key = names_map[matches[0]]
+                    meta = COLLEGE_META_INDEX.get(best_key)
+                    if isinstance(meta, dict):
+                        profile = _gather_profile_from_meta(meta)
+                        return best_key, meta, profile
     except Exception:
         pass
 
@@ -6932,6 +6948,11 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Reuse your followup handler that knows how to produce these
         return await ask_followup_handler(update, context)
 
+    if data == "ask_more:new":
+        unlock_flow(context)
+        return await ask_start(update, context)
+
+    
     # Unknown ask_more action → no-op
     return
 
@@ -7036,7 +7057,7 @@ async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     tgt = _target(update)
     await tgt.reply_text(
-        "💬 *Ask a NEET doubt*\nPick *Counselling* or skip to ask a general academic question.",
+        "💬 *Ask a NEET counselling doubt*\nPick *Counselling* or skip to ask a general academic question.",
         parse_mode="Markdown",
         reply_markup=ask_subject_keyboard()
     )
@@ -7160,9 +7181,10 @@ async def _gen_quick_qna(*, subject: str | None, concept: str | None, n: int = 5
 def _ask_followup_markup():
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     rows = [
-        [InlineKeyboardButton("🔁 Similar question", callback_data="ask_more:similar")],
-        [InlineKeyboardButton("📚 Explain concept",  callback_data="ask_more:explain")],
-        [InlineKeyboardButton("🧠 Quick Q&A (5)",   callback_data="ask_more:quickqa")],
+        #[InlineKeyboardButton("🔁 Similar question", callback_data="ask_more:similar")],
+        #[InlineKeyboardButton("📚 Explain concept",  callback_data="ask_more:explain")],
+        #[InlineKeyboardButton("🧠 Quick Q&A (5)",   callback_data="ask_more:quickqa")],
+        [InlineKeyboardButton("🙋 Ask another question", callback_data="ask_more:new")],
     ]
     return InlineKeyboardMarkup(rows)
         
