@@ -4412,12 +4412,12 @@ def _find_story_by_id(story_id: str) -> Optional[Dict[str, str]]:
 
 def main_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔥 Josh Zone:  GET MOTIVATED ", callback_data="menu_josh")],
-        [InlineKeyboardButton("🧭 Topper Strategy (Macro) ", callback_data="menu_strategy")],
-        [InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
-        [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
+        #[InlineKeyboardButton("🔥 Josh Zone:  GET MOTIVATED ", callback_data="menu_josh")],
+        #[InlineKeyboardButton("🧭 Topper Strategy (Macro) ", callback_data="menu_strategy")],
+        #[InlineKeyboardButton("✏️ Click for Daily Quiz (Exam Mode) ⚡", callback_data="menu_quiz")],
         [InlineKeyboardButton("🏫 Click to find Your MBBS College 🎯", callback_data="menu_predict")],
         [InlineKeyboardButton("💬 Click to Clear your NEET Doubts 🤔", callback_data="menu_ask")],
+        [InlineKeyboardButton("📈 Predict AIR & College from Mock test Rank🎓", callback_data="menu_predict_mock")],
         [InlineKeyboardButton("⚙️ Click to Setup your profile 🧾", callback_data="menu_profile")],
     ])
 
@@ -4439,14 +4439,14 @@ async def show_menu(
 
     explanation = (
         "📋 *Menu Options*\n\n"
-        "🔥 *Josh Zone* Un aspirants ki stories jinhone give up nahi kiya kabhi and neet jaisa exam foda.\n\n"
-        "🔥 *Topper Strategy*  NEET exam ko fodne ki strategies chahe aap kisi bhi stage pe ho tayari ki.\n\n"
-        "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
-        "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
+      #  "🔥 *Josh Zone* Un aspirants ki stories jinhone give up nahi kiya kabhi and neet jaisa exam foda.\n\n"
+      #  "🔥 *Topper Strategy*  NEET exam ko fodne ki strategies chahe aap kisi bhi stage pe ho tayari ki.\n\n"
+      #  "✏️ *Daily Quiz (Exam Mode)* — Practice 5 quick NEET questions (Mini quiz) or 10 quick NEET questions by subject (Mini Test), and track streaks.\n\n"
         "🏫 *Find Your NEET College* — Predict your MBBS seat from your NEET AIR based on last year's cutoffs. "
-        "Get quick notes for shortlisted colleges for more details like bond/hostel. "
+        "Get more details for shortlisted colleges for more details like bond/hostel. "
         "Please note that fees mentioned may not be accurate; please check respective websites for the same.\n\n"
         "💬 *Clear your NEET Doubts* — Ask questions related to counselling and subjects, get instant explanations.\n\n"
+        "📈 *Mock Test Rank → College* — Check colleges that match your mock test rank.\n\n"
         "⚙️ *Setup your profile* — Save category, quota and state for better predictions."
     )
 
