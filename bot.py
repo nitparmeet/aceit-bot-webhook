@@ -8165,18 +8165,18 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
         f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
         "Select your *counselling authority*:"
     )
+    context.user_data.pop("counselling_authority", None)
+    context.user_data.pop("domicile_required", None)
+    context.user_data.pop("awaiting_state_quota", None)
+    context.user_data["awaiting_counselling"] = True
+    
     await update.message.reply_text(
         msg,
         parse_mode="Markdown",
         reply_markup=counselling_authority_keyboard(),
     )
     context.user_data.pop("pending_predict_summary", None)
-    return ASK_COUNSELLING
-    context.user_data.pop("counselling_authority", None)
-    context.user_data.pop("domicile_required", None)
-    context.user_data.pop("awaiting_state_quota", None)
-    context.user_data["awaiting_counselling"] = True
-
+    
     return ASK_QUOTA
 
 
