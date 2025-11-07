@@ -6659,8 +6659,11 @@ async def ask_openai_vision(
 
 def ask_subject_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        [["Physics", "Chemistry"], ["Zoology", "Botany"], ["Counselling"], ["Skip", "Cancel"]],
-        one_time_keyboard=True, resize_keyboard=True
+        [["Counselling"], ["Skip", "Cancel"]],
+        one_time_keyboard=True,
+        resize_keyboard=True,
+    #  [["Physics", "Chemistry"], ["Zoology", "Botany"], ["Counselling"], ["Skip", "Cancel"]],
+    #   one_time_keyboard=True, resize_keyboard=True
     )
 
 def _closing_rank_smart(code, quota, category, round_code, df_lookup, lookup_dict):
@@ -7033,7 +7036,7 @@ async def ask_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     tgt = _target(update)
     await tgt.reply_text(
-        "💬 *Ask a NEET doubt*\nFirst, pick a subject (optional).",
+        "💬 *Ask a NEET doubt*\nPick *Counselling* or skip to ask a general academic question.",
         parse_mode="Markdown",
         reply_markup=ask_subject_keyboard()
     )
@@ -7049,7 +7052,7 @@ async def ask_subject_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await show_menu(update, context)
 
         return ConversationHandler.END
-    if text != "skip" and text not in {"physics", "chemistry", "zoology", "botany", "counselling"}:
+    if text not in {"skip", "counselling"}:
         await update.message.reply_text("Choose from buttons (or Skip).", reply_markup=ask_subject_keyboard())
         return ASK_SUBJECT
 
