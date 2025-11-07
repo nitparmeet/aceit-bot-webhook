@@ -7316,21 +7316,21 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
-                    reply_markup=_ask_followup_markup() if ok else None,
                 )
             else:
                 parts = list(_chunks(text))
                 await working.edit_text(parts[0], parse_mode="HTML", disable_web_page_preview=True)
                 for p in parts[1:]:
                     await update.message.reply_text(p, parse_mode="HTML", disable_web_page_preview=True)
-                if ok:
-                    await update.message.reply_text("What next?", reply_markup=_ask_followup_markup())
         except Exception:
             for p in _chunks(text):
                 await update.message.reply_text(p, parse_mode="HTML", disable_web_page_preview=True)
-            if ok:
-                await update.message.reply_text("What next?", reply_markup=_ask_followup_markup())
-
+        finally:
+            await update.message.reply_text(
+                "Want to ask more?",
+                reply_markup=_ask_followup_markup(),
+            )
+            
         return ConversationHandler.END
 
     finally:  # always release flow lock
