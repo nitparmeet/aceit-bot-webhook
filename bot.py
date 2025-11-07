@@ -6108,6 +6108,71 @@ def _collect_identifiers(meta: Optional[dict], profile: Optional[dict]) -> list[
             identifiers.append(str(val).strip())
     return identifiers
 
+def _ensure_counselling_data(context: ContextTypes.DEFAULT_TYPE | None = None) -> None:
+    """Lazy-load Excel-based datasets so counselling answers have metadata."""
+    global COLLEGES, COLLEGE_META_INDEX, COLLEGE_PROFILES, CUTOFF_LOOKUP, CUTOFFS_DF
+    try:
+        excel_hint = None
+        if context and getattr(context, "application", None):
+            excel_hint = context.application.bot_data.get("EXCEL_PATH")
+        excel_path = excel_hint or _resolve_excel_path()
+    except Exception:
+        excel_path = _resolve_excel_path()
+
+    if excel_path and (COLLEGES is None or getattr(COLLEGES, "empty", True)):
+        try:
+            COLLEGES = _safe_df(load_colleges_dataset(excel_path))
+        except Exception:
+            log.exception("[counselling] load_colleges_dataset failed")
+            COLLEGES = pd.DataFrame()
+    if (not COLLEGE_META_INDEX) and COLLEGES is not None and not getattr(COLLEGES, "empty", True):
+        try:
+            build_name_maps_from_colleges_df(COLLEGES)
+        except Exception:
+            log.exception("[counselling] build_name_maps_from_colleges_df failed")
+    if not COLLEGE_PROFILES and excel_path:
+        try:
+            COLLEGE_PROFILES = load_college_profiles(excel_path)
+        except Exception:
+            log.exception("[counselling] load_college_profiles failed")
+            COLLEGE_PROFILES = {}
+    # merge profile metadata into main index for quick lookup
+    if isinstance(COLLEGE_PROFILES, dict) and COLLEGE_PROFILES:
+        for key, pdata in COLLEGE_PROFILES.items():
+            if not isinstance(pdata, dict):
+                continue
+            meta = COLLEGE_META_INDEX.get(key)
+            if meta is None or not isinstance(meta, dict):
+                COLLEGE_META_INDEX[key] = dict(pdata)
+            else:
+                for mk, mv in pdata.items():
+                    if meta.get(mk) in (None, "", "—"):
+                        meta[mk] = mv
+    if not CUTOFF_LOOKUP and excel_path:
+        try:
+            CUTOFF_LOOKUP = load_cutoff_lookup_from_excel(
+                path=excel_path,
+                sheet="Cutoffs",
+                round_tag=ACTIVE_CUTOFF_ROUND_DEFAULT,
+                require_quota=None,
+                require_course_contains="MBBS",
+                require_category_set=("General", "EWS", "OBC", "SC", "ST"),
+            )
+        except Exception:
+            log.exception("[counselling] load_cutoff_lookup_from_excel failed")
+            CUTOFF_LOOKUP = {}
+    if (CUTOFFS_DF is None or getattr(CUTOFFS_DF, "empty", True)) and CUTOFF_LOOKUP:
+        try:
+            CUTOFFS_DF = _safe_df(build_cutoffs_df(CUTOFF_LOOKUP, COLLEGES))
+        except Exception:
+            log.exception("[counselling] build_cutoffs_df failed")
+            CUTOFFS_DF = pd.DataFrame()
+    if context and getattr(context, "application", None):
+        if excel_path:
+            context.application.bot_data.setdefault("EXCEL_PATH", excel_path)
+        if isinstance(CUTOFFS_DF, pd.DataFrame) and not CUTOFFS_DF.empty:
+            context.application.bot_data["CUTOFFS_DF"] = CUTOFFS_DF
+
 
 def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Optional[dict], dict]:
     tokens = re.findall(r"[A-Za-z0-9]+", question or "")
@@ -6174,6 +6239,7 @@ def _answer_counselling_from_data(
     question: str,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> tuple[bool, str]:
+    _ensure_counselling_data(context)
     key, meta, profile = _lookup_college_meta_from_question(question)
     combined: dict = {}
     if isinstance(meta, dict):
