@@ -1164,7 +1164,7 @@ CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
 ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)    
 
 COACH_TOP_N = 40        
-COACH_SHOW_N = 12      
+COACH_SHOW_N = 4      
 COACH_MODEL = "gpt-4o-mini" 
 
 COACH_ADJUST = "coach_adjust"   
@@ -1184,7 +1184,7 @@ DREAM_CUTOFF = 1.10  # AIR >  1.10 * ClosingRank → "dream"
 
 
 COACH_TOP_N  = 200     
-COACH_SHOW_N = 20    
+COACH_SHOW_N = 4    
 
 OPENAI_MODEL = "gpt-4o-mini"
 
