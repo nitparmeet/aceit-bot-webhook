@@ -1180,6 +1180,11 @@ COLLEGE_NAME_ALIASES = {
     "aiimsdelhi": "aiimsnewdelhi",
     "aimsdelhi": "aiimsnewdelhi",
 }
+# Counselling intents (Ask flow)
+INTENT_PREDICTOR = "predictor"
+INTENT_PROFILE = "profile"
+INTENT_RULES = "rules"
+INTENT_GENERAL = "general"
 
 GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini") 
 
@@ -2256,6 +2261,97 @@ def _extract_rank_from_text(text: str) -> Optional[int]:
             return val
     return None
 
+QUOTA_KEYWORDS = {
+    "aiq": "AIQ",
+    "all india": "AIQ",
+    "all-india": "AIQ",
+    "mcc": "AIQ",
+    "deemed": "Deemed",
+    "central": "Central",
+    "state": "State",
+    "management": "Management",
+    "nri": "NRI",
+}
+
+CATEGORY_KEYWORDS = {
+    "general": "General",
+    "gen": "General",
+    "ur": "General",
+    "open": "General",
+    "ews": "EWS",
+    "obc": "OBC",
+    "sc": "SC",
+    "st": "ST",
+    "pwd": "PwD",
+}
+
+STATE_CANON = {
+    "andhra pradesh": "Andhra Pradesh",
+    "arunachal pradesh": "Arunachal Pradesh",
+    "assam": "Assam",
+    "bihar": "Bihar",
+    "chhattisgarh": "Chhattisgarh",
+    "delhi": "Delhi",
+    "goa": "Goa",
+    "gujarat": "Gujarat",
+    "haryana": "Haryana",
+    "himachal pradesh": "Himachal Pradesh",
+    "jammu and kashmir": "Jammu and Kashmir",
+    "jharkhand": "Jharkhand",
+    "karnataka": "Karnataka",
+    "kerala": "Kerala",
+    "madhya pradesh": "Madhya Pradesh",
+    "maharashtra": "Maharashtra",
+    "manipur": "Manipur",
+    "meghalaya": "Meghalaya",
+    "mizoram": "Mizoram",
+    "nagaland": "Nagaland",
+    "odisha": "Odisha",
+    "punjab": "Punjab",
+    "rajasthan": "Rajasthan",
+    "sikkim": "Sikkim",
+    "tamil nadu": "Tamil Nadu",
+    "telangana": "Telangana",
+    "tripura": "Tripura",
+    "uttar pradesh": "Uttar Pradesh",
+    "uttarakhand": "Uttarakhand",
+    "west bengal": "West Bengal",
+    "andaman and nicobar": "Andaman and Nicobar",
+    "chandigarh": "Chandigarh",
+    "dadra and nagar haveli": "Dadra and Nagar Haveli",
+    "daman and diu": "Daman and Diu",
+    "ladakh": "Ladakh",
+    "lakshadweep": "Lakshadweep",
+    "puducherry": "Puducherry",
+}
+
+STATE_ALIAS = {
+    "mp": "Madhya Pradesh",
+    "up": "Uttar Pradesh",
+    "uk": "Uttarakhand",
+    "tn": "Tamil Nadu",
+    "ap": "Andhra Pradesh",
+    "ts": "Telangana",
+    "jk": "Jammu and Kashmir",
+    "hp": "Himachal Pradesh",
+}
+
+RULE_KEYWORDS = {
+    "resign",
+    "upgrade",
+    "upgradation",
+    "mop",
+    "stray",
+    "refund",
+    "security deposit",
+    "reporting",
+    "withdraw",
+    "exit",
+    "free exit",
+    "sliding",
+}
+
+
 def _get_close_rank_from_rec(rec: dict, category: str):
     """
     rec example: {"General": 48, "EWS": 123, "OBC": 500, "General_PwD": 3, ...}
@@ -3100,6 +3196,34 @@ def find_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
             if cn == cand or cand in cn:
                 return c
     return None
+
+def _parse_quota_from_text(text: str) -> Optional[str]:
+    lower = text.lower()
+    for key, val in QUOTA_KEYWORDS.items():
+        if f"{key}" in lower:
+            return val
+    return None
+
+
+def _parse_category_from_text(text: str) -> Optional[str]:
+    lower = text.lower()
+    for key, val in CATEGORY_KEYWORDS.items():
+        if f"{key}" in lower:
+            return val
+    return None
+
+
+def _parse_state_from_text(text: str) -> Optional[str]:
+    lower = text.lower()
+    for alias, name in STATE_ALIAS.items():
+        pattern = rf"\b{re.escape(alias)}\b"
+        if re.search(pattern, lower):
+            return name
+    for canon_key, canon_val in STATE_CANON.items():
+        if canon_key in lower:
+            return canon_val
+    return None
+
 
 
 def build_name_maps_from_colleges_df(df):
@@ -6295,15 +6419,91 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
 
     return None, None, {}
 
+def _detect_counselling_intent(
+    question: str,
+    context: ContextTypes.DEFAULT_TYPE | None = None,
+) -> tuple[str, dict]:
+    text = question or ""
+    parsed = {
+        "air": _extract_rank_from_text(text),
+        "quota": _parse_quota_from_text(text),
+        "category": _parse_category_from_text(text),
+        "state": _parse_state_from_text(text),
+    }
+
+    text_lower = text.lower()
+    if any(keyword in text_lower for keyword in RULE_KEYWORDS):
+        return INTENT_RULES, {"parsed": parsed}
+
+    _ensure_counselling_data(context)
+    resolved = _lookup_college_meta_from_question(text)
+    if resolved[0]:
+        return INTENT_PROFILE, {"parsed": parsed, "resolved": resolved}
+
+    predictor_keywords = {"which college", "what college", "get", "possible colleges", "chance", "predict"}
+    if parsed["air"] and any(word in text_lower for word in predictor_keywords):
+        return INTENT_PREDICTOR, {"parsed": parsed}
+
+    return INTENT_GENERAL, {"parsed": parsed}
+
+
+def _render_predictor_shortlist(
+    parsed: dict,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> str:
+    _ensure_counselling_data(context)
+    air = parsed.get("air")
+    if not air:
+        return "Please share your AIR so I can suggest colleges."
+
+    quota = parsed.get("quota") or "AIQ"
+    category = parsed.get("category") or "General"
+    user = {
+        "rank_air": air,
+        "quota": quota,
+        "category": category,
+    }
+    if parsed.get("state"):
+        user["domicile_state"] = parsed["state"]
+
+    shortlist = shortlist_and_score(COLLEGES, user, cutoff_lookup=CUTOFF_LOOKUP) or []
+    shortlist = _dedupe_results(shortlist)[:SHORTLIST_LIMIT]
+    if not shortlist:
+        return (
+            f"I couldn’t find matches for AIR {air:,} under {quota}/{category}. "
+            "Try /predict with more details."
+        )
+
+    lines = [
+        f"Top matches for AIR {air:,} ({quota}/{category}):"
+    ]
+    for idx, row in enumerate(shortlist, 1):
+        name = _safe_str(_pick(row, "college_name", "College Name")) or "College"
+        closing = _fmt_rank_val(
+            row.get("ClosingRank")
+            or row.get("closing")
+            or row.get("rank")
+        )
+        state = _safe_str(_pick(row, "state", "State"))
+        detail = f"{name}" + (f", {state}" if state else "")
+        lines.append(f"{idx}. {detail} — closing {closing}")
+    lines.append("Run /predict for the full preference builder.")
+    return "\n".join(lines)
 
 def _answer_counselling_from_data(
     question: str,
     context: ContextTypes.DEFAULT_TYPE,
+    resolved: Optional[tuple[Optional[str], Optional[dict], dict]] = None,
 ) -> tuple[bool, str]:
     _ensure_counselling_data(context)
     default_round = ACTIVE_CUTOFF_ROUND_DEFAULT
     if context and hasattr(context, "user_data"):
         default_round = context.user_data.get("cutoff_round") or default_round
+
+    if resolved:
+        key, meta, profile = resolved
+    else:
+        key, meta, profile = _lookup_college_meta_from_question(question)
     key, meta, profile = _lookup_college_meta_from_question(question)
     combined: dict = {}
     if isinstance(meta, dict):
@@ -6939,6 +7139,10 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with contextlib.suppress(Exception):
         await q.edit_message_reply_markup(reply_markup=None)
 
+    # ---- Flashcards ----
+    if data == "ask_more:flash":
+        return await ask_more_flashcards(update, context)
+
     # ---- Quick Q&A branch ----
     if data in ("ask_more:quickqa", "ask_more:qna5"):
         with contextlib.suppress(Exception):
@@ -7251,11 +7455,27 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dataset_used = False
         dataset_html = ""
         dataset_context = ""
+        forced_text = None
+        forced_ok = False
+        intent_payload: dict[str, Any] = {}
         if (subject or "").strip().lower() == "counselling":
-            handled, dataset_html = _answer_counselling_from_data(q, context)
-            if handled and dataset_html:
-                dataset_used = True
-                dataset_context = _strip_html(dataset_html)
+            
+            intent, intent_payload = _detect_counselling_intent(q, context)
+            if intent == INTENT_PREDICTOR:
+                forced_text = _render_predictor_shortlist(intent_payload.get("parsed", {}), context)
+                forced_ok = True
+            elif intent == INTENT_PROFILE:
+                resolved = intent_payload.get("resolved")
+                handled, dataset_html = _answer_counselling_from_data(q, context, resolved=resolved)
+                if handled and dataset_html:
+                    dataset_used = True
+                    dataset_context = _strip_html(dataset_html)
+                subject = "Counselling"
+            elif intent == INTENT_RULES:
+                subject = "Counselling Rules"
+            else:
+                subject = "Counselling"
+                
         with contextlib.suppress(Exception):
             await update.message.chat.send_action(action=ChatAction.TYPING)
         working = await update.message.reply_text("Working on it… 🧠")
@@ -7263,11 +7483,14 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Call solver (guarded; never crash the handler)
         try:
 
-            ok, res = await _ask_genai_text(
-                q,
-                subject_hint=subject,
-                context_text=dataset_context if dataset_used else None,
-            )
+            if forced_text:
+                ok, res = forced_ok, forced_text
+            else:
+                ok, res = await _ask_genai_text(
+                    q,
+                    subject_hint=subject,
+                    context_text=dataset_context if dataset_used else None,
+                )
         except asyncio.TimeoutError:
             ok, res = False, "The tutor timed out. Please try again."
         except Exception as e:
