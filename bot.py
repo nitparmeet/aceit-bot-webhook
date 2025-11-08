@@ -9948,7 +9948,11 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         await context.bot.send_message(
             chat_id=chat_id,
-            text="Extras: `/move_rank -500` to simulate a new AIR, or `/compare CODE1 CODE2` for side-by-side analysis.",
+            text=(
+                "Extras:\n"
+                "• `/move_rank` – interactive buttons to move your AIR up/down and see added/removed colleges.\n"
+                "• `/compare` – pick two shortlisted colleges for a side-by-side verdict."
+            ),
             parse_mode="Markdown",
         )
     
