@@ -2232,6 +2232,16 @@ def _strip_html(s: str) -> str:
     s = re.sub(r"<\s*br\s*/?>", "\n", s, flags=re.I)
     s = re.sub(r"<[^>]+>", "", s)
     return html.unescape(s).strip()
+
+def _ai_to_html(text: str) -> str:
+    if not text:
+        return ""
+    safe = html.escape(str(text), quote=False)
+    safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
+    safe = re.sub(r"__(.+?)__", r"<i>\1</i>", safe)
+    safe = safe.replace("\n\n", "<br><br>").replace("\n", "<br>")
+    return safe
+
 def _extract_rank_from_text(text: str) -> Optional[int]:
     """
     Try to pull an AIR mentioned in free-form text.
@@ -7452,7 +7462,7 @@ async def _compare_and_send(chat_id: int, context: ContextTypes.DEFAULT_TYPE, id
 
     lines = ["🏫 Compare Colleges", summary1, "", summary2]
     if verdict:
-        lines.extend(["", "🤖 Verdict:", verdict])
+        lines.extend(["", "🤖 Verdict:", _ai_to_html(verdict)])
     await context.bot.send_message(chat_id=chat_id, text="\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
     return True
 
