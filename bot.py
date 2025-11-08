@@ -7650,9 +7650,9 @@ async def ask_subject_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     context.user_data["ask_subject"] = None if text == "skip" else text.title()
     await update.message.reply_text(
-         "Send your doubt as *text* (or photo for subject questions). "
+         "Send your counselling doubt as *text* (or photo). "
         "For *Counselling* try prompts like:\n"
-        "• “AIQ Gen AIR 3000 Telangana – what seats are realistic?”\n"
+        "• “AIQ Gen AIR 3000 New Delhi – what seats are realistic?”\n"
         "• “AIIMS Delhi fee, hostel, bond?”\n"
         "• “What are MCC upgrade rules after Round 2?”",
 
