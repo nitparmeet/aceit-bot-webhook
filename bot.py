@@ -7305,9 +7305,11 @@ async def ask_subject_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     context.user_data["ask_subject"] = None if text == "skip" else text.title()
     await update.message.reply_text(
-        "Send your question as *text* OR upload a *photo* (book scan / handwritten). "
-        "Optionally add a short caption like “kinematics MCQ”."
-        "For *Counselling* queries, include quota, category, rank, and state if relevant.",
+         "Send your doubt as *text* (or photo for subject questions). "
+        "For *Counselling* try prompts like:\n"
+        "• “AIQ Gen AIR 3000 Telangana – what seats are realistic?”\n"
+        "• “AIIMS Delhi fee, hostel, bond?”\n"
+        "• “What are MCC upgrade rules after Round 2?”",
 
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove()
