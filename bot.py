@@ -2239,7 +2239,6 @@ def _ai_to_html(text: str) -> str:
     safe = html.escape(str(text), quote=False)
     safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
     safe = re.sub(r"__(.+?)__", r"<i>\1</i>", safe)
-    safe = safe.replace("\n\n", "<br><br>").replace("\n", "<br>")
     return safe
 
 def _extract_rank_from_text(text: str) -> Optional[int]:
@@ -7338,7 +7337,6 @@ async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Added ({len(added)}): " + (", ".join(added) if added else "—"),
             f"Removed ({len(removed)}): " + (", ".join(removed) if removed else "—"),
             f"Unchanged ({len(unchanged)}): " + (", ".join(unchanged[:SHORTLIST_LIMIT]) if unchanged else "—"),
-            "Tip: run /predict to rebuild the main list.",
         ]
         await q.edit_message_text("Move rank simulated.")
         await context.bot.send_message(
