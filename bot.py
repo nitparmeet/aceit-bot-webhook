@@ -2233,13 +2233,7 @@ def _strip_html(s: str) -> str:
     s = re.sub(r"<[^>]+>", "", s)
     return html.unescape(s).strip()
 
-def _ai_to_html(text: str) -> str:
-    if not text:
-        return ""
-    safe = html.escape(str(text), quote=False)
-    safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
-    safe = re.sub(r"__(.+?)__", r"<i>\1</i>", safe)
-    return safe
+
 
 def _extract_rank_from_text(text: str) -> Optional[int]:
     """
@@ -7372,27 +7366,73 @@ def _resolve_college_identifier(identifier: str) -> tuple[Optional[str], Optiona
     return _lookup_college_meta_from_question(identifier)
 
 
-def _compare_summary(meta: dict, profile: dict, closing_rank: Any) -> str:
+def _fit_bucket(user_rank: Optional[int], closing_rank: Optional[int], tol: int = 2000) -> tuple[str, str, str, Optional[int]]:
+    if user_rank is None or closing_rank is None:
+        return "Unknown", "❓", "cutoff unavailable", None
+    if user_rank <= closing_rank:
+        return "Safe", "✅", "within last year's cutoff", 0
+    diff = user_rank - closing_rank
+    if diff <= tol:
+        return "Borderline", "⚠️", f"slightly outside cutoff by ~{diff:,}", diff
+    return "Risky", "❌", f"needs improvement of ~{diff:,}", diff
+
+
+def _compare_summary(meta: dict, profile: dict, closing_rank: Any, user_rank: Optional[int]) -> tuple[str, dict]:
     name = meta.get("college_name") or meta.get("College Name") or "College"
-    state = meta.get("state") or meta.get("State") or ""
-    ownership = meta.get("ownership") or meta.get("Ownership") or ""
-    fee = meta.get("total_fee") or meta.get("Fee") or profile.get("total_fee") if profile else None
-    bond = profile.get("bond_summary") if profile else None
+    fee = meta.get("total_fee") or meta.get("Fee") or (profile.get("total_fee") if profile else None)
+    
     hostel = profile.get("hostel_available") if profile else meta.get("hostel_available")
-    parts = [f"<b>{html.escape(str(name))}</b>"]
-    if state:
-        parts.append(html.escape(str(state)))
-    if ownership:
-        parts.append(html.escape(str(ownership)))
-    info = [", ".join(parts)]
-    info.append(f"Closing Rank: {_fmt_rank_val(closing_rank)}")
+    try:
+        closing_int = int(float(closing_rank)) if closing_rank not in (None, "", "—") else None
+    except Exception:
+        closing_int = None
+
+    bucket, icon, note, diff = _fit_bucket(user_rank, closing_int)
+    closing_txt = _fmt_rank_val(closing_rank)
+    air_txt = f"{user_rank:,}" if isinstance(user_rank, int) else "—"
+    line = (
+        f"• {html.escape(str(name))} closed at {closing_txt} vs your AIR {air_txt} "
+        f"→ {icon} {bucket}"
+    )
+    if note:
+        line += f" ({html.escape(note)})"
+    details = []
     if fee:
-        info.append(f"Total Fee: {_fmt_money(fee)}")
+        details.append(f"Total Fee: {_fmt_money(fee)}")
     if hostel not in (None, ""):
-        info.append(f"Hostel: {_yn(_truthy_or_none(hostel))}")
-    if bond and isinstance(bond, str):
-        info.append(f"Bond: {html.escape(bond)}")
-    return "\n".join(info)
+        details.append(f"Hostel: {_yn(_truthy_or_none(hostel))}")
+    if details:
+        line += "\n  " + " | ".join(details)
+    return line, {"bucket": bucket, "diff": diff, "closing": closing_int}
+
+
+def _overall_compare_verdict(user_rank: int, comps: list[dict]) -> str:
+    from collections import Counter
+
+    from collections import Counter
+
+    counts = Counter(c.get("bucket", "Unknown") for c in comps)
+    diffs = [c.get("diff") for c in comps if isinstance(c.get("diff"), int) and c.get("diff") > 0]
+    min_diff = min(diffs) if diffs else None
+
+    if counts.get("Safe") == len(comps):
+        return "Verdict: You are comfortably within cutoff for these colleges."
+    if counts.get("Risky") == len(comps):
+        if min_diff:
+            return f"Verdict: Your AIR is above last year's cutoffs; aim to improve by ~{min_diff:,} ranks for better chances."
+        return "Verdict: Your AIR is above last year's cutoffs; aim to improve for better chances."
+    if counts.get("Safe") and (counts.get("Borderline") or counts.get("Risky")):
+        if min_diff:
+            return f"Verdict: You are near the cutoff for a few options; improvement of ~{min_diff:,} ranks could unlock stronger colleges."
+        return "Verdict: You are near the cutoff for a few options."
+    if counts.get("Borderline") and not counts.get("Safe") and not counts.get("Risky"):
+        if min_diff:
+            return f"Verdict: Both options are just outside the cutoff; improving by ~{min_diff:,} ranks would make them safer."
+        return "Verdict: Both options are just outside the cutoff."
+    # mixed or unknown
+    if min_diff:
+        return f"Verdict: Consider improving by ~{min_diff:,} ranks to widen your options."
+    return "Verdict: Cutoff data is limited; verify with official counselling bulletins."
 
 
 async def compare_colleges_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7443,6 +7483,11 @@ async def _compare_and_send(chat_id: int, context: ContextTypes.DEFAULT_TYPE, id
         await context.bot.send_message(chat_id=chat_id, text="Could not recognize one of those colleges. Use codes or clear names.")
         return False
 
+    user_rank = context.user_data.get("rank_air")
+    if not isinstance(user_rank, int):
+        await context.bot.send_message(chat_id=chat_id, text="Run /predict first so I know your AIR.")
+        return False
+    
     _ensure_counselling_data(context)
     round_code = context.user_data.get("cutoff_round") or ACTIVE_CUTOFF_ROUND_DEFAULT
     quota = context.user_data.get("quota") or "AIQ"
@@ -7454,25 +7499,13 @@ async def _compare_and_send(chat_id: int, context: ContextTypes.DEFAULT_TYPE, id
     closing1 = _closing_rank_for_identifiers(ids1, round_code, quota, category, df_lookup, CUTOFF_LOOKUP)
     closing2 = _closing_rank_for_identifiers(ids2, round_code, quota, category, df_lookup, CUTOFF_LOOKUP)
 
-    summary1 = _compare_summary(rec1[1], rec1[2] or {}, closing1)
-    summary2 = _compare_summary(rec2[1], rec2[2] or {}, closing2)
+    summary1, bucket1 = _compare_summary(rec1[1], rec1[2] or {}, closing1, user_rank)
+    summary2, bucket2 = _compare_summary(rec2[1], rec2[2] or {}, closing2, user_rank)
 
-    context_blob = f"{_strip_html(summary1)}\n\n{_strip_html(summary2)}\n\nCandidate Rank: {_fmt_rank_val(context.user_data.get('rank_air'))}"
-    verdict = ""
-    try:
-        ok, verdict_text = await _ask_genai_text(
-            f"Compare {rec1[1].get('college_name')} vs {rec2[1].get('college_name')} for NEET MBBS preferences. "
-            "Give a short verdict highlighting fit.",
-            subject_hint="Counselling",
-            context_text=context_blob,
-        )
-        verdict = verdict_text if ok else ""
-    except Exception:
-        verdict = ""
+    verdict = _overall_compare_verdict(user_rank, [bucket1, bucket2])
 
-    lines = ["🏫 Compare Colleges", summary1, "", summary2]
-    if verdict:
-        lines.extend(["", "🤖 Verdict:", _ai_to_html(verdict)])
+    lines = [f"🏫 Compare Colleges — AIR {user_rank:,}", summary1, "", summary2, "", verdict]
+    
     await context.bot.send_message(chat_id=chat_id, text="\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
     return True
 
