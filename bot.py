@@ -7495,6 +7495,7 @@ async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await q.message.reply_text(f"‘{feature}’ isn’t wired yet. (Button received ok.)")
     
 async def compare_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import contextlib
     q = update.callback_query
     data = (q.data or "").split(":")
     await q.answer()
@@ -10355,7 +10356,7 @@ def register_handlers(app: Application) -> None:
         ask_followup_handler,
         pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
     ), group=0)
-    _add(CallbackQueryHandler(compare_cb, pattern=r"^compare:(pick|cancel):?.*$"), group=0)
+    _add(CallbackQueryHandler(compare_cb, pattern=r"^compare:(?:start|pick|cancel)(?::.*)?$"), group=0)
 
     # Quiz: start, answer, navigation
     # -------------------------------
