@@ -7211,6 +7211,20 @@ async def ask_more_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Unknown ask_more action → no-op
     return
 
+async def _send_predict_extras(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> None:
+    kb = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📊 Move Rank", callback_data="move_rank:start")],
+            [InlineKeyboardButton("🏫 Compare Colleges", callback_data="compare:start")],
+        ]
+    )
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Quick tools:",
+        reply_markup=kb,
+    )
+
+
 async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, want: str) -> bool:
     """
     Convenience: ensure only one flow runs at a time.
@@ -7250,18 +7264,7 @@ async def move_rank_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not isinstance(base_rank, int):
         await update.message.reply_text("Run /predict first so I know your current AIR.")
         return
-    context.user_data.pop("move_rank_state", None)
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("Move Up (better rank)", callback_data="move_rank:dir:up"),
-            InlineKeyboardButton("Move Down (worse rank)", callback_data="move_rank:dir:down"),
-        ],
-        [InlineKeyboardButton("Cancel", callback_data="move_rank:cancel")],
-    ])
-    await update.message.reply_text(
-        f"Current AIR: {base_rank:,}\nDo you want to move it up or down?",
-        reply_markup=kb,
-    )
+    await _prompt_move_rank_direction(context.bot, update.effective_chat.id, base_rank)
 
 
 async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7279,6 +7282,10 @@ async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with contextlib.suppress(Exception):
             await q.edit_message_text("Move rank cancelled.")
         return
+    if action == "start":
+        await _prompt_move_rank_direction(context.bot, q.message.chat.id, base_rank, edit_message=q.edit_message_text)
+        return
+        
     if action == "dir":
         direction = data[2] if len(data) > 2 else ""
         if direction not in {"up", "down"}:
@@ -7320,6 +7327,20 @@ async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["LAST_SHORTLIST"] = shortlist_new
         context.user_data.pop("move_rank_state", None)
         return
+
+async def _prompt_move_rank_direction(bot, chat_id: int, base_rank: int, edit_message=None):
+    context_text = f"Current AIR: {base_rank:,}\nDo you want to move it up or down?"
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Move Up (better rank)", callback_data="move_rank:dir:up"),
+            InlineKeyboardButton("Move Down (worse rank)", callback_data="move_rank:dir:down"),
+        ],
+        [InlineKeyboardButton("Cancel", callback_data="move_rank:cancel")],
+    ])
+    if edit_message:
+        await edit_message(context_text, reply_markup=kb)
+    else:
+        await bot.send_message(chat_id=chat_id, text=context_text, reply_markup=kb)
 
 
 def _resolve_college_identifier(identifier: str) -> tuple[Optional[str], Optional[dict], dict]:
@@ -7364,18 +7385,10 @@ async def compare_colleges_cmd(update: Update, context: ContextTypes.DEFAULT_TYP
             ident2=ident2,
         )
         return
-    shortlist = context.user_data.get("LAST_SHORTLIST") or []
-    if not shortlist:
+    ok = await _compare_prompt_from_shortlist(update.effective_chat.id, context)
+    if not ok:
         await update.message.reply_text("Run /predict first so I can show your shortlisted colleges.")
-        return
-    context.user_data["compare_choices"] = shortlist
-    context.user_data["compare_pending"] = []
-
-    kb = _compare_shortlist_keyboard(shortlist, [])
-    await update.message.reply_text(
-        "Select two colleges from your current shortlist:",
-        reply_markup=kb,
-    )
+        
 def _row_identifier(row: dict) -> Optional[str]:
     ident = _row_code_key(row)
     if ident:
@@ -7443,7 +7456,20 @@ async def _compare_and_send(chat_id: int, context: ContextTypes.DEFAULT_TYPE, id
     await context.bot.send_message(chat_id=chat_id, text="\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
     return True
 
-
+async def _compare_prompt_from_shortlist(chat_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    shortlist = context.user_data.get("LAST_SHORTLIST") or []
+    if not shortlist:
+        return False
+    context.user_data["compare_choices"] = shortlist
+    context.user_data["compare_pending"] = []
+    kb = _compare_shortlist_keyboard(shortlist, [])
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="Select two colleges from your current shortlist:",
+        reply_markup=kb,
+    )
+    return True
+    
 async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
     data = q.data if q else ""
@@ -7476,6 +7502,15 @@ async def compare_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     shortlist = context.user_data.get("compare_choices") or []
     selected = context.user_data.get("compare_pending") or []
 
+    if action == "start":
+        ok = await _compare_prompt_from_shortlist(q.message.chat.id, context)
+        if not ok:
+            await q.edit_message_text("Run /predict first so I can show your shortlisted colleges.")
+        else:
+            with contextlib.suppress(Exception):
+                await q.delete_message()
+        return
+    
     if action == "cancel":
         context.user_data.pop("compare_choices", None)
         context.user_data.pop("compare_pending", None)
@@ -9946,15 +9981,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
             text="Want quick expert-style notes on this shortlist?",
             reply_markup=kb,
         )
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=(
-                "Extras:\n"
-                "• `/move_rank` – interactive buttons to move your AIR up/down and see added/removed colleges.\n"
-                "• `/compare` – pick two shortlisted colleges for a side-by-side verdict."
-            ),
-            parse_mode="Markdown",
-        )
+        await _send_predict_extras(chat_id, context)
     
         _end_flow(context, "predict")
         return ConversationHandler.END
