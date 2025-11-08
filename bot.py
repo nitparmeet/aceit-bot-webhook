@@ -7230,43 +7230,96 @@ async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, wan
         return False
     return True
 
+def _move_rank_amount_keyboard(direction: str) -> InlineKeyboardMarkup:
+    options = [100, 250, 500, 1000, 2000]
+    rows = [
+        [
+            InlineKeyboardButton(f"{amt}", callback_data=f"move_rank:amount:{amt}")
+            for amt in options[:3]
+        ],
+        [
+            InlineKeyboardButton(f"{amt}", callback_data=f"move_rank:amount:{amt}")
+            for amt in options[3:]
+        ],
+        [InlineKeyboardButton("Cancel", callback_data="move_rank:cancel")],
+    ]
+    return InlineKeyboardMarkup(rows)
+    
 async def move_rank_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     base_rank = context.user_data.get("rank_air")
     if not isinstance(base_rank, int):
         await update.message.reply_text("Run /predict first so I know your current AIR.")
         return
-    if not context.args:
-        await update.message.reply_text("Usage: /move_rank <delta or target AIR>\nExample: /move_rank -500  or  /move_rank 12000")
-        return
-    arg = context.args[0].replace(",", "")
-    try:
-        if arg.startswith(("+", "-")):
-            delta = int(arg)
-            new_rank = max(1, base_rank + delta)
-        else:
-            new_rank = max(1, int(arg))
-            delta = new_rank - base_rank
-    except ValueError:
-        await update.message.reply_text("Please provide an integer delta or target AIR.")
+    context.user_data.pop("move_rank_state", None)
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("Move Up (better rank)", callback_data="move_rank:dir:up"),
+            InlineKeyboardButton("Move Down (worse rank)", callback_data="move_rank:dir:down"),
+        ],
+        [InlineKeyboardButton("Cancel", callback_data="move_rank:cancel")],
+    ])
+    await update.message.reply_text(
+        f"Current AIR: {base_rank:,}\nDo you want to move it up or down?",
+        reply_markup=kb,
+    )
+
+
+async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    data = (q.data or "").split(":")
+    await q.answer()
+    action = data[1] if len(data) > 1 else ""
+    base_rank = context.user_data.get("rank_air")
+    if not isinstance(base_rank, int):
+        await q.edit_message_text("Run /predict first so I know your AIR.")
         return
 
-    shortlist_new = _build_shortlist_for_rank(context, new_rank)
-    if not shortlist_new:
-        await update.message.reply_text("No colleges found at that AIR. Try another rank.")
+    if action == "cancel":
+        context.user_data.pop("move_rank_state", None)
+        with contextlib.suppress(Exception):
+            await q.edit_message_text("Move rank cancelled.")
         return
-    old_shortlist = context.user_data.get("LAST_SHORTLIST") or []
-    added, removed, unchanged = _shortlist_delta_report(old_shortlist, shortlist_new)
+    if action == "dir":
+        direction = data[2] if len(data) > 2 else ""
+        if direction not in {"up", "down"}:
+            await q.edit_message_text("Invalid direction.")
+            return
+        context.user_data["move_rank_state"] = {"dir": direction}
+        text = "How much to move " + ("up (better rank)?" if direction == "up" else "down (worse rank)?")
+        await q.edit_message_text(text, reply_markup=_move_rank_amount_keyboard(direction))
+        return
 
-    lines = [
-        f"📊 Move Rank: {base_rank:,} → {new_rank:,} (Δ {delta:+,})",
-        f"Added ({len(added)}): " + (", ".join(added) if added else "—"),
-        f"Removed ({len(removed)}): " + (", ".join(removed) if removed else "—"),
-        f"Unchanged ({len(unchanged)}): " + (", ".join(unchanged[:SHORTLIST_LIMIT]) if unchanged else "—"),
-        "Tip: run /predict to rebuild the main list.",
-    ]
-
-    await update.message.reply_text("\n".join(lines))
-    context.user_data["LAST_SHORTLIST"] = shortlist_new
+    if action == "amount":
+        state = context.user_data.get("move_rank_state")
+        if not state or state.get("dir") not in {"up", "down"}:
+            await q.edit_message_text("Start with /move_rank first.")
+            return
+        try:
+            amount = int(data[2])
+        except Exception:
+            await q.edit_message_text("Invalid amount. Choose another option.")
+            return
+        delta = -amount if state["dir"] == "up" else amount
+        new_rank = max(1, base_rank + delta)
+        shortlist_new = _build_shortlist_for_rank(context, new_rank)
+        if not shortlist_new:
+            await q.edit_message_text("No colleges found at that AIR. Try another rank.")
+            context.user_data.pop("move_rank_state", None)
+            return
+        old_shortlist = context.user_data.get("LAST_SHORTLIST") or []
+        added, removed, unchanged = _shortlist_delta_report(old_shortlist, shortlist_new)
+        lines = [
+            f"📊 Move Rank: {base_rank:,} → {new_rank:,} (Δ {delta:+,})",
+            f"Added ({len(added)}): " + (", ".join(added) if added else "—"),
+            f"Removed ({len(removed)}): " + (", ".join(removed) if removed else "—"),
+            f"Unchanged ({len(unchanged)}): " + (", ".join(unchanged[:SHORTLIST_LIMIT]) if unchanged else "—"),
+            "Tip: run /predict to rebuild the main list.",
+        ]
+        await q.edit_message_text("Move rank simulated.")
+        await context.bot.send_message(chat_id=q.message.chat.id, text="\n".join(lines))
+        context.user_data["LAST_SHORTLIST"] = shortlist_new
+        context.user_data.pop("move_rank_state", None)
+        return
 
 
 def _resolve_college_identifier(identifier: str) -> tuple[Optional[str], Optional[dict], dict]:
@@ -7302,15 +7355,60 @@ def _compare_summary(meta: dict, profile: dict, closing_rank: Any) -> str:
 
 
 async def compare_colleges_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) < 2:
-        await update.message.reply_text("Usage: /compare <college1> <college2>\nExample: /compare AIIMSDELHI KGMC")
+    if len(context.args) >= 2:
+        ident1, ident2 = context.args[0], context.args[1]
+        await _compare_and_send(
+            chat_id=update.effective_chat.id,
+            context=context,
+            ident1=ident1,
+            ident2=ident2,
+        )
         return
-    ident1, ident2 = context.args[0], context.args[1]
+    shortlist = context.user_data.get("LAST_SHORTLIST") or []
+    if not shortlist:
+        await update.message.reply_text("Run /predict first so I can show your shortlisted colleges.")
+        return
+    context.user_data["compare_choices"] = shortlist
+    context.user_data["compare_pending"] = []
+
+    kb = _compare_shortlist_keyboard(shortlist, [])
+    await update.message.reply_text(
+        "Select two colleges from your current shortlist:",
+        reply_markup=kb,
+    )
+def _row_identifier(row: dict) -> Optional[str]:
+    ident = _row_code_key(row)
+    if ident:
+        return ident
+    name = resolve_college_name_from_row(row)
+    return name
+
+
+async def _compare_from_shortlist(chat_id: int, context: ContextTypes.DEFAULT_TYPE, row1: dict, row2: dict):
+    ident1 = _row_identifier(row1)
+    ident2 = _row_identifier(row2)
+    if not ident1 or not ident2:
+        await context.bot.send_message(chat_id=chat_id, text="Couldn't resolve those colleges. Try /compare with codes.")
+        return
+    await _compare_and_send(chat_id, context, ident1, ident2)
+
+
+def _compare_shortlist_keyboard(shortlist: list[dict], selected: list[int]) -> InlineKeyboardMarkup:
+    rows = []
+    for idx, row in enumerate(shortlist):
+        name = resolve_college_name_from_row(row) or f"Option {idx+1}"
+        prefix = "✅ " if idx in selected else ""
+        rows.append([InlineKeyboardButton(f"{prefix}{name}", callback_data=f"compare:pick:{idx}")])
+    rows.append([InlineKeyboardButton("Cancel", callback_data="compare:cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def _compare_and_send(chat_id: int, context: ContextTypes.DEFAULT_TYPE, ident1: str, ident2: str) -> bool:
     rec1 = _resolve_college_identifier(ident1)
     rec2 = _resolve_college_identifier(ident2)
     if not rec1[1] or not rec2[1]:
-        await update.message.reply_text("Could not recognize one of those colleges. Use codes or clear names.")
-        return
+        await context.bot.send_message(chat_id=chat_id, text="Could not recognize one of those colleges. Use codes or clear names.")
+        return False
 
     _ensure_counselling_data(context)
     round_code = context.user_data.get("cutoff_round") or ACTIVE_CUTOFF_ROUND_DEFAULT
@@ -7342,7 +7440,8 @@ async def compare_colleges_cmd(update: Update, context: ContextTypes.DEFAULT_TYP
     lines = ["🏫 Compare Colleges", summary1, "", summary2]
     if verdict:
         lines.extend(["", "🤖 Verdict:", verdict])
-    await update.message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+    await context.bot.send_message(chat_id=chat_id, text="\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+    return True
 
 
 async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -7368,7 +7467,49 @@ async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # Graceful fallback so it never hangs
     await q.message.reply_text(f"‘{feature}’ isn’t wired yet. (Button received ok.)")
+    
+async def compare_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    data = (q.data or "").split(":")
+    await q.answer()
+    action = data[1] if len(data) > 1 else ""
+    shortlist = context.user_data.get("compare_choices") or []
+    selected = context.user_data.get("compare_pending") or []
 
+    if action == "cancel":
+        context.user_data.pop("compare_choices", None)
+        context.user_data.pop("compare_pending", None)
+        with contextlib.suppress(Exception):
+            await q.edit_message_text("Comparison cancelled.")
+        return
+
+    if action == "pick":
+        try:
+            idx = int(data[2])
+        except Exception:
+            return
+        if idx < 0 or idx >= len(shortlist):
+            return
+        if idx in selected:
+            return
+        selected.append(idx)
+        context.user_data["compare_pending"] = selected
+        if len(selected) == 1:
+            kb = _compare_shortlist_keyboard(shortlist, selected)
+            await q.edit_message_text("Great! Pick the second college:", reply_markup=kb)
+            return
+        row1 = shortlist[selected[0]]
+        row2 = shortlist[selected[1]]
+        context.user_data.pop("compare_choices", None)
+        context.user_data.pop("compare_pending", None)
+        with contextlib.suppress(Exception):
+            await q.edit_message_reply_markup(None)
+        await _compare_from_shortlist(q.message.chat.id, context, row1, row2)
+        return
+
+    # Unknown action
+    return
+    
 
 async def coach_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Routes AI Coach buttons emitted from Predict result cards."""
@@ -10118,6 +10259,7 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
     _add(CommandHandler("move_rank", move_rank_cmd), group=0)
+    _add(CallbackQueryHandler(move_rank_cb, pattern=r"^move_rank:"), group=0)
     _add(CommandHandler("compare", compare_colleges_cmd), group=0)
     _add(CommandHandler("strategy", strategy_command), group=0)
     _add(CommandHandler("strategy_where", strategy_where), group=0)
@@ -10182,6 +10324,7 @@ def register_handlers(app: Application) -> None:
         ask_followup_handler,
         pattern=r"^ask_more:(similar|explain|flash|quickqa|qna5)$"
     ), group=0)
+    _add(CallbackQueryHandler(compare_cb, pattern=r"^compare:(pick|cancel):?.*$"), group=0)
 
     # Quiz: start, answer, navigation
     # -------------------------------
