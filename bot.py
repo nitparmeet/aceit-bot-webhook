@@ -7325,6 +7325,14 @@ async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         old_shortlist = context.user_data.get("LAST_SHORTLIST") or []
         added, removed, unchanged = _shortlist_delta_report(old_shortlist, shortlist_new)
+        df_lookup = None
+        if getattr(context, "application", None):
+            df_lookup = context.application.bot_data.get("CUTOFFS_DF")
+        user = context.user_data or {}
+        body = "\n\n".join(
+            f"{i}. {_format_row_multiline(r, user, df_lookup)}"
+            for i, r in enumerate(shortlist_new, 1)
+        )
         lines = [
             f"📊 Move Rank: {base_rank:,} → {new_rank:,} (Δ {delta:+,})",
             f"Added ({len(added)}): " + (", ".join(added) if added else "—"),
@@ -7333,6 +7341,10 @@ async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Tip: run /predict to rebuild the main list.",
         ]
         await q.edit_message_text("Move rank simulated.")
+        await context.bot.send_message(
+            chat_id=q.message.chat.id,
+            text=f"New shortlist at AIR {new_rank:,}:\n\n{body}",
+        )
         await context.bot.send_message(chat_id=q.message.chat.id, text="\n".join(lines))
         context.user_data["LAST_SHORTLIST"] = shortlist_new
         context.user_data.pop("move_rank_state", None)
