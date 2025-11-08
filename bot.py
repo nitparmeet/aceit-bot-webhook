@@ -3270,6 +3270,15 @@ def build_name_maps_from_colleges_df(df):
         len(COLLEGE_NAME_BY_CODE), len(COLLEGE_NAME_BY_ID), len(COLLEGE_META_INDEX)
     )
 
+def _shortlist_delta_report(old: list[dict], new: list[dict]) -> tuple[list[str], list[str], list[str]]:
+    old_map = {_row_code_key(r): r for r in old if _row_code_key(r)}
+    new_map = {_row_code_key(r): r for r in new if _row_code_key(r)}
+
+    added = [resolve_college_name_from_row(new_map[c]) or c for c in new_map.keys() - old_map.keys()]
+    removed = [resolve_college_name_from_row(old_map[c]) or c for c in old_map.keys() - new_map.keys()]
+    unchanged = [resolve_college_name_from_row(new_map[c]) or c for c in new_map.keys() & old_map.keys()]
+    return added, removed, unchanged
+
 # ---------- Cutoff lookup loader (complete) ----------
 
 PROFILE_COLUMN_ALIASES = {
@@ -4372,7 +4381,32 @@ def resolve_college_name_from_row(row: dict) -> Optional[str]:
                         return mval.strip()
     return None
 
+def _row_code_key(row: dict) -> Optional[str]:
+    if not isinstance(row, dict):
+        return None
+    for key in ("college_code", "College Code", "code", "college_id", "College ID", "institute_code"):
+        val = row.get(key)
+        if val not in (None, "", "—"):
+            return _norm_meta_key(val)
+    name = resolve_college_name_from_row(row)
+    if name:
+        return _name_key(name)
+    return None
+
 SHOW_INTERNAL_IDS = False 
+def _build_shortlist_for_rank(
+    context: ContextTypes.DEFAULT_TYPE,
+    rank_air: int,
+) -> list[dict]:
+    user = dict(context.user_data or {})
+    user["rank_air"] = rank_air
+    user.pop("LAST_SHORTLIST", None)
+    user.pop("last_shortlist", None)
+    user.pop("last_predict_shortlist", None)
+    shortlist = shortlist_and_score(COLLEGES, user, cutoff_lookup=CUTOFF_LOOKUP) or []
+    return _dedupe_results(shortlist)[:SHORTLIST_LIMIT]
+
+
 
 def _format_row_plain(i: int, r: dict, *, closing_rank=None) -> str:
     """Clean one-line row used by predict. NO hostel here."""
@@ -7196,6 +7230,120 @@ async def guard_or_block(update: Update, context: ContextTypes.DEFAULT_TYPE, wan
         return False
     return True
 
+async def move_rank_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    base_rank = context.user_data.get("rank_air")
+    if not isinstance(base_rank, int):
+        await update.message.reply_text("Run /predict first so I know your current AIR.")
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /move_rank <delta or target AIR>\nExample: /move_rank -500  or  /move_rank 12000")
+        return
+    arg = context.args[0].replace(",", "")
+    try:
+        if arg.startswith(("+", "-")):
+            delta = int(arg)
+            new_rank = max(1, base_rank + delta)
+        else:
+            new_rank = max(1, int(arg))
+            delta = new_rank - base_rank
+    except ValueError:
+        await update.message.reply_text("Please provide an integer delta or target AIR.")
+        return
+
+    shortlist_new = _build_shortlist_for_rank(context, new_rank)
+    if not shortlist_new:
+        await update.message.reply_text("No colleges found at that AIR. Try another rank.")
+        return
+    old_shortlist = context.user_data.get("LAST_SHORTLIST") or []
+    added, removed, unchanged = _shortlist_delta_report(old_shortlist, shortlist_new)
+
+    lines = [
+        f"📊 Move Rank: {base_rank:,} → {new_rank:,} (Δ {delta:+,})",
+        f"Added ({len(added)}): " + (", ".join(added) if added else "—"),
+        f"Removed ({len(removed)}): " + (", ".join(removed) if removed else "—"),
+        f"Unchanged ({len(unchanged)}): " + (", ".join(unchanged[:SHORTLIST_LIMIT]) if unchanged else "—"),
+        "Tip: run /predict to rebuild the main list.",
+    ]
+
+    await update.message.reply_text("\n".join(lines))
+    context.user_data["LAST_SHORTLIST"] = shortlist_new
+
+
+def _resolve_college_identifier(identifier: str) -> tuple[Optional[str], Optional[dict], dict]:
+    key = _norm_meta_key(identifier)
+    if key in COLLEGE_META_INDEX:
+        meta = COLLEGE_META_INDEX[key]
+        profile = _gather_profile_from_meta(meta)
+        return key, meta, profile
+    return _lookup_college_meta_from_question(identifier)
+
+
+def _compare_summary(meta: dict, profile: dict, closing_rank: Any) -> str:
+    name = meta.get("college_name") or meta.get("College Name") or "College"
+    state = meta.get("state") or meta.get("State") or ""
+    ownership = meta.get("ownership") or meta.get("Ownership") or ""
+    fee = meta.get("total_fee") or meta.get("Fee") or profile.get("total_fee") if profile else None
+    bond = profile.get("bond_summary") if profile else None
+    hostel = profile.get("hostel_available") if profile else meta.get("hostel_available")
+    parts = [f"<b>{html.escape(str(name))}</b>"]
+    if state:
+        parts.append(html.escape(str(state)))
+    if ownership:
+        parts.append(html.escape(str(ownership)))
+    info = [", ".join(parts)]
+    info.append(f"Closing Rank: {_fmt_rank_val(closing_rank)}")
+    if fee:
+        info.append(f"Total Fee: {_fmt_money(fee)}")
+    if hostel not in (None, ""):
+        info.append(f"Hostel: {_yn(_truthy_or_none(hostel))}")
+    if bond and isinstance(bond, str):
+        info.append(f"Bond: {html.escape(bond)}")
+    return "\n".join(info)
+
+
+async def compare_colleges_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /compare <college1> <college2>\nExample: /compare AIIMSDELHI KGMC")
+        return
+    ident1, ident2 = context.args[0], context.args[1]
+    rec1 = _resolve_college_identifier(ident1)
+    rec2 = _resolve_college_identifier(ident2)
+    if not rec1[1] or not rec2[1]:
+        await update.message.reply_text("Could not recognize one of those colleges. Use codes or clear names.")
+        return
+
+    _ensure_counselling_data(context)
+    round_code = context.user_data.get("cutoff_round") or ACTIVE_CUTOFF_ROUND_DEFAULT
+    quota = context.user_data.get("quota") or "AIQ"
+    category = context.user_data.get("category") or "General"
+    df_lookup = context.application.bot_data.get("CUTOFFS_DF") if getattr(context, "application", None) else None
+
+    ids1 = _collect_identifiers(rec1[1], rec1[2])
+    ids2 = _collect_identifiers(rec2[1], rec2[2])
+    closing1 = _closing_rank_for_identifiers(ids1, round_code, quota, category, df_lookup, CUTOFF_LOOKUP)
+    closing2 = _closing_rank_for_identifiers(ids2, round_code, quota, category, df_lookup, CUTOFF_LOOKUP)
+
+    summary1 = _compare_summary(rec1[1], rec1[2] or {}, closing1)
+    summary2 = _compare_summary(rec2[1], rec2[2] or {}, closing2)
+
+    context_blob = f"{_strip_html(summary1)}\n\n{_strip_html(summary2)}\n\nCandidate Rank: {_fmt_rank_val(context.user_data.get('rank_air'))}"
+    verdict = ""
+    try:
+        ok, verdict_text = await _ask_genai_text(
+            f"Compare {rec1[1].get('college_name')} vs {rec2[1].get('college_name')} for NEET MBBS preferences. "
+            "Give a short verdict highlighting fit.",
+            subject_hint="Counselling",
+            context_text=context_blob,
+        )
+        verdict = verdict_text if ok else ""
+    except Exception:
+        verdict = ""
+
+    lines = ["🏫 Compare Colleges", summary1, "", summary2]
+    if verdict:
+        lines.extend(["", "🤖 Verdict:", verdict])
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML", disable_web_page_preview=True)
+
 
 async def ask_feature_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     q = update.callback_query
@@ -9657,7 +9805,12 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
             text="Want quick expert-style notes on this shortlist?",
             reply_markup=kb,
         )
-
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Extras: `/move_rank -500` to simulate a new AIR, or `/compare CODE1 CODE2` for side-by-side analysis.",
+            parse_mode="Markdown",
+        )
+    
         _end_flow(context, "predict")
         return ConversationHandler.END
 
@@ -9964,6 +10117,8 @@ def register_handlers(app: Application) -> None:
     _add(CallbackQueryHandler(menu_open_cb, pattern=r"^(menu|menu_open|menu:open)$"), group=0)
     _add(CommandHandler("menu_diag", menu_diag), group=0)
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
+    _add(CommandHandler("move_rank", move_rank_cmd), group=0)
+    _add(CommandHandler("compare", compare_colleges_cmd), group=0)
     _add(CommandHandler("strategy", strategy_command), group=0)
     _add(CommandHandler("strategy_where", strategy_where), group=0)
     _add(CommandHandler("strategy_count", strategy_count), group=0)
