@@ -7542,28 +7542,70 @@ def _resolve_college_identifier(identifier: str) -> tuple[Optional[str], Optiona
         return key, meta, profile
     return _lookup_college_meta_from_question(identifier)
 
+def _compare_snippet(value: Any, limit: int = 220) -> Optional[str]:
+    if _counselling_is_missing(value):
+        return None
+    try:
+        text = str(value).strip()
+    except Exception:
+        return None
+    if not text:
+        return None
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+    
+combined: dict = {}
+    if isinstance(meta, dict):
+        combined.update(meta)
+    if isinstance(profile, dict):
+        combined.update({k: v for k, v in profile.items() if not _counselling_is_missing(v)})
+    sources = (profile, meta, combined)
 
-def _compare_summary(meta: dict, profile: dict, closing_rank: Any) -> str:
-    name = meta.get("college_name") or meta.get("College Name") or "College"
-    state = meta.get("state") or meta.get("State") or ""
-    ownership = meta.get("ownership") or meta.get("Ownership") or ""
-    fee = meta.get("total_fee") or meta.get("Fee") or profile.get("total_fee") if profile else None
-    bond = profile.get("bond_summary") if profile else None
-    hostel = profile.get("hostel_available") if profile else meta.get("hostel_available")
-    parts = [f"<b>{html.escape(str(name))}</b>"]
-    if state:
-        parts.append(html.escape(str(state)))
-    if ownership:
-        parts.append(html.escape(str(ownership)))
-    info = [", ".join(parts)]
-    info.append(f"Closing Rank: {_fmt_rank_val(closing_rank)}")
+    def pick(*keys):
+        return _counselling_pick(sources, *keys)
+
+    name = pick("college_name", "College Name", "name") or "College"
+    state = pick("city_state", "state", "State") or ""
+    ownership = pick("ownership", "Ownership") or ""
+    city = pick("city", "City")
+    fee = pick("total_fee", "Fee")
+    pg_quota = pick("pg_quota")
+    hostel = pick("hostel_available", "hostel")
+    bond_years = pick("bond_years")
+    bond_penalty = pick("bond_penalty_lakhs", "bond_penalty")
+    bond_summary = pick("bond_summary", "bond_notes")
+    travel = pick("travel_access", "nearest_airport")
+    vibe = _compare_snippet(pick("about_city", "about_college", "profile_summary", "profile_highlights"))
+    ideal_for = _compare_snippet(pick("ideal_for"))
+
+    header_bits = [f"<b>{html.escape(str(name))}</b>"]
+    place_bits = [str(p).strip() for p in (city, state) if p and str(p).strip()]
+    if place_bits:
+        header_bits.append(html.escape(", ".join(place_bits)))
+    if ownership and str(ownership).strip():
+        header_bits.append(html.escape(str(ownership)))
+    lines = [", ".join(header_bits)]
+    lines.append(f"<b>Closing Rank:</b> {html.escape(_fmt_rank_val(closing_rank))}")
     if fee:
-        info.append(f"Total Fee: {_fmt_money(fee)}")
+        lines.append(f"<b>Total Fee:</b> {html.escape(_fmt_money(fee))}")
+    if pg_quota not in (None, ""):
+        lines.append(f"<b>PG Quota Exposure:</b> {_yn(_truthy_or_none(pg_quota))}")
     if hostel not in (None, ""):
-        info.append(f"Hostel: {_yn(_truthy_or_none(hostel))}")
-    if bond and isinstance(bond, str):
-        info.append(f"Bond: {html.escape(bond)}")
-    return "\n".join(info)
+        lines.append(f"<b>Hostel:</b> {_yn(_truthy_or_none(hostel))}")
+
+    bond_line = _fmt_bond_line(bond_years, bond_penalty)
+    if bond_line and bond_line != "—":
+        lines.append(f"<b>Bond:</b> {html.escape(bond_line)}")
+    elif bond_summary:
+        lines.append(f"<b>Bond:</b> {html.escape(str(bond_summary))}")
+
+    if vibe:
+        lines.append(f"<b>City & campus vibe:</b> {html.escape(vibe)}")
+    if ideal_for:
+        lines.append(f"<b>Ideal for:</b> {html.escape(ideal_for)}")
+    if travel:
+        lines.append(f"<b>Travel access:</b> {html.escape(str(travel))}")
+
+    return "\n".join(lines)
 
 
 async def compare_colleges_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7629,14 +7671,16 @@ async def _compare_and_send(chat_id: int, context: ContextTypes.DEFAULT_TYPE, id
     summary2 = _compare_summary(rec2[1], rec2[2] or {}, closing2)
 
     context_blob = f"{_strip_html(summary1)}\n\n{_strip_html(summary2)}\n\nCandidate Rank: {_fmt_rank_val(context.user_data.get('rank_air'))}"
+    name1 = rec1[1].get("college_name") or rec1[1].get("College Name") or "College A"
+    name2 = rec2[1].get("college_name") or rec2[1].get("College Name") or "College B"
     verdict = ""
     try:
-        ok, verdict_text = await _ask_genai_text(
-            f"Compare {rec1[1].get('college_name')} vs {rec2[1].get('college_name')} for NEET MBBS preferences. "
-            "Give a short verdict highlighting fit.",
-            subject_hint="Counselling",
-            context_text=context_blob,
+        prompt = (
+            f"Compare {name1} vs {name2} for NEET MBBS counselling choices. "
+            "Decide which college is safer or riskier primarily by comparing the candidate AIR with each closing rank. "
+            "Mention city vibe, PG exposure, bonds, and fees as supporting factors only."
         )
+        ok, verdict_text = await _ask_genai_text(prompt, subject_hint="Counselling", context_text=context_blob)
         verdict = verdict_text if ok else ""
     except Exception:
         verdict = ""
