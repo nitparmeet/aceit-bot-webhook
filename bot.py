@@ -1188,6 +1188,19 @@ INTENT_GENERAL = "general"
 
 GENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini") 
 
+PREDICT_QUERY_RE = re.compile(
+    r"\b(?:which|what)\b.*?\b(?:college|colleges|medical colleges?)\b.*?\b(?:get|eligible|through|can i get)\b",
+    re.IGNORECASE,
+)
+PREDICT_CONTEXT_RE = re.compile(
+    r"\b(?:air|rank)\b.*?\b(?:aiq|state|central|deemed|mcc|counsell?ing|quota)\b",
+    re.IGNORECASE,
+)
+PROFILE_DETAIL_RE = re.compile(
+    r"\b(?:show|tell me about|details?|profile|fee|fees|closing rank|closing|cutoff|bond|hostel|nirf)\b",
+    re.IGNORECASE,
+)
+PREDICTOR_BAND_TOLERANCE = 2000
 
 SAFE_CUTOFF = 0.90   # AIR <= 0.90 * ClosingRank → "safe"
 DREAM_CUTOFF = 1.10  # AIR >  1.10 * ClosingRank → "dream"
@@ -4278,6 +4291,23 @@ if "_safe_str" not in globals():
         except Exception:
             return default
 
+PRIVATE_PROFILE_TAG_KEYS = {"tags", "ai_tags"}
+
+def _redact_profile_tags(payload: Any) -> Any:
+    """
+    Return a shallow copy with internal tag fields stripped for user-facing views.
+    Leaves the original data untouched so backend features keep the tags.
+    """
+    if isinstance(payload, dict):
+        return {
+            key: _redact_profile_tags(value)
+            for key, value in payload.items()
+            if key not in PRIVATE_PROFILE_TAG_KEYS
+        }
+    if isinstance(payload, list):
+        return [_redact_profile_tags(item) for item in payload]
+    return payload
+    
 if "_pick" not in globals():
     def _pick(d: dict, *keys):
         for k in keys:
@@ -5282,7 +5312,8 @@ async def setup_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log.info("setup_profile()")
 
     tgt = _target(update)
-    prof = get_user_profile(update)
+    prof_raw = get_user_profile(update)
+    prof = _redact_profile_tags(prof_raw)
     cat = prof.get("category", "Not set")
     dom = prof.get("domicile_state", "Not set")
     pref = prof.get("pref_type", "Not set")
@@ -5696,7 +5727,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             ideal_for = _profile_pick(profile_meta, "ideal_for")
             roi_blurb = _profile_pick(profile_meta, "fees_roi_summary")
             travel    = _profile_pick(profile_meta, "travel_access")
-            tags      = _coerce_tags(profile_meta.get("ai_tags"))
+            
 
             lines = [header, rank_ln, fee_ln]
             if not _is_missing(ai_note):
@@ -5709,9 +5740,7 @@ async def ai_notes_from_shortlist(update: Update, context: ContextTypes.DEFAULT_
             if not _is_missing(roi_blurb):
                 lines.append(f"<b>Fees & ROI:</b> {html.escape(_trim_snippet(roi_blurb, 200))}")
             lines.extend([pg_ln, bond_ln, hostel_ln])
-            if tags:
-                tag_text = ", ".join(html.escape(str(t)) for t in tags[:5])
-                lines.append(f"<b>Tags:</b> {tag_text}")
+        
             if not _is_missing(travel):
                 lines.append(f"<b>Travel:</b> {html.escape(_trim_snippet(travel, 220))}")
             
@@ -6475,17 +6504,35 @@ def _detect_counselling_intent(
     }
 
     text_lower = text.lower()
+    if "mcc" in text_lower:
+        parsed["counselling_body"] = "MCC"
+    elif "state counselling" in text_lower or "state counseling" in text_lower:
+        parsed["counselling_body"] = "State"
     if any(keyword in text_lower for keyword in RULE_KEYWORDS):
         return INTENT_RULES, {"parsed": parsed}
 
     _ensure_counselling_data(context)
     resolved = _lookup_college_meta_from_question(text)
-    if resolved[0]:
+    has_named_college = bool(resolved[0])
+    profile_requested = bool(PROFILE_DETAIL_RE.search(text_lower)) and has_named_college
+
+    predictor_hint = bool(PREDICT_QUERY_RE.search(text))
+    predictor_keywords = {"which college", "what college", "possible colleges", "chance", "predict", "can i get"}
+    context_match = bool(parsed["air"] and PREDICT_CONTEXT_RE.search(text.lower()))
+    if not predictor_hint and parsed["air"] and any(word in text_lower for word in predictor_keywords):
+        predictor_hint = True
+    if not predictor_hint and context_match and not profile_requested:
+        predictor_hint = True
+
+    if predictor_hint:
+        payload = {"parsed": parsed}
+        if has_named_college:
+            payload["resolved"] = resolved
+        return INTENT_PREDICTOR, payload
+
+    if profile_requested:
         return INTENT_PROFILE, {"parsed": parsed, "resolved": resolved}
 
-    predictor_keywords = {"which college", "what college", "get", "possible colleges", "chance", "predict"}
-    if parsed["air"] and any(word in text_lower for word in predictor_keywords):
-        return INTENT_PREDICTOR, {"parsed": parsed}
 
     return INTENT_GENERAL, {"parsed": parsed}
 
@@ -6493,21 +6540,50 @@ def _detect_counselling_intent(
 def _render_predictor_shortlist(
     parsed: dict,
     context: ContextTypes.DEFAULT_TYPE,
+    *,
+    update: Update | None = None,
+    mention: Optional[tuple] = None,
 ) -> str:
     _ensure_counselling_data(context)
     air = parsed.get("air")
     if not air:
         return "Please share your AIR so I can suggest colleges."
 
-    quota = parsed.get("quota") or "AIQ"
-    category = parsed.get("category") or "General"
+    user_defaults = getattr(context, "user_data", {}) or {}
+    profile_defaults: dict[str, Any] = {}
+    if update is not None:
+        with contextlib.suppress(Exception):
+            profile_defaults = get_user_profile(update) or {}
+
+    quota_source = (
+        parsed.get("quota")
+        or user_defaults.get("quota")
+        or user_defaults.get("pref_quota")
+        or profile_defaults.get("pref_quota")
+        or profile_defaults.get("quota")
+    )
+    if not quota_source:
+        return "Share your quota (AIQ / State / Deemed / Central / Management) so I can shortlist colleges."
+
+    category_source = (
+        parsed.get("category")
+        or user_defaults.get("category")
+        or profile_defaults.get("category")
+    )
+    if not category_source:
+        return "Share your category (General / OBC / EWS / SC / ST) so I can shortlist colleges."
+
+    quota = canonical_quota_ui(quota_source)
+    category = canonical_category(category_source)
+    domicile = parsed.get("state") or user_defaults.get("domicile_state") or profile_defaults.get("domicile_state")
+    
     user = {
         "rank_air": air,
         "quota": quota,
         "category": category,
     }
-    if parsed.get("state"):
-        user["domicile_state"] = parsed["state"]
+    if domicile and quota == "State":
+        user["domicile_state"] = domicile
 
     shortlist = shortlist_and_score(COLLEGES, user, cutoff_lookup=CUTOFF_LOOKUP) or []
     shortlist = _dedupe_results(shortlist)[:SHORTLIST_LIMIT]
@@ -6516,22 +6592,97 @@ def _render_predictor_shortlist(
             f"I couldn’t find matches for AIR {air:,} under {quota}/{category}. "
             "Try /predict with more details."
         )
-
+    body = (parsed.get("counselling_body") or "").strip().upper()
+    mcc_flag = " (MCC counselling)" if body == "MCC" else ""
+    
     lines = [
-        f"Top matches for AIR {air:,} ({quota}/{category}):"
+        PREDICT_HEADER.format(
+            air=air,
+            category=category.upper(),
+            quota=quota.upper(),
+            mcc_flag=mcc_flag,
+        ),
+        "",
     ]
-    for idx, row in enumerate(shortlist, 1):
+    for row in shortlist:
         name = _safe_str(_pick(row, "college_name", "College Name")) or "College"
-        closing = _fmt_rank_val(
+        closing_raw = (
             row.get("ClosingRank")
             or row.get("closing")
             or row.get("rank")
         )
-        state = _safe_str(_pick(row, "state", "State"))
-        detail = f"{name}" + (f", {state}" if state else "")
-        lines.append(f"{idx}. {detail} — closing {closing}")
-    lines.append("Run /predict for the full preference builder.")
+        band, closing_val = _predictor_band_label(air, closing_raw)
+        closing = _fmt_rank_val(closing_val if closing_val is not None else closing_raw)
+        lines.append(PREDICT_ITEM.format(name=name, closing=closing, band=band))
+
+    note_line = _predictor_note_for_mention(mention, air, quota, category, context)
+    actions = (
+        "Actions: [View more → /predict] [Compare Colleges → type 'compare <College1> vs <College2>'] "
+        "[Ask a doubt → just ask again]"
+    )
+    lines.extend(["", actions])
+    if note_line:
+        lines.extend(["", note_line])
     return "\n".join(lines)
+
+def _predictor_band_label(user_air: int, closing_rank: Any) -> tuple[str, Optional[int]]:
+    closing_val = _to_int(closing_rank)
+    if closing_val is None:
+        return "UNKNOWN", None
+    if user_air <= closing_val - PREDICTOR_BAND_TOLERANCE:
+        return "SAFE", closing_val
+    if abs(user_air - closing_val) < PREDICTOR_BAND_TOLERANCE:
+        return "BORDERLINE", closing_val
+    return "RISKY", closing_val
+
+
+def _predictor_note_for_mention(
+    mention: Optional[tuple],
+    air: int,
+    quota: str,
+    category: str,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> Optional[str]:
+    if not mention or not mention[0]:
+        return None
+    key, meta, profile = mention
+    name = (
+        _counselling_pick((profile, meta, meta or {}), "college_name", "College Name", "name")
+        or _safe_str(key, "Selected college")
+    )
+    identifiers = _collect_identifiers(meta, profile) if (meta or profile) else [key]
+    round_code = (
+        context.user_data.get("cutoff_round", ACTIVE_CUTOFF_ROUND_DEFAULT)
+        if hasattr(context, "user_data") else ACTIVE_CUTOFF_ROUND_DEFAULT
+    )
+    df_lookup = None
+    if context and getattr(context, "application", None):
+        df_lookup = context.application.bot_data.get("CUTOFFS_DF")
+
+    closing = _closing_rank_for_identifiers(
+        identifiers,
+        round_code,
+        quota,
+        category,
+        df_lookup,
+        CUTOFF_LOOKUP,
+    )
+    if closing is None:
+        return None
+
+    band, closing_val = _predictor_band_label(air, closing)
+    desc = {
+        "SAFE": "within reach",
+        "BORDERLINE": "a close match",
+        "RISKY": "outside last year's cutoff",
+        "UNKNOWN": "cutoff data unavailable",
+    }.get(band, "cutoff insight unavailable")
+    return PREDICT_NOTE.format(
+        college=name,
+        closing=_fmt_rank_val(closing_val or closing),
+        air=air,
+        band_text=desc,
+    )
 
 def _answer_counselling_from_data(
     question: str,
@@ -7809,7 +7960,12 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             intent, intent_payload = _detect_counselling_intent(q, context)
             if intent == INTENT_PREDICTOR:
-                forced_text = _render_predictor_shortlist(intent_payload.get("parsed", {}), context)
+                forced_text = _render_predictor_shortlist(
+                    intent_payload.get("parsed", {}),
+                    context,
+                    update=update,
+                    mention=intent_payload.get("resolved"),
+                )
                 forced_ok = True
             elif intent == INTENT_PROFILE:
                 resolved = intent_payload.get("resolved")
