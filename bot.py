@@ -7552,66 +7552,66 @@ def _compare_snippet(value: Any, limit: int = 220) -> Optional[str]:
     if not text:
         return None
     return text if len(text) <= limit else text[: limit - 1] + "…"
-    
-combined: dict = {}
-if isinstance(meta, dict):
-    combined.update(meta)
-if isinstance(profile, dict):
-    combined.update({
-        k: v for k, v in profile.items()
-        if not _counselling_is_missing(v)
-    })
-sources = (profile, meta, combined)
 
 
-def pick(*keys):
-    return _counselling_pick(sources, *keys)
+def _compare_college(profile: dict, meta: dict, closing_rank: Optional[int]) -> str:
+    combined: dict = {}
+    if isinstance(meta, dict):
+        combined.update(meta)
+    if isinstance(profile, dict):
+        combined.update({
+            k: v for k, v in profile.items()
+            if not _counselling_is_missing(v)
+        })
+    sources = (profile, meta, combined)
 
+    def pick(*keys):
+        return _counselling_pick(sources, *keys)
 
-name = pick("college_name", "College Name", "name") or "College"
-state = pick("city_state", "state", "State") or ""
-ownership = pick("ownership", "Ownership") or ""
-city = pick("city", "City")
-fee = pick("total_fee", "Fee")
-pg_quota = pick("pg_quota")
-hostel = pick("hostel_available", "hostel")
-bond_years = pick("bond_years")
-bond_penalty = pick("bond_penalty_lakhs", "bond_penalty")
-bond_summary = pick("bond_summary", "bond_notes")
-travel = pick("travel_access", "nearest_airport")
-vibe = _compare_snippet(pick("about_city", "about_college", "profile_summary", "profile_highlights"))
-ideal_for = _compare_snippet(pick("ideal_for"))
+    name = pick("college_name", "College Name", "name") or "College"
+    state = pick("city_state", "state", "State") or ""
+    ownership = pick("ownership", "Ownership") or ""
+    city = pick("city", "City")
+    fee = pick("total_fee", "Fee")
+    pg_quota = pick("pg_quota")
+    hostel = pick("hostel_available", "hostel")
+    bond_years = pick("bond_years")
+    bond_penalty = pick("bond_penalty_lakhs", "bond_penalty")
+    bond_summary = pick("bond_summary", "bond_notes")
+    travel = pick("travel_access", "nearest_airport")
+    vibe = _compare_snippet(pick("about_city", "about_college", "profile_summary", "profile_highlights"))
+    ideal_for = _compare_snippet(pick("ideal_for"))
 
-header_bits = [f"<b>{html.escape(str(name))}</b>"]
-place_bits = [str(p).strip() for p in (city, state) if p and str(p).strip()]
-if place_bits:
-    header_bits.append(html.escape(", ".join(place_bits)))
-if ownership and str(ownership).strip():
-    header_bits.append(html.escape(str(ownership)))
-lines = [", ".join(header_bits)]
+    header_bits = [f"<b>{html.escape(str(name))}</b>"]
+    place_bits = [str(p).strip() for p in (city, state) if p and str(p).strip()]
+    if place_bits:
+        header_bits.append(html.escape(", ".join(place_bits)))
+    if ownership and str(ownership).strip():
+        header_bits.append(html.escape(str(ownership)))
+    lines = [", ".join(header_bits)]
 
-lines.append(f"<b>Closing Rank:</b> {html.escape(_fmt_rank_val(closing_rank))}")
-if fee:
-    lines.append(f"<b>Total Fee:</b> {html.escape(_fmt_money(fee))}")
-if pg_quota not in (None, ""):
-    lines.append(f"<b>PG Quota Exposure:</b> {_yn(_truthy_or_none(pg_quota))}")
-if hostel not in (None, ""):
-    lines.append(f"<b>Hostel:</b> {_yn(_truthy_or_none(hostel))}")
+    lines.append(f"<b>Closing Rank:</b> {html.escape(_fmt_rank_val(closing_rank))}")
+    if fee:
+        lines.append(f"<b>Total Fee:</b> {html.escape(_fmt_money(fee))}")
+    if pg_quota not in (None, ""):
+        lines.append(f"<b>PG Quota Exposure:</b> {_yn(_truthy_or_none(pg_quota))}")
+    if hostel not in (None, ""):
+        lines.append(f"<b>Hostel:</b> {_yn(_truthy_or_none(hostel))}")
 
-bond_line = _fmt_bond_line(bond_years, bond_penalty)
-if bond_line and bond_line != "—":
-    lines.append(f"<b>Bond:</b> {html.escape(bond_line)}")
-elif bond_summary:
-    lines.append(f"<b>Bond:</b> {html.escape(str(bond_summary))}")
+    bond_line = _fmt_bond_line(bond_years, bond_penalty)
+    if bond_line and bond_line != "—":
+        lines.append(f"<b>Bond:</b> {html.escape(bond_line)}")
+    elif bond_summary:
+        lines.append(f"<b>Bond:</b> {html.escape(str(bond_summary))}")
 
-if vibe:
-    lines.append(f"<b>City & campus vibe:</b> {html.escape(vibe)}")
-if ideal_for:
-    lines.append(f"<b>Ideal for:</b> {html.escape(ideal_for)}")
-if travel:
-    lines.append(f"<b>Travel access:</b> {html.escape(str(travel))}")
+    if vibe:
+        lines.append(f"<b>City & campus vibe:</b> {html.escape(vibe)}")
+    if ideal_for:
+        lines.append(f"<b>Ideal for:</b> {html.escape(ideal_for)}")
+    if travel:
+        lines.append(f"<b>Travel access:</b> {html.escape(str(travel))}")
 
-return "\n".join(lines)
+    return "\n".join(lines)
 
 
 async def compare_colleges_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
