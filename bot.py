@@ -1206,7 +1206,7 @@ if "PREDICT_HEADER" not in globals():
         "For AIR {air:,}, {category}, {quota}{mcc_flag}: Top matches (based on last year's cutoffs)"
     )
 if "PREDICT_ITEM" not in globals():
-    PREDICT_ITEM = "• {name} — {band_text}"
+    PREDICT_ITEM = "• {name} — closing {closing} ({band})"
 if "PREDICT_NOTE" not in globals():
     PREDICT_NOTE = "Note: {college} closed at {closing} vs your AIR {air:,} → {band_text}"
 
@@ -6620,8 +6620,8 @@ def _render_predictor_shortlist(
             or row.get("rank")
         )
         band, closing_val = _predictor_band_label(air, closing_raw)
-        band_text = _predictor_band_desc(band)
-        lines.append(PREDICT_ITEM.format(name=name, band_text=band_text))
+        closing_display = _fmt_rank_val(closing_val if closing_val is not None else closing_raw)
+        lines.append(PREDICT_ITEM.format(name=name, closing=closing_display, band=band))
 
     note_line = _predictor_note_for_mention(mention, air, quota, category, context)
     actions = (
