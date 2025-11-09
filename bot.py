@@ -6635,7 +6635,7 @@ def _render_predictor_shortlist(
 
     note_line = _predictor_note_for_mention(mention, air, quota, category, context)
     actions = (
-        "Actions: [View more → /predict] [Compare Colleges → type 'compare <College1> vs <College2>'] "
+        "Actions: [View more → /menu or Ask another question as [Compare Colleges → type 'compare <College1> vs <College2>'] "
         "[Ask a doubt → just ask again]"
     )
     lines.extend(["", actions])
@@ -7823,7 +7823,8 @@ async def ask_subject_select(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(
          "Send your counselling doubt as *text* (or photo). "
         "For *Counselling* try prompts like:\n"
-        "• “AIQ Gen AIR 3000 New Delhi – what seats are realistic?”\n"
+        "• “AIQ Gen AIR 3000 New Delhi – what colleges are realistic?”\n"
+        "• “Compare AIIMS Delhi vs AIIMS Rishikesh”\n"
         "• “AIIMS Delhi fee, hostel, bond?”\n"
         "• “What are MCC upgrade rules after Round 2?”",
 
