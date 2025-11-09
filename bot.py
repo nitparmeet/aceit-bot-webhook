@@ -6531,7 +6531,8 @@ def _detect_counselling_intent(
         predictor_hint = True
     if not predictor_hint and context_match and not profile_requested:
         predictor_hint = True
-
+    if not predictor_hint and parsed["air"] and not profile_requested:
+        predictor_hint = True
     if predictor_hint:
         payload = {"parsed": parsed}
         if has_named_college:
@@ -6570,16 +6571,15 @@ def _render_predictor_shortlist(
         or profile_defaults.get("pref_quota")
         or profile_defaults.get("quota")
     )
-    if not quota_source:
-        return "Share your quota (AIQ / State / Deemed / Central / Management) so I can shortlist colleges."
+   
 
     category_source = (
         parsed.get("category")
         or user_defaults.get("category")
         or profile_defaults.get("category")
+        or "General"
     )
-    if not category_source:
-        return "Share your category (General / OBC / EWS / SC / ST) so I can shortlist colleges."
+   
 
     quota = canonical_quota_ui(quota_source)
     category = canonical_category(category_source)
