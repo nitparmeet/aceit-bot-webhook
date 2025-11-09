@@ -1344,7 +1344,11 @@ async def _safe_clear_markup(query):
 
 def _to_int(x):
     try:
-        return int(float(str(x).replace(",", "").strip()))
+         s = str(x).strip().replace(",", "")
+        s = re.sub(r"[^\d\.\-]", "", s)
+        if not s:
+            return None
+        return int(float(s))
     except Exception:
         return None
 
