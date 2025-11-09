@@ -7782,7 +7782,7 @@ async def compare_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["compare_pending"] = selected
         if len(selected) == 1:
             kb = _compare_shortlist_keyboard(shortlist, selected)
-            await q.edit_message_text("Great! Pick the second college:", reply_markup=kb)
+            await q.edit_message_text("Great! working:", reply_markup=kb)
             return
         row1 = shortlist[selected[0]]
         row2 = shortlist[selected[1]]
