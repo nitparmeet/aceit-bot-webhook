@@ -7959,7 +7959,28 @@ async def ask_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         esc = esc.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
        
         esc = esc.replace("&bull;", "•")
-        
+        esc = re.sub(
+            r"\*\*(?P<label>[^\*\n]{1,160})\*\*(?P<tail>\s*(?:[:：]|—|-))",
+            lambda m: f"<b>{m.group('label').strip()}</b>{m.group('tail')}",
+            esc,
+        )
+        esc = re.sub(
+            r"\*\*(?P<label>[^\*\n]{1,160})\*\*(?=\s|$)",
+            lambda m: f"<b>{m.group('label').strip()}</b>",
+            esc,
+        )
+        esc = re.sub(
+            r"\*(?P<label>[^\*\n]{1,120})\*(?P<tail>\s*(?:[:：]|—|-))",
+            lambda m: f"<b>{m.group('label').strip()}</b>{m.group('tail')}",
+            esc,
+        )
+        esc = re.sub(
+            r"\*(?P<label>[^\*\n]{1,120})\*(?=\s|$)",
+            lambda m: f"<b>{m.group('label').strip()}</b>",
+            esc,
+        )
+        esc = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", esc, flags=re.S)
+        esc = re.sub(r"\*(.+?)\*", r"<b>\1</b>", esc, flags=re.S)
         return esc
 
     try:  # OUTER try
@@ -8100,7 +8121,30 @@ async def ask_receive_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         esc = esc.replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
         esc = esc.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
         esc = esc.replace("&bull;", "•")
+        esc = re.sub(
+            r"\*\*(?P<label>[^\*\n]{1,160})\*\*(?P<tail>\s*(?:[:：]|—|-))",
+            lambda m: f"<b>{m.group('label').strip()}</b>{m.group('tail')}",
+            esc,
+        )
+        esc = re.sub(
+            r"\*\*(?P<label>[^\*\n]{1,160})\*\*(?=\s|$)",
+            lambda m: f"<b>{m.group('label').strip()}</b>",
+            esc,
+        )
+        esc = re.sub(
+            r"\*(?P<label>[^\*\n]{1,120})\*(?P<tail>\s*(?:[:：]|—|-))",
+            lambda m: f"<b>{m.group('label').strip()}</b>{m.group('tail')}",
+            esc,
+        )
+        esc = re.sub(
+            r"\*(?P<label>[^\*\n]{1,120})\*(?=\s|$)",
+            lambda m: f"<b>{m.group('label').strip()}</b>",
+            esc,
+        )
+        esc = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", esc, flags=re.S)
+        esc = re.sub(r"\*(.+?)\*", r"<b>\1</b>", esc, flags=re.S)
         return esc
+        
 
     local_path = None
     try:  # OUTER try
