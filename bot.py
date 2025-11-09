@@ -1201,6 +1201,14 @@ PROFILE_DETAIL_RE = re.compile(
     re.IGNORECASE,
 )
 PREDICTOR_BAND_TOLERANCE = 2000
+if "PREDICT_HEADER" not in globals():
+    PREDICT_HEADER = (
+        "For AIR {air:,}, {category}, {quota}{mcc_flag}: Top matches (based on last year's cutoffs)"
+    )
+if "PREDICT_ITEM" not in globals():
+    PREDICT_ITEM = "• {name} — close: {closing} ({band})"
+if "PREDICT_NOTE" not in globals():
+    PREDICT_NOTE = "Note: {college} closed at {closing} vs your AIR {air:,} → {band_text}"
 
 SAFE_CUTOFF = 0.90   # AIR <= 0.90 * ClosingRank → "safe"
 DREAM_CUTOFF = 1.10  # AIR >  1.10 * ClosingRank → "dream"
