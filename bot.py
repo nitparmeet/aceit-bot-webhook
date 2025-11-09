@@ -5058,7 +5058,9 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
         msg = q.message if q else None
         if msg:
             with contextlib.suppress(Exception):
-                await msg.reply_text("Compare session expired. Run /compare again to pick colleges.")
+                await msg.reply_text(
+                    "Compare session expired. Run /compare again to open a fresh selection with your latest shortlist."
+                )
         return
     
     user_id = update.effective_user.id if update.effective_user else None
