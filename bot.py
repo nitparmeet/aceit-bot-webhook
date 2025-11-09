@@ -5051,6 +5051,15 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
                     "That prediction shortcut is no longer active. Start a new session with /predict."
                 )
         return
+
+    if data.startswith("compare:"):
+        with contextlib.suppress(Exception):
+            await q.answer()
+        msg = q.message if q else None
+        if msg:
+            with contextlib.suppress(Exception):
+                await msg.reply_text("Compare session expired. Run /compare again to pick colleges.")
+        return
     
     user_id = update.effective_user.id if update.effective_user else None
     chat_id = q.message.chat_id if q.message else None
