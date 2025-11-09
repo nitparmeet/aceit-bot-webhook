@@ -1206,7 +1206,7 @@ if "PREDICT_HEADER" not in globals():
         "For AIR {air:,}, {category}, {quota}{mcc_flag}: Top matches (based on last year's cutoffs)"
     )
 if "PREDICT_ITEM" not in globals():
-    PREDICT_ITEM = "• {name} — close: {closing} ({band})"
+    PREDICT_ITEM = "• {name} — {band_text}"
 if "PREDICT_NOTE" not in globals():
     PREDICT_NOTE = "Note: {college} closed at {closing} vs your AIR {air:,} → {band_text}"
 
@@ -6620,8 +6620,8 @@ def _render_predictor_shortlist(
             or row.get("rank")
         )
         band, closing_val = _predictor_band_label(air, closing_raw)
-        closing = _fmt_rank_val(closing_val if closing_val is not None else closing_raw)
-        lines.append(PREDICT_ITEM.format(name=name, closing=closing, band=band))
+        band_text = _predictor_band_desc(band)
+        lines.append(PREDICT_ITEM.format(name=name, band_text=band_text))
 
     note_line = _predictor_note_for_mention(mention, air, quota, category, context)
     actions = (
@@ -6643,6 +6643,13 @@ def _predictor_band_label(user_air: int, closing_rank: Any) -> tuple[str, Option
         return "BORDERLINE", closing_val
     return "RISKY", closing_val
 
+def _predictor_band_desc(band: str) -> str:
+    return {
+        "SAFE": "Likely (safe band)",
+        "BORDERLINE": "Borderline match",
+        "RISKY": "Stretch / risky",
+        "UNKNOWN": "Cutoff data unavailable",
+    }.get(band, "Cutoff insight unavailable")
 
 def _predictor_note_for_mention(
     mention: Optional[tuple],
@@ -6679,12 +6686,7 @@ def _predictor_note_for_mention(
         return None
 
     band, closing_val = _predictor_band_label(air, closing)
-    desc = {
-        "SAFE": "within reach",
-        "BORDERLINE": "a close match",
-        "RISKY": "outside last year's cutoff",
-        "UNKNOWN": "cutoff data unavailable",
-    }.get(band, "cutoff insight unavailable")
+    desc = _predictor_band_desc(band)
     return PREDICT_NOTE.format(
         college=name,
         closing=_fmt_rank_val(closing_val or closing),
