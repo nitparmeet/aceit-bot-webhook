@@ -854,7 +854,11 @@ def _get_openai_client():
 
 def _to_int(x):
     try:
-        return int(float(str(x).replace(",", "").strip()))
+        s = str(x).strip().replace(",", "")
+        s = re.sub(r"[^\d\.\-]", "", s)
+        if not s:
+            return None
+        return int(float(s))
     except Exception:
         return None
 
@@ -1203,12 +1207,12 @@ PROFILE_DETAIL_RE = re.compile(
 PREDICTOR_BAND_TOLERANCE = 2000
 if "PREDICT_HEADER" not in globals():
     PREDICT_HEADER = (
-        "For AIR {air:,}, {category}, {quota}{mcc_flag}: Top matches (based on last year's cutoffs)"
+        "<b>For AIR {air:,}, {category}, {quota}{mcc_flag}:</b> Top matches (based on last year's cutoffs)"
     )
 if "PREDICT_ITEM" not in globals():
     PREDICT_ITEM = "• {name} — closing {closing} ({band})"
 if "PREDICT_NOTE" not in globals():
-    PREDICT_NOTE = "Note: {college} closed at {closing} vs your AIR {air:,} → {band_text}"
+    PREDICT_NOTE = "<b>Note:</b> {college} closed at {closing} vs your AIR {air:,} → {band_text}"
 
 SAFE_CUTOFF = 0.90   # AIR <= 0.90 * ClosingRank → "safe"
 DREAM_CUTOFF = 1.10  # AIR >  1.10 * ClosingRank → "dream"
@@ -6612,13 +6616,15 @@ def _render_predictor_shortlist(
         ),
         "",
     ]
+    preferred_closing_keys = ("close_rank", "ClosingRank", "closing_rank", "closing", "rank")
     for row in shortlist:
         name = _safe_str(_pick(row, "college_name", "College Name")) or "College"
-        closing_raw = (
-            row.get("ClosingRank")
-            or row.get("closing")
-            or row.get("rank")
-        )
+        closing_raw = None
+        for key in preferred_closing_keys:
+            val = row.get(key)
+            if val not in (None, "", "—", "-", "NA"):
+                closing_raw = val
+                break
         band, closing_val = _predictor_band_label(air, closing_raw)
         closing_display = _fmt_rank_val(closing_val if closing_val is not None else closing_raw)
         lines.append(PREDICT_ITEM.format(name=name, closing=closing_display, band=band))
