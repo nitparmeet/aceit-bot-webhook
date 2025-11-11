@@ -5054,7 +5054,7 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
 
     if data.startswith("compare:"):
         with contextlib.suppress(Exception):
-            await compare_cb(update, context)
+            await q.answer()
 
         return
     
