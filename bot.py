@@ -26,12 +26,12 @@ import random
 import time
 import base64
 from openai import OpenAI
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand, ForceReply
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from telegram import ReplyKeyboardMarkup
 from telegram.constants import ChatAction, ParseMode
 
-from typing import Dict, Any, List, Optional, Tuple, Iterable
+from typing import Dict, Any, List, Optional, Tuple, Iterable, Callable, Awaitable
 from telegram import Bot
 import pandas as pd
 from dotenv import load_dotenv
@@ -7441,9 +7441,80 @@ def _move_rank_amount_keyboard(direction: str) -> InlineKeyboardMarkup:
             InlineKeyboardButton(f"{amt}", callback_data=f"move_rank:amount:{amt}")
             for amt in options[3:]
         ],
+        [InlineKeyboardButton("Custom", callback_data=f"move_rank:custom:{direction}")],
         [InlineKeyboardButton("Cancel", callback_data="move_rank:cancel")],
     ]
     return InlineKeyboardMarkup(rows)
+
+async def _move_rank_apply_delta(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    base_rank: int,
+    delta: int,
+    chat_id: int,
+    notify_edit: Optional[Callable[[str], Awaitable[Any]]] = None,
+) -> bool:
+    new_rank = max(1, base_rank + delta)
+    shortlist_new = _build_shortlist_for_rank(context, new_rank)
+    if not shortlist_new:
+        msg = "No colleges found at that AIR. Try another rank."
+        if notify_edit:
+            await notify_edit(msg)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=msg)
+        context.user_data.pop("move_rank_state", None)
+        return False
+
+    old_shortlist = context.user_data.get("LAST_SHORTLIST") or []
+    added, removed, unchanged = _shortlist_delta_report(old_shortlist, shortlist_new)
+    df_lookup = None
+    if getattr(context, "application", None):
+        df_lookup = context.application.bot_data.get("CUTOFFS_DF")
+    user = context.user_data or {}
+    body = "\n\n".join(
+        f"{i}. {_format_row_multiline(r, user, df_lookup)}"
+        for i, r in enumerate(shortlist_new, 1)
+    )
+    lines = [
+        f"📊 Move Rank: {base_rank:,} → {new_rank:,} (Δ {delta:+,})",
+        f"Added ({len(added)}): " + (", ".join(added) if added else "—"),
+        f"Removed ({len(removed)}): " + (", ".join(removed) if removed else "—"),
+        f"Unchanged ({len(unchanged)}): " + (", ".join(unchanged[:SHORTLIST_LIMIT]) if unchanged else "—"),
+    ]
+    if notify_edit:
+        await notify_edit("Move rank simulated.")
+    else:
+        await context.bot.send_message(chat_id=chat_id, text="Move rank simulated.")
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"New shortlist at AIR {new_rank:,}:\n\n{body}",
+    )
+    await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+    context.user_data["LAST_SHORTLIST"] = shortlist_new
+    context.user_data.pop("move_rank_state", None)
+    return True
+
+
+async def _prompt_move_rank_custom_input(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    direction: str,
+    *,
+    prefix: str = "",
+) -> int:
+    dir_text = "up (better rank)" if direction == "up" else "down (worse rank)"
+    instructions = (
+        f"{prefix}Enter how many ranks to move {dir_text}.\n"
+        "Send a non-zero integer between -10,000 and 10,000 (commas allowed)."
+    ).strip()
+    sent = await context.bot.send_message(
+        chat_id=chat_id,
+        text=instructions,
+        reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 750"),
+    )
+    return sent.message_id
+    
     
 async def move_rank_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     base_rank = context.user_data.get("rank_air")
@@ -7492,37 +7563,34 @@ async def move_rank_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await q.edit_message_text("Invalid amount. Choose another option.")
             return
+        state.pop("awaiting_custom", None)
         delta = -amount if state["dir"] == "up" else amount
-        new_rank = max(1, base_rank + delta)
-        shortlist_new = _build_shortlist_for_rank(context, new_rank)
-        if not shortlist_new:
-            await q.edit_message_text("No colleges found at that AIR. Try another rank.")
-            context.user_data.pop("move_rank_state", None)
-            return
-        old_shortlist = context.user_data.get("LAST_SHORTLIST") or []
-        added, removed, unchanged = _shortlist_delta_report(old_shortlist, shortlist_new)
-        df_lookup = None
-        if getattr(context, "application", None):
-            df_lookup = context.application.bot_data.get("CUTOFFS_DF")
-        user = context.user_data or {}
-        body = "\n\n".join(
-            f"{i}. {_format_row_multiline(r, user, df_lookup)}"
-            for i, r in enumerate(shortlist_new, 1)
-        )
-        lines = [
-            f"📊 Move Rank: {base_rank:,} → {new_rank:,} (Δ {delta:+,})",
-            f"Added ({len(added)}): " + (", ".join(added) if added else "—"),
-            f"Removed ({len(removed)}): " + (", ".join(removed) if removed else "—"),
-            f"Unchanged ({len(unchanged)}): " + (", ".join(unchanged[:SHORTLIST_LIMIT]) if unchanged else "—"),
-        ]
-        await q.edit_message_text("Move rank simulated.")
-        await context.bot.send_message(
+        await _move_rank_apply_delta(
+            context,
+            base_rank=base_rank,
+            delta=delta,
             chat_id=q.message.chat.id,
-            text=f"New shortlist at AIR {new_rank:,}:\n\n{body}",
+            notify_edit=q.edit_message_text,
         )
-        await context.bot.send_message(chat_id=q.message.chat.id, text="\n".join(lines))
-        context.user_data["LAST_SHORTLIST"] = shortlist_new
-        context.user_data.pop("move_rank_state", None)
+        return
+
+    if action == "custom":
+        state = context.user_data.get("move_rank_state") or {}
+        direction = data[2] if len(data) > 2 else state.get("dir")
+        if direction not in {"up", "down"}:
+            await q.edit_message_text("Pick Move Up or Move Down before entering a custom value.")
+            return
+        state["dir"] = direction
+        state["awaiting_custom"] = True
+        prompt_id = await _prompt_move_rank_custom_input(
+            context,
+            q.message.chat.id,
+            direction,
+        )
+        state["custom_prompt_id"] = prompt_id
+        state["custom_chat_id"] = q.message.chat.id
+        context.user_data["move_rank_state"] = state
+        await q.edit_message_text("Waiting for custom amount… Reply to the prompt.")
         return
 
 async def _prompt_move_rank_direction(bot, chat_id: int, base_rank: int, edit_message=None):
@@ -7540,6 +7608,71 @@ async def _prompt_move_rank_direction(bot, chat_id: int, base_rank: int, edit_me
         await bot.send_message(chat_id=chat_id, text=context_text, reply_markup=kb)
 
 
+async def move_rank_custom_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    if not msg or not msg.text:
+        return
+    state = context.user_data.get("move_rank_state") or {}
+    if not state.get("awaiting_custom"):
+        return
+    prompt_id = state.get("custom_prompt_id")
+    if not prompt_id or not msg.reply_to_message or msg.reply_to_message.message_id != prompt_id:
+        return
+
+    base_rank = context.user_data.get("rank_air")
+    if not isinstance(base_rank, int):
+        await msg.reply_text("Run /predict first so I know your AIR.")
+        context.user_data.pop("move_rank_state", None)
+        return
+
+    direction = state.get("dir")
+    dir_for_prompt = direction or "up"
+    raw_txt = (msg.text or "").strip().replace(",", "")
+    try:
+        raw_val = int(raw_txt)
+    except Exception:
+        sent_id = await _prompt_move_rank_custom_input(
+            context,
+            msg.chat_id,
+            dir_for_prompt,
+            prefix="Please send a valid integer.",
+        )
+        state["custom_prompt_id"] = sent_id
+        state["custom_chat_id"] = msg.chat_id
+        context.user_data["move_rank_state"] = state
+        return
+
+    if raw_val == 0 or abs(raw_val) > 10000:
+        sent_id = await _prompt_move_rank_custom_input(
+            context,
+            msg.chat_id,
+            dir_for_prompt,
+            prefix="Enter a non-zero number between -10,000 and 10,000.",
+        )
+        state["custom_prompt_id"] = sent_id
+        state["custom_chat_id"] = msg.chat_id
+        context.user_data["move_rank_state"] = state
+        return
+
+    if direction not in {"up", "down"}:
+        await msg.reply_text("Please pick Move Up or Move Down again with /move_rank.")
+        context.user_data.pop("move_rank_state", None)
+        return
+
+    amount = abs(raw_val)
+    state.pop("awaiting_custom", None)
+    state.pop("custom_prompt_id", None)
+    state.pop("custom_chat_id", None)
+    context.user_data["move_rank_state"] = state
+
+    delta = -amount if direction == "up" else amount
+    await _move_rank_apply_delta(
+        context,
+        base_rank=base_rank,
+        delta=delta,
+        chat_id=msg.chat_id,
+    )
+    
 def _resolve_college_identifier(identifier: str) -> tuple[Optional[str], Optional[dict], dict]:
     key = _norm_meta_key(identifier)
     if key in COLLEGE_META_INDEX:
@@ -10587,6 +10720,7 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
     _add(CommandHandler("move_rank", move_rank_cmd), group=0)
     _add(CallbackQueryHandler(move_rank_cb, pattern=r"^move_rank:"), group=0)
+    _add(MessageHandler(filters.TEXT & filters.REPLY, move_rank_custom_reply, block=False), group=0)
     _add(CommandHandler("compare", compare_colleges_cmd), group=0)
     _add(CommandHandler("strategy", strategy_command), group=0)
     _add(CommandHandler("strategy_where", strategy_where), group=0)
@@ -10801,8 +10935,9 @@ async def predict_show_colleges_cb(update: Update, context: ContextTypes.DEFAULT
         await q.edit_message_reply_markup(reply_markup=None)
     except Exception:
         pass
-
     await _finish_predict_now(update, context)
+
+
 
 
 
