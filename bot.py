@@ -6483,25 +6483,14 @@ def _lookup_college_meta_from_question(question: str) -> tuple[Optional[str], Op
                 continue
             names_map.setdefault(norm, key)
 
-        if names_map:
-            candidates = phrase_norms or [_name_key(question)]
+        if names_map and phrase_norms:
+            candidates = phrase_norms
             for cand in candidates:
                 if not cand:
                     continue
                 cand = COLLEGE_NAME_ALIASES.get(cand, cand) 
                 matches = difflib.get_close_matches(cand, list(names_map.keys()), n=1, cutoff=0.6)
-                if matches:
-                    best_key = names_map[matches[0]]
-                    meta = COLLEGE_META_INDEX.get(best_key)
-                    if isinstance(meta, dict):
-                        profile = _gather_profile_from_meta(meta)
-                        return best_key, meta, profile
-            # fallback to entire question if no phrase match
-            query_norm = _name_key(question)
-            
-            if query_norm:
-                query_norm = COLLEGE_NAME_ALIASES.get(query_norm, query_norm)
-                matches = difflib.get_close_matches(query_norm, list(names_map.keys()), n=1, cutoff=0.6)
+                
                 if matches:
                     best_key = names_map[matches[0]]
                     meta = COLLEGE_META_INDEX.get(best_key)
