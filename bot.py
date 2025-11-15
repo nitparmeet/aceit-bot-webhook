@@ -5045,15 +5045,7 @@ async def handle_unknown_callback(update: Update, context: ContextTypes.DEFAULT_
     if data.startswith("predict:"):
         with contextlib.suppress(Exception):
             await q.answer()
-        ud = context.user_data or {}
-        if ud.get(MODE_KEY) == "predict":
-            return
-        target = q.message
-        if target:
-            with contextlib.suppress(Exception):
-                await target.reply_text(
-                    "That prediction shortcut is no longer active. Start a new session with /predict."
-                )
+        
         return
 
     if data.startswith("compare:"):
