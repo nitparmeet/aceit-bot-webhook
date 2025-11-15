@@ -1522,6 +1522,16 @@ def _pick(d: dict, *keys):
             return d.get(k)
     return None
 
+def _row_closing_value(r: dict) -> Optional[int]:
+    closing = (
+        r.get("close_rank")
+        or r.get("ClosingRank")
+        or r.get("closing")
+        or r.get("closing_rank")
+        or r.get("rank")
+    )
+    return _safe_int(closing)
+
 def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
 
     """Name and place headline, then only the Closing Rank context line."""
@@ -1545,15 +1555,9 @@ def _format_row_multiline(r: dict, user: dict, df_lookup=None) -> str:
 
   
     
-    closing = (
-        r.get("close_rank")
-        or r.get("ClosingRank")
-        or r.get("closing")
-        or r.get("rank")
-    )
-    
+    closing = _row_closing_value(r)
 
-    if _is_missing(closing):
+    if closing is None:
         ids = [
             r.get("college_code"), r.get("code"),
             r.get("college_id"), r.get("institute_code"),
@@ -10350,7 +10354,28 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
 
         round_ui = user.get("cutoff_round") or user.get("round") or "2025_R1"
         header_plain = f"🔎 Using cutoff round: {round_ui}"
-
+        air_val = _safe_int(user.get("rank_air") or user.get("air"))
+        if air_val is not None:
+            eligible = []
+            for r in results:
+                cr_val = _row_closing_value(r)
+                if cr_val is not None and cr_val >= air_val:
+                    eligible.append(r)
+            if eligible:
+                results = eligible
+            else:
+                quota = user.get("quota") or "AIQ"
+                category = user.get("category") or "General"
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"{header_plain}\n\n"
+                        f"Your AIR {air_val:,} is beyond last year's closing ranks for {quota}/{category}. "
+                        "Try a different quota, adjust your rank with /move_rank, or explore other categories."
+                    ),
+                )
+                _end_flow(context, "predict")
+                return ConversationHandler.END
         df_lookup = context.application.bot_data.get("CUTOFFS_DF", None)
 
        # ---------- No results? Notify user and exit ----------
