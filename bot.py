@@ -5289,13 +5289,18 @@ PREDICT_RESET_KEYS = (
     "awaiting_state_name",
     "state_counselling_state",
     "state_counselling_state_raw",
+)
+
+DEEMED_STATE_KEYS = (
     "awaiting_deemed_state",
     "deemed_state_filter",
     "deemed_state_filter_label",
     "deemed_state_prompt_id",
     "deemed_state_chat_id",
 )
-
+def _reset_deemed_state(context: ContextTypes.DEFAULT_TYPE) -> None:
+    for key in DEEMED_STATE_KEYS:
+        context.user_data.pop(key, None)
 PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROFILE_SET_EMAIL, PROFILE_SET_MOBILE, PROFILE_SET_PRIMARY = range(120, 127)
 
 
@@ -9200,6 +9205,7 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
     for k in PREDICT_RESET_KEYS:
         context.user_data.pop(k, None)
+    _reset_deemed_state(context)
     tgt = _target(update)
     await tgt.reply_text("Enter your *mock test All-India Rank* (integer):", parse_mode="Markdown")
     return ASK_MOCK_RANK
@@ -9329,9 +9335,9 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     for k in PREDICT_RESET_KEYS:
-
+        
         context.user_data.pop(k, None)
-
+    _reset_deemed_state(context)
     tgt = _target(update)
     await tgt.reply_text("Send your NEET All India Rank (AIR) as a number (e.g., 15234).",
                          reply_markup=ReplyKeyboardRemove())
