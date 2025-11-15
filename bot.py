@@ -9231,9 +9231,9 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
 async def predict_mockrank_collect_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("flow") != "mock_rank":
         return AWAITING_STATE
+
     text = (update.message.text or "").strip()
     if not text:
-        
         await update.message.reply_text(
             "Please type a state name or tap *No specific state*.",
             parse_mode="Markdown",
@@ -9250,6 +9250,7 @@ async def predict_mockrank_collect_state(update: Update, context: ContextTypes.D
         "any state",
         "all states",
     }
+
     if text.lower() in no_pref_tokens:
         context.user_data.pop("deemed_state_filter", None)
         context.user_data.pop("deemed_state_filter_label", None)
@@ -9271,9 +9272,10 @@ async def predict_mockrank_collect_state(update: Update, context: ContextTypes.D
         context.user_data.pop("flow", None)
         return ConversationHandler.END
 
-    
     profile = get_user_profile(update)
-    saved_quota = canonical_quota_ui(profile.get("pref_quota") or profile.get("quota") or "Deemed")
+    saved_quota = canonical_quota_ui(
+        profile.get("pref_quota") or profile.get("quota") or "Deemed"
+    )
     saved_cat = canonical_category(profile.get("category") or "General")
 
     context.user_data["rank_air"] = neet_rank
@@ -9281,12 +9283,14 @@ async def predict_mockrank_collect_state(update: Update, context: ContextTypes.D
     context.user_data["category"] = saved_cat or "General"
     context.user_data["counselling_authority"] = "MCC"
     context.user_data.pop("domicile_state", None)
-    
+
     await update.message.reply_text(
-         "Fetching colleges for your mock rank…",
+        "Fetching colleges for your mock rank…",
         reply_markup=ReplyKeyboardRemove(),
     )
     await _finish_predict_now(update, context)
+
+    # cleanup
     context.user_data.pop("flow", None)
     context.user_data.pop("mock_rank", None)
     context.user_data.pop("neet_equiv_rank", None)
