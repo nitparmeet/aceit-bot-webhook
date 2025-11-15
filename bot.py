@@ -9730,6 +9730,12 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_deemed_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = (update.message.text or "").strip()
+    if text.isdigit():
+        await update.message.reply_text(
+            "Type a state name (e.g., Karnataka) or tap *No specific state*.",
+            parse_mode="Markdown",
+        )
+        return ASK_DEEMED_STATE
     prompt_kb = ReplyKeyboardMarkup(
         [["No specific state"]],
         one_time_keyboard=True,
