@@ -5268,7 +5268,7 @@ async def menu_back(update, context):
 ASK_SUBJECT = 1001
 ASK_WAIT    = 1002
 
-ASK_AIR, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF = range(300, 307)
+ASK_AIR, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF, ASK_DEEMED_STATE = range(300, 308)
 
 PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROFILE_SET_EMAIL, PROFILE_SET_MOBILE, PROFILE_SET_PRIMARY = range(120, 127)
 
@@ -9694,18 +9694,28 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting_state_name", None)
 
     if authority == "MCC" and q == "Deemed":
-        # Deemed quota does not differentiate by category/domicile; go straight to results.
+        # Deemed quota does not differentiate by category/domicile; collect optional state preference.
         context.user_data["category"] = "General"
         context.user_data.pop("domicile_state", None)
         context.user_data.pop("pending_predict_summary", None)
         context.user_data["require_pg_quota"] = None
         context.user_data["avoid_bond"] = None
         context.user_data.pop("_cat_hint", None)
-        await _text_reply(
-            "Deemed quota applies to all categories. Fetching eligible colleges…"
+        context.user_data["awaiting_deemed_state"] = True
+        context.user_data.pop("deemed_state_filter", None)
+        context.user_data.pop("deemed_state_filter_label", None)
+        kb = ReplyKeyboardMarkup(
+            [["No specific state"]],
+            one_time_keyboard=True,
+            resize_keyboard=True,
         )
-        await _finish_predict_now(update, context)
-        return ConversationHandler.END
+        await _text_reply(
+            "Do you want deemed colleges from a specific state? "
+            "Type the state name (e.g., Karnataka) or tap *No specific state*.",
+            parse_mode="Markdown",
+            reply_markup=kb,
+        )
+        return ASK_DEEMED_STATE
     
     kb = ReplyKeyboardMarkup(
         [["General", "OBC", "EWS", "SC", "ST"]],
@@ -9715,6 +9725,63 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _text_reply("Select your category:", reply_markup=kb)
 
     return ASK_CATEGORY
+
+async def ask_deemed_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (update.message.text or "").strip()
+    prompt_kb = ReplyKeyboardMarkup(
+        [["No specific state"]],
+        one_time_keyboard=True,
+        resize_keyboard=True,
+    )
+    if not text:
+        await update.message.reply_text(
+            "Type a state name (e.g., Karnataka) or tap *No specific state*.",
+            parse_mode="Markdown",
+            reply_markup=prompt_kb,
+        )
+        return ASK_DEEMED_STATE
+
+    normalized = text.strip().lower()
+    no_pref_tokens = {
+        "no",
+        "none",
+        "any",
+        "all",
+        "no preference",
+        "no specific state",
+        "any state",
+        "all states",
+    }
+
+    if normalized in no_pref_tokens:
+        context.user_data.pop("deemed_state_filter", None)
+        context.user_data.pop("deemed_state_filter_label", None)
+        context.user_data.pop("awaiting_deemed_state", None)
+        await update.message.reply_text(
+            "Okay! Showing deemed colleges across India…",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        await _finish_predict_now(update, context)
+        return ConversationHandler.END
+
+    canon = _canon_state(text)
+    if not canon:
+        await update.message.reply_text(
+            "Couldn’t recognize that state. Please type a valid Indian state name or tap *No specific state*.",
+            parse_mode="Markdown",
+            reply_markup=prompt_kb,
+        )
+        return ASK_DEEMED_STATE
+
+    context.user_data["deemed_state_filter"] = canon
+    context.user_data["deemed_state_filter_label"] = text.strip()
+    context.user_data.pop("awaiting_deemed_state", None)
+    await update.message.reply_text(
+        f"Great! Showing deemed colleges from {canon}…",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await _finish_predict_now(update, context)
+    return ConversationHandler.END
 
 async def on_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat = canonical_category(update.message.text or "")
@@ -10307,7 +10374,10 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
                 return val
         return None
 
-    
+    def _clear_deemed_pref():
+        context.user_data.pop("deemed_state_filter", None)
+        context.user_data.pop("deemed_state_filter_label", None)
+
 
     def _deemed_only(rows):
         out = []
@@ -10365,6 +10435,30 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
                         "Try a different quota, adjust your rank with /move_rank, or explore other categories."
                     ),
                 )
+                _clear_deemed_pref()
+                _end_flow(context, "predict")
+                return ConversationHandler.END
+
+        state_pref = context.user_data.get("deemed_state_filter")
+        state_label = context.user_data.get("deemed_state_filter_label") or state_pref
+        if state_pref:
+            filtered = []
+            for r in results:
+                row_state = _canon_state(_safe_str(r.get("state") or r.get("State")))
+                if row_state and row_state == state_pref:
+                    filtered.append(r)
+            if filtered:
+                results = filtered
+            else:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=(
+                        f"{header_plain}\n\n"
+                        f"No deemed colleges found in {state_label or state_pref}. "
+                        "Try another state or choose 'No specific state'."
+                    ),
+                )
+                _clear_deemed_pref()
                 _end_flow(context, "predict")
                 return ConversationHandler.END
         df_lookup = context.application.bot_data.get("CUTOFFS_DF", None)
@@ -10381,7 +10475,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
                     f"Couldn’t find matches under {quota} / {category}."
                 ),
             )
-
+            _clear_deemed_pref()
             _end_flow(context, "predict")
             return ConversationHandler.END
 
@@ -10416,7 +10510,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=kb,
         )
         await _send_predict_extras(chat_id, context)
-    
+        _clear_deemed_pref()
         _end_flow(context, "predict")
         return ConversationHandler.END
 
@@ -10426,6 +10520,7 @@ async def _finish_predict_now(update: Update, context: ContextTypes.DEFAULT_TYPE
             await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ Error preparing shortlist.")
         except Exception:
             pass
+        _clear_deemed_pref()
         _end_flow(context, "predict")
         return ConversationHandler.END
 
@@ -10830,6 +10925,8 @@ def register_handlers(app: Application) -> None:
             ],
             ASK_CATEGORY: [MessageHandler(TEXT_EXCEPT_MENU, on_category)],
             ASK_DOMICILE: [MessageHandler(TEXT_EXCEPT_MENU, on_domicile)],
+            ASK_DEEMED_STATE: [MessageHandler(TEXT_EXCEPT_MENU, ask_deemed_state)],
+            
         },
         fallbacks=[
             CommandHandler("cancel", cancel_predict),
