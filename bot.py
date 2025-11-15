@@ -10876,7 +10876,6 @@ def register_handlers(app: Application) -> None:
         name="ask_conv",
         persistent=False,
         per_message=False,
-        allow_reentry=True,
         
     )
     _add(ask_conv, group=1)
@@ -10947,6 +10946,7 @@ def register_handlers(app: Application) -> None:
         name="predict_conv",
         persistent=False,
         per_message=False,
+        allow_reentry=True,
     )
     _add(predict_conv, group=3)
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
