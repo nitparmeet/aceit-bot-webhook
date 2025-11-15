@@ -9770,15 +9770,6 @@ async def ask_deemed_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await _finish_predict_now(update, context)
         return ConversationHandler.END
-
-    if not re.search(r"[A-Za-z]", text):
-        await update.message.reply_text(
-            "State names must include letters. Please type a valid state (e.g., Maharashtra) "
-            "or tap *No specific state*.",
-            parse_mode="Markdown",
-            reply_markup=prompt_kb,
-        )
-        return ASK_DEEMED_STATE
     
     canon = _canon_state(text)
     if not canon:
