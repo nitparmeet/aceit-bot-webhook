@@ -9228,7 +9228,7 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
     return AWAITING_STATE
 
-    async def predict_mockrank_collect_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def predict_mockrank_collect_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("flow") != "mock_rank":
         return AWAITING_STATE
     text = (update.message.text or "").strip()
