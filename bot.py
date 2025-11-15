@@ -5270,6 +5270,28 @@ ASK_WAIT    = 1002
 
 ASK_AIR, ASK_QUOTA, ASK_CATEGORY, ASK_DOMICILE, ASK_PG_REQ, ASK_BOND_AVOID, ASK_PREF, ASK_DEEMED_STATE = range(300, 308)
 
+PREDICT_RESET_KEYS = (
+    "r",
+    "category",
+    "weights",
+    "require_pg_quota",
+    "avoid_bond",
+    "domicile_state",
+    "quota",
+    "rank_air",
+    "counselling_authority",
+    "domicile_required",
+    "_cat_hint",
+    "awaiting_counselling",
+    "awaiting_state_quota",
+    "awaiting_state_name",
+    "state_counselling_state",
+    "state_counselling_state_raw",
+    "awaiting_deemed_state",
+    "deemed_state_filter",
+    "deemed_state_filter_label",
+)
+
 PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROFILE_SET_EMAIL, PROFILE_SET_MOBILE, PROFILE_SET_PRIMARY = range(120, 127)
 
 
@@ -9172,6 +9194,8 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode="Markdown"
             )
         return ConversationHandler.END
+    for k in PREDICT_RESET_KEYS:
+        context.user_data.pop(k, None)
     tgt = _target(update)
     await tgt.reply_text("Enter your *mock test All-India Rank* (integer):", parse_mode="Markdown")
     return ASK_MOCK_RANK
@@ -9300,24 +9324,7 @@ async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return ConversationHandler.END
 
-    for k in (
-        "r",
-        "category",
-        "weights",
-        "require_pg_quota",
-        "avoid_bond",
-        "domicile_state",
-        "quota",
-        "rank_air",
-        "counselling_authority",
-        "domicile_required",
-        "_cat_hint",
-        "awaiting_counselling",
-        "awaiting_state_quota",
-        "awaiting_state_name",
-        "state_counselling_state",
-        "state_counselling_state_raw",
-    ):
+    for k in PREDICT_RESET_KEYS:
 
         context.user_data.pop(k, None)
 
@@ -9764,6 +9771,15 @@ async def ask_deemed_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _finish_predict_now(update, context)
         return ConversationHandler.END
 
+    if not re.search(r"[A-Za-z]", text):
+        await update.message.reply_text(
+            "State names must include letters. Please type a valid state (e.g., Maharashtra) "
+            "or tap *No specific state*.",
+            parse_mode="Markdown",
+            reply_markup=prompt_kb,
+        )
+        return ASK_DEEMED_STATE
+    
     canon = _canon_state(text)
     if not canon:
         await update.message.reply_text(
