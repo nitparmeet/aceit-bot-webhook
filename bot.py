@@ -1167,7 +1167,7 @@ MOCK_BIAS_FACTOR_MAX = 1.40
 MOCK_BIAS_FACTOR_DEFAULT = 1.25
 _ALLOWED_ANY_QUOTAS = ["AIQ", "Deemed", "Central", "State", "Open", "Management"]
 CUTSHEET_OVERRIDE = {"2025_R1": None, "2024_Stray": None}
-ASK_MOCK_RANK, ASK_MOCK_SIZE = range(307, 309)    
+AWAITING_MOCK_RANK, AWAITING_TOTAL_PARTICIPANTS, AWAITING_STATE = range(307, 310)   
 
 COACH_TOP_N = 40        
 COACH_SHOW_N = 4      
@@ -9151,31 +9151,6 @@ async def cutdiag(update, context):
     await update.effective_chat.send_message(msg)
 
 
-async def predict_mockrank_collect_size_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    try:
-        await q.answer()
-    except Exception:
-        pass
-
-    # parse size from callback data "mock:size:<N>"
-    try:
-        size = int((q.data or "").split(":")[-1])
-    except Exception:
-        size = None
-
-    if not size or size <= 0:
-        try:
-            await q.message.reply_text("Pick a valid list size.")
-        except Exception:
-            pass
-        return ASK_MOCK_SIZE
-
-    context.user_data["mock_size"] = size
-
-    # (continue exactly like your text-size handler does)
-    # Example: ask the next question in flow, or call your compute/predict
-    return await predict_mockrank_next_step(update, context)  # <-- or whatever your next step is
     
 
 async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -9187,8 +9162,8 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
         getattr(getattr(update, "callback_query", None), "id", None),
     )
 
-    blocked = _start_flow(context, "predict")
-    if blocked and blocked != "predict":
+    blocked = _start_flow(context, "mock_rank")
+    if blocked and blocked != "mock_rank":
         tgt = _target(update)
         if tgt:
             await tgt.reply_text(
@@ -9198,121 +9173,134 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
     for k in PREDICT_RESET_KEYS:
         context.user_data.pop(k, None)
+    context.user_data["flow"] = "mock_rank"
     tgt = _target(update)
-    await tgt.reply_text("Enter your *mock test All-India Rank* (integer):", parse_mode="Markdown")
-    return ASK_MOCK_RANK
-
+    sent = await tgt.reply_text(
+        "Enter your *mock test All-India Rank* (integer):",
+        parse_mode="Markdown",
+        reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 980"),
+    )
+    context.user_data["mock_rank_prompt_id"] = sent.message_id
+    return AWAITING_MOCK_RANK
+    
 async def predict_mockrank_collect_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("flow") != "mock_rank":
+        return AWAITING_MOCK_RANK
     txt = (update.message.text or "").strip().replace(",", "")
-    if not txt.isdigit():
-        await update.message.reply_text("Please send a valid integer rank.")
-        return ASK_MOCK_RANK
+    if not MOCK_RANK_RE.match(txt):
+        await update.message.reply_text("Please send a valid integer rank (up to 7 digits).")
+        return AWAITING_MOCK_RANK
     context.user_data["mock_rank"] = int(txt)
-    await update.message.reply_text("How many candidates appeared in that mock (total participants)?")
-    return ASK_MOCK_SIZE
+    sent = await update.message.reply_text(
+        "How many candidates appeared in that mock (total participants)?",
+        reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 25000"),
+    )
+    context.user_data["mock_participants_prompt_id"] = sent.message_id
+    return AWAITING_TOTAL_PARTICIPANTS
 
 async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("flow") != "mock_rank":
+        return AWAITING_TOTAL_PARTICIPANTS
     txt = (update.message.text or "").strip().replace(",", "")
     if not txt.isdigit() or int(txt) < 1:
         await update.message.reply_text("Please send a valid total participants count (integer ≥ 1).")
-        return ASK_MOCK_SIZE
+        return AWAITING_TOTAL_PARTICIPANTS
 
     mock_rank = context.user_data.get("mock_rank")
-    size = int(txt)
+    if not isinstance(mock_rank, int):
+        await update.message.reply_text("Let's start over. Send /mockpredict again.")
+        _end_flow(context, "mock_rank")
+        context.user_data.pop("flow", None)
+        return ConversationHandler.END
 
-     # Neutral percentile (lower rank => smaller percentile fraction)
-    percentile = max(0.0, min(1.0, max(1, mock_rank) / max(1, size)))
+    neet_rank, neutral_air, (bias_lower, bias_upper) = compute_neet_equiv_rank(mock_rank, int(txt))
+    context.user_data["neet_equiv_rank"] = neet_rank
+    
+    context.user_data["mock_neutral_air"] = neutral_air
+    context.user_data["mock_air_band"] = (bias_lower, bias_upper)
+    
+    prompt = (
+        f"Estimated NEET AIR ≈ *{neet_rank:,}* (band {bias_lower:,}–{bias_upper:,}).\n"
+        "Do you want deemed colleges from a specific state?\n"
+        "Type the state name (e.g., Karnataka) or tap *No specific state*."
+    )
+    kb = ReplyKeyboardMarkup([["No specific state"]], one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text(prompt, parse_mode="Markdown", reply_markup=kb)
+    return AWAITING_STATE
 
+    async def predict_mockrank_collect_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("flow") != "mock_rank":
+        return AWAITING_STATE
+    text = (update.message.text or "").strip()
+    if not text:
+        
+        await update.message.reply_text(
+            "Please type a state name or tap *No specific state*.",
+            parse_mode="Markdown",
+        )
+        return AWAITING_STATE
+
+    no_pref_tokens = {
+        "no",
+        "none",
+        "any",
+        "all",
+        "no preference",
+        "no specific state",
+        "any state",
+        "all states",
+    }
+    if text.lower() in no_pref_tokens:
+        context.user_data.pop("deemed_state_filter", None)
+        context.user_data.pop("deemed_state_filter_label", None)
+    else:
+        canon = _canon_state(text)
+        if not canon:
+            await update.message.reply_text(
+                "Couldn’t recognize that state. Type a valid Indian state or tap *No specific state*.",
+                parse_mode="Markdown",
+            )
+            return AWAITING_STATE
+        context.user_data["deemed_state_filter"] = canon
+        context.user_data["deemed_state_filter_label"] = text.strip()
+
+    neet_rank = context.user_data.get("neet_equiv_rank")
+    if not isinstance(neet_rank, int):
+        await update.message.reply_text("Something went wrong. Please restart with /mockpredict.")
+        _end_flow(context, "mock_rank")
+        context.user_data.pop("flow", None)
+        return ConversationHandler.END
+
+    
+    profile = get_user_profile(update)
+    saved_quota = canonical_quota_ui(profile.get("pref_quota") or profile.get("quota") or "Deemed")
+    saved_cat = canonical_category(profile.get("category") or "General")
+
+    context.user_data["rank_air"] = neet_rank
+    context.user_data["quota"] = saved_quota or "Deemed"
+    context.user_data["category"] = saved_cat or "General"
+    context.user_data["counselling_authority"] = "MCC"
+    context.user_data.pop("domicile_state", None)
+    
+    await update.message.reply_text(
+         "Fetching colleges for your mock rank…",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await _finish_predict_now(update, context)
+    context.user_data.pop("flow", None)
+    context.user_data.pop("mock_rank", None)
+    context.user_data.pop("neet_equiv_rank", None)
+    _end_flow(context, "mock_rank")
+    return ConversationHandler.END
+
+
+def compute_neet_equiv_rank(mock_rank: int, participants: int) -> tuple[int, int, tuple[int, int]]:
+    percentile = max(0.0, min(1.0, max(1, mock_rank) / max(1, participants)))
     neutral_air = max(1, int(round(percentile * NEET_CANDIDATE_POOL_DEFAULT)))
     bias_lower = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_MIN)))
     bias_upper = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_MAX)))
     adjusted_air = max(1, int(round(neutral_air * MOCK_BIAS_FACTOR_DEFAULT)))
-    
-    
-
-    context.user_data["rank_air"] = adjusted_air
-    context.user_data["mock_neutral_air"] = neutral_air
-    context.user_data["mock_air_band"] = (bias_lower, bias_upper)
-    
-    profile = get_user_profile(update)
-    saved_quota = canonical_quota_ui(profile.get("pref_quota") or profile.get("quota") or "")
-    saved_cat = canonical_category(profile.get("category")) if profile.get("category") else None
-    saved_dom = profile.get("domicile_state")
-
-    if saved_quota in {"AIQ", "Deemed", "Central", "State", "Management"} and saved_cat in {"General", "OBC", "EWS", "SC", "ST"}:
-        context.user_data["quota"] = saved_quota
-        context.user_data["category"] = saved_cat
-        context.user_data["awaiting_counselling"] = False
-        if saved_quota in {"AIQ", "Deemed", "Central"}:
-            context.user_data["counselling_authority"] = "MCC"
-            context.user_data["domicile_required"] = None
-            context.user_data.pop("domicile_state", None)
-            context.user_data.pop("state_counselling_state", None)
-            context.user_data.pop("state_counselling_state_raw", None)
-        else:
-            context.user_data["counselling_authority"] = "State"
-            state_norm = _canon_state(saved_dom) if saved_dom else None
-            if state_norm:
-                context_user_state_norm = state_norm
-                context.user_data["state_counselling_state"] = state_norm
-                context.user_data["state_counselling_state_raw"] = saved_dom
-            if saved_quota == "Management":
-                context.user_data["domicile_required"] = False
-                context.user_data.pop("domicile_state", None)
-            else:
-                context.user_data["domicile_required"] = True
-                if saved_dom:
-                    context.user_data["domicile_state"] = saved_dom
-
-        context.user_data["awaiting_state_quota"] = False
-        context.user_data["awaiting_state_name"] = False
-
-        
-        dom_ok = True
-        if context.user_data.get("counselling_authority") == "State":
-            dom_ok = (not context.user_data.get("domicile_required")) or bool(context.user_data.get("domicile_state"))
-        
-        if dom_ok:
-            msg = (
-                f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
-                f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,}\n\n"
-                f"Using saved profile: quota *{saved_quota}*, category *{saved_cat}*"
-                )
-        if saved_quota == "State" and saved_dom:
-            msg += f", domicile *{saved_dom}*"
-        msg += "\n\nTap /profile to change defaults."
-
-        await update.message.reply_text(
-            msg,
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("📋 Show Colleges", callback_data="predict:showlist")]]
-                ),
-            
-        )
-        context.user_data["pending_predict_summary"] = True
-        _end_flow(context, "predict")
-        return ConversationHandler.END
-
-    
-    msg = (
-        f"Estimated NEET AIR from mock percentile ≈ *{adjusted_air:,}*.\n"
-        f"(Neutral projection ~{neutral_air:,}; adjusted band {bias_lower:,}–{bias_upper:,})\n\n"
-        "Select your *counselling authority*:"
-    )
-    context.user_data.pop("counselling_authority", None)
-    context.user_data.pop("domicile_required", None)
-    context.user_data.pop("awaiting_state_quota", None)
-    context.user_data["awaiting_counselling"] = True
-    
-    await update.message.reply_text(
-        msg,
-        parse_mode="Markdown",
-        reply_markup=counselling_authority_keyboard(),
-    )
-    context.user_data.pop("pending_predict_summary", None)
-    
-    return ASK_QUOTA
+    return adjusted_air, neutral_air, (bias_lower, bias_upper)
 
 
 async def predict_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -9532,7 +9520,9 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cq = update.callback_query
     message = cq.message if cq and cq.message else update.message
     cat_hint = context.user_data.get("_cat_hint", "")
-
+    if context.user_data.get("flow") == "mock_rank":
+        return ASK_QUOTA
+    
     async def _text_reply(
         text: str,
         *,
@@ -9734,6 +9724,8 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_CATEGORY
 
 async def ask_deemed_state(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("flow") == "mock_rank":
+        return ASK_DEEMED_STATE
     text = (update.message.text or "").strip()
     prompt_kb = ReplyKeyboardMarkup(
         [["No specific state"]],
@@ -10827,7 +10819,7 @@ def register_handlers(app: Application) -> None:
     _add(CommandHandler("handlers_diag", handlers_diag), group=0)
     _add(CommandHandler("move_rank", move_rank_cmd), group=0)
     _add(CallbackQueryHandler(move_rank_cb, pattern=r"^move_rank:"), group=0)
-    _add(MessageHandler(filters.TEXT & filters.REPLY, move_rank_custom_reply, block=False), group=0)
+    _add(MessageHandler(filters.TEXT & filters.REPLY, move_rank_custom_reply, block=False), group=1)
     _add(CommandHandler("compare", compare_colleges_cmd), group=0)
     _add(CommandHandler("strategy", strategy_command), group=0)
     _add(CommandHandler("strategy_where", strategy_where), group=0)
@@ -10917,16 +10909,10 @@ def register_handlers(app: Application) -> None:
         entry_points=[
             CommandHandler("predict", predict_start),
             CallbackQueryHandler(predict_start, pattern=r"^menu_predict$", block=True),
-            CommandHandler("mockpredict", predict_mockrank_start),
-            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$", block=True),
         ],
         states={
             ASK_AIR: [MessageHandler(TEXT_EXCEPT_MENU, on_air)],
-            ASK_MOCK_RANK: [MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_rank)],
-            ASK_MOCK_SIZE: [
-                CallbackQueryHandler(predict_mockrank_collect_size_cb, pattern=r"^mock:size:\d+$"),
-                MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_size),
-            ],
+            
             ASK_QUOTA: [
                 MessageHandler(TEXT_EXCEPT_MENU, on_quota),
                 CallbackQueryHandler(on_quota, pattern=r"^predict:(?:counsel|domreq|quota):.*$", block=True),
@@ -10948,7 +10934,25 @@ def register_handlers(app: Application) -> None:
     )
     _add(predict_conv, group=3)
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=3)
-    
+    mockpredict_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("mockpredict", predict_mockrank_start),
+            CallbackQueryHandler(predict_mockrank_start, pattern=r"^(menu_predict_mock|menu_mock_predict)$", block=True),
+        ],
+        states={
+            AWAITING_MOCK_RANK: [MessageHandler(filters.TEXT & filters.REPLY, predict_mockrank_collect_rank)],
+            AWAITING_TOTAL_PARTICIPANTS: [MessageHandler(filters.TEXT & filters.REPLY, predict_mockrank_collect_size)],
+            AWAITING_STATE: [MessageHandler(TEXT_EXCEPT_MENU, predict_mockrank_collect_state)],
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel_predict),
+            CommandHandler("menu", menu_exit_conversation),
+        ],
+        name="mockpredict_conv",
+        persistent=False,
+        per_message=False,
+    )
+    _add(mockpredict_conv, group=0)
     # Predictor follow-ups (AI Coach buttons attached to predict output)
     # Handles: predict:ai, predict:ai_coach, predict:coach, predict:refine, predict:alt, predict:details
     try:
