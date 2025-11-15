@@ -10876,6 +10876,8 @@ def register_handlers(app: Application) -> None:
         name="ask_conv",
         persistent=False,
         per_message=False,
+        allow_reentry=True,
+        
     )
     _add(ask_conv, group=1)
 
