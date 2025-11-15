@@ -9705,8 +9705,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Deemed quota applies to all categories. Fetching eligible colleges…"
         )
         await _finish_predict_now(update, context)
-
-  
+        return ConversationHandler.END
     
     kb = ReplyKeyboardMarkup(
         [["General", "OBC", "EWS", "SC", "ST"]],
