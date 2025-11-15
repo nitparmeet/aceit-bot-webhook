@@ -10581,6 +10581,7 @@ from telegram.ext import (
 
 MENU_TEXT_FILTER = filters.Regex(r"(?i)^menu$")
 MENU_COMMAND_FILTER = filters.Regex(re.compile(r"^/menu(?:@\w+)?$", re.IGNORECASE))
+MOCK_RANK_RE = re.compile(r"^\d{1,7}$")
 TEXT_EXCEPT_MENU = filters.TEXT & ~filters.COMMAND & ~MENU_TEXT_FILTER
 
 log = logging.getLogger("aceit-bot")
