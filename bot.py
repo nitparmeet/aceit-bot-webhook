@@ -5292,6 +5292,8 @@ PREDICT_RESET_KEYS = (
     "awaiting_deemed_state",
     "deemed_state_filter",
     "deemed_state_filter_label",
+    "deemed_state_prompt_id",
+    "deemed_state_chat_id",
 )
 
 PROFILE_MENU, PROFILE_SET_CATEGORY, PROFILE_SET_DOMICILE, PROFILE_SET_PREF, PROFILE_SET_EMAIL, PROFILE_SET_MOBILE, PROFILE_SET_PRIMARY = range(120, 127)
@@ -9703,7 +9705,7 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting_state_name", None)
 
     if authority == "MCC" and q == "Deemed":
-        # Deemed quota does not differentiate by category/domicile; collect optional state preference.
+        # Deemed quota does not differentiate by category/domicile; collect optional state preference via ForceReply.
         context.user_data["category"] = "General"
         context.user_data.pop("domicile_state", None)
         context.user_data.pop("pending_predict_summary", None)
@@ -9713,18 +9715,39 @@ async def on_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["awaiting_deemed_state"] = True
         context.user_data.pop("deemed_state_filter", None)
         context.user_data.pop("deemed_state_filter_label", None)
-        kb = ReplyKeyboardMarkup(
-            [["No specific state"]],
-            one_time_keyboard=True,
-            resize_keyboard=True,
+        context.user_data.pop("deemed_state_prompt_id", None)
+        context.user_data.pop("deemed_state_chat_id", None)
+        prompt_text = (
+            "Do you want deemed colleges from a specific state?\n"
+            "Reply with the state name (e.g., Karnataka) or type *No specific state*."
         )
-        await _text_reply(
-            "Do you want deemed colleges from a specific state? "
-            "Type the state name (e.g., Karnataka) or tap *No specific state*.",
-            parse_mode="Markdown",
-            reply_markup=kb,
-        )
-        return ASK_DEEMED_STATE
+        target = message or update.effective_message
+        if target:
+            sent = await target.reply_text(
+                prompt_text,
+                parse_mode="Markdown",
+                reply_markup=ForceReply(
+                    selective=True,
+                    input_field_placeholder="Karnataka / No specific state",
+                ),
+            )
+            context.user_data["deemed_state_prompt_id"] = sent.message_id
+            context.user_data["deemed_state_chat_id"] = sent.chat.id
+        else:
+            chat = update.effective_chat
+            if chat:
+                sent = await context.bot.send_message(
+                    chat_id=chat.id,
+                    text=prompt_text,
+                    parse_mode="Markdown",
+                    reply_markup=ForceReply(
+                        selective=True,
+                        input_field_placeholder="Karnataka / No specific state",
+                    ),
+                )
+                context.user_data["deemed_state_prompt_id"] = sent.message_id
+                context.user_data["deemed_state_chat_id"] = sent.chat.id
+        return ConversationHandler.END
     
     kb = ReplyKeyboardMarkup(
         [["General", "OBC", "EWS", "SC", "ST"]],
