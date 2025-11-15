@@ -465,6 +465,8 @@ def _canon_state(value: str | None) -> Optional[str]:
     key = _state_norm(value)
     if not key:
         return None
+    if not re.search(r"[a-z]", key):
+        return None
     if key in _STATE_ALIAS_LOOKUP:
         return _STATE_ALIAS_LOOKUP[key]
     for alias_key, canon in _STATE_ALIAS_LOOKUP.items():
