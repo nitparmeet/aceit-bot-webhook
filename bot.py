@@ -9172,7 +9172,13 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode="Markdown"
             )
         return ConversationHandler.END
-    context.user_data["flow"] = "mock_rank"
+    context.user_data.pop("awaiting_counselling", None)
+    context.user_data.pop("awaiting_state_quota", None)
+    context.user_data.pop("awaiting_state_name", None)
+    context.user_data.pop("state_counselling_state", None)
+    context.user_data.pop("state_counselling_state_raw", None)
+    context.user_data.pop("quota", None)
+    context.user_data.pop("category", None)
     context.user_data.pop("mock_rank", None)
     context.user_data.pop("mock_total_participants", None)
     context.user_data.pop("neet_equiv_rank", None)
@@ -9196,7 +9202,7 @@ async def predict_mockrank_collect_rank(update: Update, context: ContextTypes.DE
             "Please send a valid total participants count (integer ≥ 1).",
         )
         return AWAITING_MOCK_RANK
-    context.user_data["mock_rank"] = int(txt)
+    context.user_data["mock_rank"] = int(m.group())
     await update.message.reply_text(
         "How many candidates appeared in that mock (total participants)?",
     )
@@ -9204,20 +9210,26 @@ async def predict_mockrank_collect_rank(update: Update, context: ContextTypes.DE
 
 async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("flow") != "mock_rank":
-        return ConversationHandler.END
+        context.user_data["flow"] = "mock_rank"
 
     txt = (update.message.text or "").strip().replace(",", "")
-    if not MOCK_RANK_RE.match(txt) or int(txt) < 1:
+    m = MOCK_RANK_RE.search(txt)
+    if not m:
         await update.message.reply_text("Please send a valid total participants count (integer ≥ 1).")
         return AWAITING_TOTAL_PARTICIPANTS
-
+    size_val = int(m.group())
+    if size_val < 1:
+        await update.message.reply_text(
+            "Please send a valid total participants count (integer ≥ 1).",
+        )
+        return AWAITING_TOTAL_PARTICIPANTS
     mock_rank = context.user_data.get("mock_rank")
     if not isinstance(mock_rank, int):
         await update.message.reply_text(
             "I couldn’t read your mock rank. Please enter it again.",
         )
         return AWAITING_MOCK_RANK
-    size = int(txt)
+    size = size_val
 
     neutral_air, bias_lower, bias_upper, adjusted_air = compute_neet_equiv_rank(mock_rank, size)
     
