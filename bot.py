@@ -9172,15 +9172,16 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
                 parse_mode="Markdown"
             )
         return ConversationHandler.END
+    context.user_data["flow"] = "mock_rank"
+    context.user_data.pop("mock_rank", None)
+    context.user_data.pop("mock_total_participants", None)
+    context.user_data.pop("neet_equiv_rank", None)
+    context.user_data.pop("mock_neutral_air", None)
+    context.user_data.pop("mock_air_band", None)
+    context.user_data.pop("pending_predict_summary", None)
     tgt = _target(update)
     if tgt:
-        context.user_data["flow"] = "mock_rank"
-        context.user_data.pop("mock_rank", None)
-        context.user_data.pop("mock_total_participants", None)
-        context.user_data.pop("neet_equiv_rank", None)
-        context.user_data.pop("mock_neutral_air", None)
-        context.user_data.pop("mock_air_band", None)
-        context.user_data.pop("pending_predict_summary", None)
+        
         await tgt.reply_text(
             "Enter your *mock test All-India Rank* (integer):",
             parse_mode="Markdown",
@@ -9192,15 +9193,12 @@ async def predict_mockrank_collect_rank(update: Update, context: ContextTypes.DE
     txt = (update.message.text or "").strip().replace(",", "")
     if not MOCK_RANK_RE.match(txt):
         await update.message.reply_text(
-            "Please send a valid integer rank (only digits, up to 7).",
-            reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 9800"),
+            "Please send a valid total participants count (integer ≥ 1).",
         )
         return AWAITING_MOCK_RANK
     context.user_data["mock_rank"] = int(txt)
-    context.user_data["mock_rank_prompt_id"] = update.message.message_id
     await update.message.reply_text(
         "How many candidates appeared in that mock (total participants)?",
-        reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 150000"),
     )
     return AWAITING_TOTAL_PARTICIPANTS
 
@@ -9217,7 +9215,6 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
     if not isinstance(mock_rank, int):
         await update.message.reply_text(
             "I couldn’t read your mock rank. Please enter it again.",
-            reply_markup=ForceReply(selective=True, input_field_placeholder="e.g. 9800"),
         )
         return AWAITING_MOCK_RANK
     size = int(txt)
