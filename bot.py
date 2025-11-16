@@ -9197,12 +9197,13 @@ async def predict_mockrank_start(update: Update, context: ContextTypes.DEFAULT_T
 
 async def predict_mockrank_collect_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
     txt = (update.message.text or "").strip().replace(",", "")
-    if not MOCK_RANK_RE.match(txt):
+    digits_found = re.findall(r"\d+", txt)
+    if not digits_found:
         await update.message.reply_text(
             "Please send a valid total participants count (integer ≥ 1).",
         )
         return AWAITING_MOCK_RANK
-    rank_str = digit_groups[0][:7]
+    rank_str = digits_found[0][:7]
     context.user_data["mock_rank"] = int(rank_str)
     await update.message.reply_text(
         "How many candidates appeared in that mock (total participants)?",
@@ -9214,11 +9215,11 @@ async def predict_mockrank_collect_size(update: Update, context: ContextTypes.DE
         context.user_data["flow"] = "mock_rank"
 
     txt = (update.message.text or "").strip().replace(",", "")
-    digit_groups = re.findall(r"\d+", txt)
-    if not digit_groups:
+    digits_found = re.findall(r"\d+", txt)
+    if not digits_found:
         await update.message.reply_text("Please send a valid total participants count (integer ≥ 1).")
         return AWAITING_TOTAL_PARTICIPANTS
-    size_val = int(digit_groups[0][:7])
+    size_val = int(digits_found[0][:7])
     if size_val < 1:
         await update.message.reply_text(
             "Please send a valid total participants count (integer ≥ 1).",
