@@ -10981,7 +10981,7 @@ def register_handlers(app: Application) -> None:
         persistent=False,
         per_message=False,
     )
-    _add(predict_conv, group=0)
+    _add(predict_conv, group=1)
     _add(CallbackQueryHandler(predict_show_colleges_cb, pattern=r"^predict:showlist$"), group=0)
     
     # Predictor follow-ups (AI Coach buttons attached to predict output)
